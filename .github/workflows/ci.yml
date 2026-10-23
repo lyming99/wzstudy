@@ -1,0 +1,31 @@
+name: wzstudy-ci
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: wzstudy
+          POSTGRES_PASSWORD: ci_only_password
+          POSTGRES_DB: wzstudy_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wzstudy -d wzstudy_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://wzstudy:ci_only_password@localhost:5432/wzstudy_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - run: go test -race ./... -count=1 -timeout=120s
+      - run: go vet ./...
+      - run: go build ./cmd/...
+      - run: python -m py_compile examples/subscribe.py

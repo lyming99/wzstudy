@@ -1,0 +1,15 @@
+{
+  "items": [
+    {
+      "external_id": "go-context-001",
+      "title": "理解 Go 的 context 与请求取消",
+      "summary": "从超时、取消传播和资源释放入手学习并发服务。",
+      "content": "# Context\n\n把 context.Context 作为第一个参数传递，并及时调用 cancel。",
+      "format": "markdown",
+      "category": "编程 / Go",
+      "language": "zh-CN",
+      "tags": ["Go", "并发"],
+      "published_at": "2026-10-23T08:00:00Z"
+    }
+  ]
+}

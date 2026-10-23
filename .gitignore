@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+/bin/
+/dist/
+/.tmp/
+/coverage.out
+*.log
+*.exe
+__pycache__/
+*.pyc

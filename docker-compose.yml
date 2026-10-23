@@ -1,0 +1,45 @@
+name: wzstudy
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wzstudy
+      POSTGRES_USER: wzstudy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wzstudy -d wzstudy"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # No database port is exposed to the host. Use a separate dev override if needed.
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      STORE: postgres
+      HTTP_ADDR: :8080
+      DATABASE_URL: postgres://wzstudy:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/wzstudy?sslmode=disable
+      ADMIN_API_KEY: ${ADMIN_API_KEY:?Set ADMIN_API_KEY}
+      READ_API_KEY: ${READ_API_KEY:?Set READ_API_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      POLL_ENABLED: ${POLL_ENABLED:-true}
+      SSE_MAX_CLIENTS: ${SSE_MAX_CLIENTS:-128}
+    command: ["/bin/sh", "-c", "/app/migrate && exec /app/api"]
+    ports:
+      - "127.0.0.1:${API_PORT:-8091}:8080"
+    healthcheck:
+      test: ["CMD", "/app/api", "-healthcheck", "http://127.0.0.1:8080/api/v1/health/ready"]
+      interval: 10s
+      timeout: 4s
+      retries: 5
+      start_period: 15s
+    stop_grace_period: 15s
+volumes:
+  postgres_data:
