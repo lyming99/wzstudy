@@ -2,5 +2,5 @@ package docs
 
 import "embed"
 
-//go:embed API.md openapi.json
+//go:embed API.md MANAGEMENT.md openapi.json
 var Files embed.FS

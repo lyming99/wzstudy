@@ -62,7 +62,7 @@ func (s *Service) UpdateSource(ctx context.Context, id string, rev int64, in Sou
 		if old.Revision != rev {
 			return ErrConflict
 		}
-		if old.Kind != in.Kind || old.Slug != in.Slug {
+		if old.System || old.Kind != in.Kind || old.Slug != in.Slug {
 			return ErrInvalid
 		}
 		old.Name = in.Name
@@ -103,6 +103,9 @@ func (s *Service) RotateKey(ctx context.Context, id string, rev int64) (out Sour
 		if v.Revision != rev {
 			return ErrConflict
 		}
+		if v.System {
+			return ErrInvalid
+		}
 		v.KeyHash = HashKey(key)
 		v.Revision++
 		v.UpdatedAt = s.Now()
@@ -121,7 +124,7 @@ func (s *Service) Ingest(ctx context.Context, id, key string, inputs []Content) 
 		if e != nil {
 			return ErrUnauthorized
 		}
-		if !EqualKey(source.KeyHash, key) {
+		if source.System || !EqualKey(source.KeyHash, key) {
 			return ErrUnauthorized
 		}
 		if !source.Enabled {
@@ -145,6 +148,9 @@ func (s *Service) ingest(tx Tx, source Source, inputs []Content) (out IngestResu
 		if e != nil {
 			return out, e
 		}
+		if e = normalizeAssets(tx, &v, source.ID, false); e != nil {
+			return out, e
+		}
 		if seen[v.ExternalID] {
 			return out, ErrInvalid
 		}
@@ -156,6 +162,9 @@ func (s *Service) ingest(tx Tx, source Source, inputs []Content) (out IngestResu
 		old, e := tx.FindItem(source.ID, content.ExternalID)
 		if e != nil && !errors.Is(e, ErrNotFound) {
 			return out, e
+		}
+		if e == nil && old.DeletedAt != nil {
+			return out, ErrConflict
 		}
 		if e == nil && old.ContentHash == digest(content) {
 			out.Unchanged++
@@ -169,6 +178,8 @@ func (s *Service) ingest(tx Tx, source Source, inputs []Content) (out IngestResu
 		} else {
 			out.Updated++
 		}
+		old.Status = "pending"
+		audit(&old, "客户端或订阅内容已入库", now)
 		old.Draft = content
 		old.ContentHash = digest(content)
 		old.Revision++
@@ -200,6 +211,13 @@ func (s *Service) publish(tx Tx, v *Item, publish bool) error {
 		live = &PublicItem{ID: v.ID, SourceID: v.SourceID, Revision: v.Revision, Content: c, UpdatedAt: now}
 		op = "upsert"
 	}
+	if publish {
+		v.Status = "published"
+		audit(v, "审核通过并发布", now)
+	} else {
+		v.Status = "draft"
+		audit(v, "资料已下架", now)
+	}
 	v.Published = live
 	_, err := tx.Append(Change{Operation: op, ItemID: v.ID, SourceID: v.SourceID, Revision: v.Revision, Item: live, CreatedAt: now})
 	return err
@@ -214,8 +232,23 @@ func (s *Service) Publication(ctx context.Context, id string, rev int64, publish
 		if v.Revision != rev {
 			return ErrConflict
 		}
+		if v.DeletedAt != nil {
+			return ErrNotFound
+		}
+		if publish && ReviewState(v) == "draft" {
+			return ErrInvalid
+		}
 		// Repeated approval/removal is a no-op, not another feed event.
 		if (!publish && v.Published == nil) || (publish && v.Published != nil && digest(v.Published.Content) == digest(publishedContent(v))) {
+			if publish && v.Status != "published" {
+				v.Status = "published"
+				v.Revision++
+				v.UpdatedAt = s.Now()
+				audit(&v, "审核通过（公开内容未变化）", s.Now())
+				if e = tx.SaveItem(v); e != nil {
+					return e
+				}
+			}
 			out = v
 			return nil
 		}
@@ -249,7 +282,14 @@ func (s *Service) Items(ctx context.Context, f Filter) (out []Item, err error) {
 	return
 }
 func (s *Service) Item(ctx context.Context, id string) (out Item, err error) {
-	err = s.Store.View(ctx, func(tx Tx) error { var e error; out, e = tx.Item(id); return e })
+	err = s.Store.View(ctx, func(tx Tx) error {
+		var e error
+		out, e = tx.Item(id)
+		if e == nil && out.DeletedAt != nil {
+			return ErrNotFound
+		}
+		return e
+	})
 	return
 }
 func (s *Service) Changes(ctx context.Context, after int64, limit int, ids []string) (out ChangePage, err error) {

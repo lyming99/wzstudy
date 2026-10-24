@@ -11,8 +11,11 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
+	"wzstudy/internal/adminui"
+	"wzstudy/internal/buildinfo"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -23,18 +26,28 @@ import (
 )
 
 type Server struct {
-	cfg     config.Config
-	service *study.Service
-	worker  *feed.Worker
-	logger  *slog.Logger
-	streams chan struct{}
+	loginBuckets  map[string]loginBucket
+	passwordSlots chan struct{}
+	authMu        sync.Mutex
+	sessions      map[string]time.Time
+	cfg           config.Config
+	service       *study.Service
+	worker        *feed.Worker
+	logger        *slog.Logger
+	streams       chan struct{}
 }
 
 func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger *slog.Logger) http.Handler {
 	if cfg.SSEMaxClients < 1 {
 		cfg.SSEMaxClients = 128
 	}
-	s := &Server{cfg: cfg, service: service, worker: worker, logger: logger, streams: make(chan struct{}, cfg.SSEMaxClients)}
+	if cfg.DataDir == "" {
+		cfg.DataDir = "data"
+	}
+	if cfg.MaxUploadBytes <= 0 {
+		cfg.MaxUploadBytes = 200 << 20
+	}
+	s := &Server{loginBuckets: map[string]loginBucket{}, passwordSlots: make(chan struct{}, 2), sessions: map[string]time.Time{}, cfg: cfg, service: service, worker: worker, logger: logger, streams: make(chan struct{}, cfg.SSEMaxClients)}
 	r := chi.NewRouter()
 	r.Use(s.middleware)
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) { failure(w, 404, "not_found", "接口不存在") })
@@ -42,10 +55,42 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 		failure(w, 405, "method_not_allowed", "不支持该请求方法")
 	})
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		success(w, 200, map[string]any{"service": "wzstudy", "version": "0.1.0", "api": "/api/v1", "docs": "/docs", "openapi": "/openapi.json"})
+		success(w, 200, map[string]any{"service": "wzstudy", "version": buildinfo.Version, "admin": "/admin/", "api": "/api/v1", "docs": "/docs", "openapi": "/openapi.json"})
+	})
+	r.Get("/admin", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/admin/", http.StatusTemporaryRedirect)
+	})
+	r.Get("/admin/*", func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimPrefix(r.URL.Path, "/admin/")
+		if name == "" {
+			name = "index.html"
+		}
+		if name != "index.html" && name != "app.js" && name != "app.css" {
+			http.NotFound(w, r)
+			return
+		}
+		b, e := adminui.Files.ReadFile(name)
+		if e != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+		typ := "text/html; charset=utf-8"
+		if name == "app.js" {
+			typ = "text/javascript; charset=utf-8"
+		} else if name == "app.css" {
+			typ = "text/css; charset=utf-8"
+		}
+		w.Header().Set("Content-Type", typ)
+		_, _ = w.Write(b)
 	})
 	r.Get("/docs", func(w http.ResponseWriter, r *http.Request) {
 		b, _ := docs.Files.ReadFile("API.md")
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write(b)
+	})
+	r.Get("/docs/management", func(w http.ResponseWriter, r *http.Request) {
+		b, _ := docs.Files.ReadFile("MANAGEMENT.md")
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write(b)
 	})
@@ -67,15 +112,33 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
 			r.Use(s.require(false))
+			r.Get("/media/{id}", s.media)
 			r.Get("/sources", s.publicSources)
 			r.Get("/items", s.publicItems)
 			r.Get("/items/{id}", s.publicItem)
 			r.Get("/changes", s.changes)
 			r.Get("/stream", s.stream)
 		})
+		r.Post("/auth/login", s.login)
+		r.With(s.require(true)).Get("/auth/session", s.session)
+		r.With(s.require(true)).Post("/auth/logout", s.logout)
+		r.Get("/clients/{id}/inbox", s.inbox)
+		r.Post("/ingest/{id}/files", s.upload)
 		r.Post("/ingest/{id}", s.ingest)
 		r.Route("/admin", func(r chi.Router) {
 			r.Use(s.require(true))
+			r.Get("/workspace", s.workspace)
+			r.Put("/settings", s.saveSettings)
+			r.Post("/uploads", s.upload)
+			r.Post("/items", s.saveItem)
+			r.Put("/items/{id}", s.saveItem)
+			r.Post("/items/{id}/submit", s.submitItem)
+			r.Post("/items/{id}/delete", s.deleteItem)
+			r.Post("/collections", s.saveCollection)
+			r.Put("/collections/{id}", s.saveCollection)
+			r.Post("/collections/{id}/delete", s.deleteCollection)
+			r.Post("/plans", s.createPlan)
+			r.Post("/plans/{id}/action", s.planAction)
 			r.Get("/sources", s.sources)
 			r.Post("/sources", s.createSource)
 			r.Get("/sources/{id}", s.source)
@@ -123,17 +186,20 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 	}
 }
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
+	return decodeLimit(w, r, v, 4<<20)
+}
+func decodeLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
 	typ, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || typ != "application/json" {
 		failure(w, 415, "unsupported_media_type", "需要 application/json 请求体")
 		return false
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 4<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	raw, readErr := io.ReadAll(r.Body)
 	if readErr != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(readErr, &tooLarge) {
-			failure(w, 413, "payload_too_large", "请求体超过 4 MiB")
+			failure(w, 413, "payload_too_large", "请求体超过接口大小限制")
 		} else {
 			failure(w, 400, "invalid_json", "无法读取 JSON 请求体")
 		}
@@ -159,7 +225,7 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			failure(w, 413, "payload_too_large", "请求体超过 4 MiB")
+			failure(w, 413, "payload_too_large", "请求体超过接口大小限制")
 		} else {
 			failure(w, 400, "invalid_json", "JSON 无效、包含未知字段或多段正文")
 		}
@@ -182,13 +248,17 @@ func (s *Server) require(admin bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			key := bearer(r)
-			valid := study.EqualKey(study.HashKey(s.cfg.AdminKey), key)
+			valid := s.isAdmin(r)
 			if !admin {
 				valid = valid || study.EqualKey(study.HashKey(s.cfg.ReadKey), key)
 			}
 			if !valid {
 				w.Header().Set("WWW-Authenticate", "Bearer")
 				failure(w, 401, "unauthorized", "需要有效的访问密钥")
+				return
+			}
+			if key == "" && r.Method != "GET" && r.Method != "HEAD" && r.Method != "OPTIONS" && r.Header.Get("Origin") == "" {
+				failure(w, 403, "csrf_denied", "浏览器会话写入请求必须来自受信任页面")
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -235,7 +305,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		}()
 		origin := r.Header.Get("Origin")
 		if origin != "" {
-			allowed := false
+			allowed := s.sameOrigin(r, origin)
 			for _, v := range s.cfg.CORSOrigins {
 				if v == origin {
 					allowed = true
@@ -260,7 +330,11 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			return
 		}
 		if r.URL.Path != "/api/v1/stream" {
-			ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+			timeout := 30 * time.Second
+			if strings.HasSuffix(r.URL.Path, "/files") || r.URL.Path == "/api/v1/admin/uploads" {
+				timeout = 5 * time.Minute
+			}
+			ctx, cancel := context.WithTimeout(r.Context(), timeout)
 			defer cancel()
 			r = r.WithContext(ctx)
 		}
@@ -291,7 +365,17 @@ func filter(r *http.Request, admin bool) (study.Filter, error) {
 	if e != nil {
 		return study.Filter{}, e
 	}
-	return study.Filter{SourceIDs: ids, Category: q.Get("category"), Tag: q.Get("tag"), Query: q.Get("q"), Limit: limit, Offset: offset, Admin: admin}, nil
+	kind, status := q.Get("kind"), q.Get("status")
+	if kind != "" && kind != "article" && kind != "audio" && kind != "video" && kind != "carousel" {
+		return study.Filter{}, study.ErrInvalid
+	}
+	if status != "" && (!admin || (status != "draft" && status != "pending" && status != "published")) {
+		return study.Filter{}, study.ErrInvalid
+	}
+	if sort := q.Get("sort"); sort != "" && sort != "asc" && sort != "desc" {
+		return study.Filter{}, study.ErrInvalid
+	}
+	return study.Filter{Kind: kind, Status: status, Ascending: q.Get("sort") == "asc", SourceIDs: ids, Category: q.Get("category"), Tag: q.Get("tag"), Query: q.Get("q"), Limit: limit, Offset: offset, Admin: admin}, nil
 }
 func sourceIDs(raw string) ([]string, error) {
 	if raw == "" {

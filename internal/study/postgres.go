@@ -37,7 +37,11 @@ func (s *PostgresStore) Ping(ctx context.Context) error {
 		return err
 	}
 	var clock int64
-	return s.Pool.QueryRow(ctx, `SELECT cursor FROM feed_clock WHERE id=1`).Scan(&clock)
+	if err := s.Pool.QueryRow(ctx, `SELECT cursor FROM feed_clock WHERE id=1`).Scan(&clock); err != nil {
+		return err
+	}
+	var count int
+	return s.Pool.QueryRow(ctx, `SELECT count(*) FROM workspace_records WHERE false`).Scan(&count)
 }
 func (s *PostgresStore) Close() { s.Pool.Close() }
 func (s *PostgresStore) View(ctx context.Context, fn func(Tx) error) error {
@@ -201,13 +205,19 @@ func (t *postgresTx) Append(v Change) (Change, error) {
 }
 func (t *postgresTx) Items(f Filter) ([]Item, error) {
 	column := "live"
-	where := []string{"live IS NOT NULL"}
+	where := []string{"live IS NOT NULL", "record->>'deleted_at' IS NULL"}
 	if f.Admin {
 		column = "record->'draft'"
-		where = []string{"TRUE"}
+		where = []string{"record->>'deleted_at' IS NULL"}
 	}
 	args := []any{}
 	arg := func(v any) string { args = append(args, v); return fmt.Sprintf("$%d", len(args)) }
+	if f.Kind != "" {
+		where = append(where, "COALESCE(NULLIF("+column+"->>'kind',''),'article')="+arg(f.Kind))
+	}
+	if f.Admin && f.Status != "" {
+		where = append(where, "COALESCE(record->>'status',CASE WHEN live IS NULL OR (record->>'revision')::bigint <> (live->>'revision')::bigint THEN 'pending' ELSE 'published' END)="+arg(f.Status))
+	}
 	if len(f.SourceIDs) > 0 {
 		where = append(where, "source_id = ANY("+arg(f.SourceIDs)+"::text[])")
 	}
@@ -218,11 +228,14 @@ func (t *postgresTx) Items(f Filter) ([]Item, error) {
 		where = append(where, "("+column+"->'tags') ? "+arg(f.Tag))
 	}
 	if f.Query != "" {
-		where = append(where, "strpos(lower(("+column+"->>'title') || ' ' || ("+column+"->>'summary')),lower("+arg(f.Query)+")) > 0")
+		where = append(where, "strpos(lower(("+column+"->>'title') || ' ' || ("+column+"->>'summary') || ' ' || COALESCE("+column+"->>'author','') || ' ' || COALESCE("+column+"->>'category','') || ' ' || COALESCE(("+column+"->'tags')::text,'')),lower("+arg(f.Query)+")) > 0")
 	}
 	order := "published_at DESC,id DESC"
 	if f.Admin {
 		order = "updated_at DESC,id DESC"
+	}
+	if f.Ascending {
+		order = strings.ReplaceAll(order, "DESC", "ASC")
 	}
 	query := "SELECT record FROM items WHERE " + strings.Join(where, " AND ") + " ORDER BY " + order + " LIMIT " + arg(f.Limit) + " OFFSET " + arg(f.Offset)
 	rows, err := t.tx.Query(t.ctx, query, args...)
@@ -276,4 +289,34 @@ func (t *postgresTx) Changes(after int64, limit int, ids []string) (ChangePage, 
 	}
 	page.HasMore = page.NextCursor < high
 	return page, rows.Err()
+}
+
+func (t *postgresTx) Records(kind string) ([]json.RawMessage, error) {
+	rows, e := t.tx.Query(t.ctx, `SELECT record FROM workspace_records WHERE kind=$1 ORDER BY id`, kind)
+	if e != nil {
+		return nil, e
+	}
+	defer rows.Close()
+	out := []json.RawMessage{}
+	for rows.Next() {
+		var b []byte
+		if e = rows.Scan(&b); e != nil {
+			return nil, e
+		}
+		out = append(out, json.RawMessage(b))
+	}
+	return out, rows.Err()
+}
+func (t *postgresTx) Record(kind, id string) (json.RawMessage, error) {
+	var b []byte
+	e := t.tx.QueryRow(t.ctx, `SELECT record FROM workspace_records WHERE kind=$1 AND id=$2`, kind, id).Scan(&b)
+	return json.RawMessage(b), dbError(e)
+}
+func (t *postgresTx) SaveRecord(kind, id string, b json.RawMessage) error {
+	_, e := t.tx.Exec(t.ctx, `INSERT INTO workspace_records(kind,id,record) VALUES($1,$2,$3) ON CONFLICT(kind,id) DO UPDATE SET record=excluded.record`, kind, id, []byte(b))
+	return dbError(e)
+}
+func (t *postgresTx) DeleteRecord(kind, id string) error {
+	_, e := t.tx.Exec(t.ctx, `DELETE FROM workspace_records WHERE kind=$1 AND id=$2`, kind, id)
+	return dbError(e)
 }

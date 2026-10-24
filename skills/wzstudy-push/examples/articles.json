@@ -1,0 +1,15 @@
+{
+  "items": [
+    {
+      "external_id": "guide:example-only-do-not-submit",
+      "title": "示例结构：请替换为用户授权采集的真实资料",
+      "summary": "仅用于演示字段和 dry-run，不是实际采集结果。",
+      "content": "# 学习摘要\n\n请填写 AI 原创整理、核对过的内容。\n\n## 原始出处\n\n请附真实来源 URL，并注明这是摘要而非原文全文。",
+      "format": "markdown",
+      "kind": "article",
+      "category": "学习方法",
+      "language": "zh-CN",
+      "tags": ["示例"]
+    }
+  ]
+}

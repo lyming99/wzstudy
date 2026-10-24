@@ -27,6 +27,7 @@ var (
 )
 
 type Source struct {
+	System              bool       `json:"system,omitempty"`
 	ID                  string     `json:"id"`
 	Slug                string     `json:"slug"`
 	Name                string     `json:"name"`
@@ -66,6 +67,8 @@ type SourceInput struct {
 }
 
 type Content struct {
+	Kind            string     `json:"kind,omitempty"`
+	Assets          []Asset    `json:"assets,omitempty"`
 	ExternalID      string     `json:"external_id"`
 	Title           string     `json:"title"`
 	Summary         string     `json:"summary"`
@@ -89,15 +92,18 @@ type PublicItem struct {
 }
 
 type Item struct {
-	ID          string      `json:"id"`
-	SourceID    string      `json:"source_id"`
-	ExternalID  string      `json:"external_id"`
-	Revision    int64       `json:"revision"`
-	Draft       Content     `json:"draft"`
-	Published   *PublicItem `json:"published,omitempty"`
-	ContentHash string      `json:"content_hash"`
-	CreatedAt   time.Time   `json:"created_at"`
-	UpdatedAt   time.Time   `json:"updated_at"`
+	Status      string       `json:"status,omitempty"`
+	DeletedAt   *time.Time   `json:"deleted_at,omitempty"`
+	History     []AuditEvent `json:"history,omitempty"`
+	ID          string       `json:"id"`
+	SourceID    string       `json:"source_id"`
+	ExternalID  string       `json:"external_id"`
+	Revision    int64        `json:"revision"`
+	Draft       Content      `json:"draft"`
+	Published   *PublicItem  `json:"published,omitempty"`
+	ContentHash string       `json:"content_hash"`
+	CreatedAt   time.Time    `json:"created_at"`
+	UpdatedAt   time.Time    `json:"updated_at"`
 }
 
 type Change struct {
@@ -118,6 +124,9 @@ type ChangePage struct {
 }
 
 type Filter struct {
+	Kind      string
+	Status    string
+	Ascending bool
 	SourceIDs []string
 	Category  string
 	Tag       string
@@ -139,6 +148,10 @@ type IngestResult struct {
 // A write locks the global clock BEFORE reading keys or items. Cursor allocation and
 // content publication commit atomically, so a reader can never skip a late commit.
 type Tx interface {
+	Records(string) ([]json.RawMessage, error)
+	Record(string, string) (json.RawMessage, error)
+	SaveRecord(string, string, json.RawMessage) error
+	DeleteRecord(string, string) error
 	Sources() ([]Source, error)
 	Source(string) (Source, error)
 	SaveSource(Source) error
@@ -230,6 +243,12 @@ func normalizeContent(in Content, s Source) (Content, error) {
 	if in.ExternalID == "" || in.Title == "" || !validText(in.ExternalID, 512) || !validText(in.Title, 500) || !validText(in.Summary, 8000) || !validText(in.Content, 262144) || !validText(in.Author, 200) || !validText(in.Category, 200) || !validText(in.Language, 35) || len(in.Tags) > 20 {
 		return in, ErrInvalid
 	}
+	if in.Kind != "" && in.Kind != "article" && in.Kind != "audio" && in.Kind != "video" && in.Kind != "carousel" {
+		return in, ErrInvalid
+	}
+	if len(in.Assets) > 20 {
+		return in, ErrInvalid
+	}
 	if in.Format != "text" && in.Format != "markdown" {
 		return in, ErrInvalid
 	}
@@ -279,6 +298,9 @@ func MatchesSource(id string, ids []string) bool {
 	return false
 }
 func MatchesContent(c Content, f Filter) bool {
+	if f.Kind != "" && Kind(c) != f.Kind {
+		return false
+	}
 	if f.Category != "" && c.Category != f.Category {
 		return false
 	}
@@ -293,5 +315,5 @@ func MatchesContent(c Content, f Filter) bool {
 			return false
 		}
 	}
-	return f.Query == "" || strings.Contains(strings.ToLower(c.Title+" "+c.Summary), strings.ToLower(f.Query))
+	return f.Query == "" || strings.Contains(strings.ToLower(c.Title+" "+c.Summary+" "+c.Author+" "+c.Category+" "+strings.Join(c.Tags, " ")), strings.ToLower(f.Query))
 }

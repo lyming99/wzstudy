@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -13,6 +14,7 @@ type memoryState struct {
 	items   map[string]Item
 	changes []Change
 	cursor  int64
+	records map[string]json.RawMessage
 }
 type MemoryStore struct {
 	mu    sync.RWMutex
@@ -20,7 +22,7 @@ type MemoryStore struct {
 }
 
 func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{state: memoryState{sources: map[string]Source{}, items: map[string]Item{}, changes: []Change{}}}
+	return &MemoryStore{state: memoryState{sources: map[string]Source{}, items: map[string]Item{}, changes: []Change{}, records: map[string]json.RawMessage{}}}
 }
 func (s *MemoryStore) Ping(ctx context.Context) error { return ctx.Err() }
 func (s *MemoryStore) Close()                         {}
@@ -39,7 +41,10 @@ func (s *MemoryStore) Update(ctx context.Context, fn func(Tx) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// Copy-on-write rollback semantics match PostgreSQL, including mid-batch failures.
-	copyState := memoryState{sources: map[string]Source{}, items: map[string]Item{}, changes: append([]Change(nil), s.state.changes...), cursor: s.state.cursor}
+	copyState := memoryState{sources: map[string]Source{}, items: map[string]Item{}, changes: append([]Change(nil), s.state.changes...), cursor: s.state.cursor, records: map[string]json.RawMessage{}}
+	for k, v := range s.state.records {
+		copyState.records[k] = append(json.RawMessage(nil), v...)
+	}
 	for k, v := range s.state.sources {
 		copyState.sources[k] = v
 	}
@@ -111,6 +116,9 @@ func (t *memoryTx) Append(v Change) (Change, error) {
 func (t *memoryTx) Items(f Filter) ([]Item, error) {
 	out := make([]Item, 0)
 	for _, v := range t.state.items {
+		if v.DeletedAt != nil || (f.Admin && f.Status != "" && ReviewState(v) != f.Status) {
+			continue
+		}
 		if !MatchesSource(v.SourceID, f.SourceIDs) {
 			continue
 		}
@@ -133,6 +141,9 @@ func (t *memoryTx) Items(f Filter) ([]Item, error) {
 		}
 		if a.Equal(b) {
 			return out[i].ID > out[j].ID
+		}
+		if f.Ascending {
+			return a.Before(b)
 		}
 		return a.After(b)
 	})
@@ -178,4 +189,34 @@ func cloneItem(v Item) Item {
 	var out Item
 	_ = json.Unmarshal(b, &out)
 	return out
+}
+
+func (t *memoryTx) Records(kind string) ([]json.RawMessage, error) {
+	out := []json.RawMessage{}
+	keys := []string{}
+	for key := range t.state.records {
+		if strings.HasPrefix(key, kind+"/") {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		out = append(out, append(json.RawMessage(nil), t.state.records[key]...))
+	}
+	return out, nil
+}
+func (t *memoryTx) Record(kind, id string) (json.RawMessage, error) {
+	v, ok := t.state.records[kind+"/"+id]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	return append(json.RawMessage(nil), v...), nil
+}
+func (t *memoryTx) SaveRecord(kind, id string, b json.RawMessage) error {
+	t.state.records[kind+"/"+id] = append(json.RawMessage(nil), b...)
+	return nil
+}
+func (t *memoryTx) DeleteRecord(kind, id string) error {
+	delete(t.state.records, kind+"/"+id)
+	return nil
 }

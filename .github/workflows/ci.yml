@@ -28,4 +28,8 @@ jobs:
       - run: go test -race ./... -count=1 -timeout=120s
       - run: go vet ./...
       - run: go build ./cmd/...
-      - run: python -m py_compile examples/subscribe.py
+      - run: python -m py_compile examples/subscribe.py scripts/*.py
+      - run: python scripts/verify_structure.py
+      - run: python -m unittest discover -s skills/wzstudy-push/tests -v
+      - run: mkdir -p .artifacts && go build -o .artifacts/wzstudy.exe ./cmd/api
+      - run: python scripts/verify_push_skill.py

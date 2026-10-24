@@ -54,7 +54,7 @@ func TestOpenAPICoversAllBusinessRoutes(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"/docs", "/openapi.json"} {
+	for _, path := range []string{"/docs", "/docs/management", "/openapi.json"} {
 		w := request(t, h, "GET", path, "", nil)
 		if w.Code != 200 || w.Body.Len() == 0 {
 			t.Fatal(path, w.Code)

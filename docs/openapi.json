@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "WzStudy 学习数据源 API",
-    "version": "0.1.0",
-    "description": "Independent backend. Bearer admin, read and per-source keys are separate. Admin may also read; admin cannot replace source key for ingestion. Error bodies never return secrets."
+    "version": "0.3.0",
+    "description": "学习内容管理服务。管理端支持 Bearer 或 HttpOnly 会话；来源密钥、只读密钥与管理权限严格分离。支持文章、音视频、图片轮播、审核快照、RSS、持久化推送收件箱。"
   },
   "servers": [
     {
@@ -521,6 +521,9 @@
         "security": [
           {
             "AdminKey": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "responses": {
@@ -563,6 +566,9 @@
         "security": [
           {
             "AdminKey": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "responses": {
@@ -614,6 +620,9 @@
         "security": [
           {
             "AdminKey": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "responses": {
@@ -664,6 +673,9 @@
         "security": [
           {
             "AdminKey": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "responses": {
@@ -726,6 +738,9 @@
         "security": [
           {
             "AdminKey": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "responses": {
@@ -788,6 +803,9 @@
         "security": [
           {
             "AdminKey": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "responses": {
@@ -840,6 +858,9 @@
         "security": [
           {
             "AdminKey": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "responses": {
@@ -928,8 +949,96 @@
               "maximum": 10000,
               "default": 0
             }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "article",
+                "audio",
+                "video",
+                "carousel"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "pending",
+                "published"
+              ]
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
           }
         ]
+      },
+      "post": {
+        "operationId": "post__admin_items",
+        "summary": "创建资料草稿或待审核内容",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Item"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedInput"
+              }
+            }
+          }
+        }
       }
     },
     "/admin/items/{id}": {
@@ -939,6 +1048,9 @@
         "security": [
           {
             "AdminKey": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "responses": {
@@ -982,6 +1094,69 @@
             }
           }
         ]
+      },
+      "put": {
+        "operationId": "put__admin_items_id",
+        "summary": "编辑资料但不覆盖已审核公开快照",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Item"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedInput"
+              }
+            }
+          }
+        }
       }
     },
     "/admin/items/{id}/publish": {
@@ -991,6 +1166,9 @@
         "security": [
           {
             "AdminKey": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "responses": {
@@ -1053,6 +1231,9 @@
         "security": [
           {
             "AdminKey": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "responses": {
@@ -1107,6 +1288,1010 @@
           }
         }
       }
+    },
+    "/auth/login": {
+      "post": {
+        "operationId": "post__auth_login",
+        "summary": "使用管理员邮箱和密码建立浏览器会话",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Login rate or password-hashing concurrency limit reached; Retry-After header supplied."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailLogin"
+              }
+            }
+          }
+        },
+        "description": "Only a startup-configured system administrator can sign in. No HTTP registration or bootstrap endpoint. 4096-byte JSON body limit; 10 attempts/minute per socket IP; at most two concurrent password hashes."
+      }
+    },
+    "/auth/session": {
+      "get": {
+        "operationId": "get__auth_session",
+        "summary": "读取当前管理会话和上传限制",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "operationId": "post__auth_logout",
+        "summary": "撤销当前会话 Cookie",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/media/{id}": {
+      "get": {
+        "operationId": "get__media_id",
+        "summary": "读取获准访问的媒体，支持 HTTP Range；私有草稿只对管理员开放",
+        "security": [
+          {
+            "ReadKey": []
+          },
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authenticated immutable file bytes; content type follows the registered asset.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "Partial media bytes for a valid Range request.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "Unsatisfiable byte range."
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Range",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "For example: bytes=0-1023"
+          }
+        ]
+      }
+    },
+    "/clients/{id}/inbox": {
+      "get": {
+        "operationId": "get__clients_id_inbox",
+        "summary": "按游标读取此来源专属的持久推送收件箱",
+        "security": [
+          {
+            "SourceKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/InboxPage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
+      }
+    },
+    "/admin/workspace": {
+      "get": {
+        "operationId": "get__admin_workspace",
+        "summary": "工作空间统计、来源、合集、计划、设置及最近资料",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Workspace"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/settings": {
+      "put": {
+        "operationId": "put__admin_settings",
+        "summary": "按修订号保存空间设置",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Settings"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Settings"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/items/{id}/submit": {
+      "post": {
+        "operationId": "post__admin_items_id_submit",
+        "summary": "将草稿提交审核",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Item"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Revision"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/items/{id}/delete": {
+      "post": {
+        "operationId": "post__admin_items_id_delete",
+        "summary": "软删除并写入公开内容删除事件，保留附件备份",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Revision"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/uploads": {
+      "post": {
+        "operationId": "post__admin_uploads",
+        "summary": "multipart 文件落盘与资料入库（同一存储事务登记资产和资料）",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Item"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "metadata": {
+                    "type": "string",
+                    "contentMediaType": "application/json",
+                    "description": "JSON 序列化的 ManagedInput",
+                    "contentSchema": {
+                      "$ref": "#/components/schemas/ManagedInput"
+                    }
+                  },
+                  "files": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    }
+                  }
+                },
+                "required": [
+                  "metadata",
+                  "files"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ingest/{id}/files": {
+      "post": {
+        "operationId": "post__ingest_id_files",
+        "summary": "multipart 文件落盘与资料入库（同一存储事务登记资产和资料）",
+        "security": [
+          {
+            "SourceKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/IngestResult"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "metadata": {
+                    "type": "string",
+                    "contentMediaType": "application/json",
+                    "description": "JSON 序列化的 Content",
+                    "contentSchema": {
+                      "$ref": "#/components/schemas/Content"
+                    }
+                  },
+                  "files": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    }
+                  }
+                },
+                "required": [
+                  "metadata",
+                  "files"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/collections": {
+      "post": {
+        "operationId": "post__admin_collections",
+        "summary": "创建按分类自动归集的专题",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Collection"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Collection"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/collections/{id}": {
+      "put": {
+        "operationId": "put__admin_collections_id",
+        "summary": "按修订号修改专题",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Collection"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Collection"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/collections/{id}/delete": {
+      "post": {
+        "operationId": "post__admin_collections_id_delete",
+        "summary": "删除专题定义，不删除资料",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Revision"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/plans": {
+      "post": {
+        "operationId": "post__admin_plans",
+        "summary": "创建持久定时推送计划",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PushPlan"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/plans/{id}/action": {
+      "post": {
+        "operationId": "post__admin_plans_id_action",
+        "summary": "暂停、恢复、立即执行或删除推送计划",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer"
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "pause",
+                      "resume",
+                      "run",
+                      "delete"
+                    ]
+                  }
+                },
+                "required": [
+                  "revision",
+                  "action"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1114,7 +2299,7 @@
       "AdminKey": {
         "type": "http",
         "scheme": "bearer",
-        "description": "ADMIN_API_KEY; management and read access"
+        "description": "Administrator API automation credential. Cannot be used as a browser login password."
       },
       "ReadKey": {
         "type": "http",
@@ -1124,7 +2309,13 @@
       "SourceKey": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Per-source one-time key, limited to its own ingest route"
+        "description": "独立来源密钥，仅允许该来源的 JSON / 文件入库与客户端收件箱。"
+      },
+      "AdminSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "wzstudy_admin",
+        "description": "管理员通过 /auth/login 建立的 HttpOnly、SameSite=Strict、8 小时会话。生产环境要求 HTTPS。Cookie 写请求必须携带已授权 Origin。"
       }
     },
     "schemas": {
@@ -1343,6 +2534,11 @@
           },
           "last_error": {
             "type": "string"
+          },
+          "system": {
+            "type": "boolean",
+            "readOnly": true,
+            "description": "管理工作台内部来源，不能用于客户端接入或密钥轮换。"
           }
         },
         "required": [
@@ -1418,6 +2614,24 @@
           "source_updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "article",
+              "audio",
+              "video",
+              "carousel"
+            ],
+            "default": "article"
+          },
+          "assets": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/Asset"
+            },
+            "description": "资产必须先经上传登记；JSON 入库仅能引用同一来源的资产 ID，其他字段由服务端规范化。"
           }
         },
         "required": [
@@ -1533,6 +2747,27 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "pending",
+              "published"
+            ]
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEvent"
+            }
           }
         },
         "required": [
@@ -1740,6 +2975,10 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [
@@ -1747,6 +2986,519 @@
           "limit",
           "offset"
         ]
+      },
+      "Asset": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "source_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "url": {
+            "type": "string",
+            "description": "受认证保护的同源 /api/v1/media/{id} 地址"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "ManagedContent": {
+        "type": "object",
+        "properties": {
+          "external_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "text",
+              "markdown"
+            ],
+            "default": "text"
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string"
+            }
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source_updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "article",
+              "audio",
+              "video",
+              "carousel"
+            ],
+            "default": "article"
+          },
+          "assets": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/Asset"
+            },
+            "description": "资产必须先经上传登记；JSON 入库仅能引用同一来源的资产 ID，其他字段由服务端规范化。"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false,
+        "description": "管理端创建时 external_id 由服务端生成；编辑时保持来源及外部标识不变。"
+      },
+      "ManagedInput": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer"
+          },
+          "source_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "pending"
+            ]
+          },
+          "content": {
+            "$ref": "#/components/schemas/ManagedContent"
+          }
+        },
+        "required": [
+          "status",
+          "content"
+        ],
+        "additionalProperties": false
+      },
+      "AuditEvent": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "action",
+          "at"
+        ],
+        "additionalProperties": false
+      },
+      "Settings": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 20
+          },
+          "compact": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "revision"
+        ],
+        "additionalProperties": false
+      },
+      "Collection": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string",
+            "enum": [
+              "green",
+              "purple",
+              "blue"
+            ]
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "name",
+          "category",
+          "color"
+        ],
+        "additionalProperties": false
+      },
+      "PlanCreate": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "item_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "target_ids": {
+            "type": "array",
+            "maxItems": 100,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "空数组表示执行时所有已启用、非内部的手动接入端。"
+          },
+          "scheduled_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "title",
+          "item_ids",
+          "scheduled_at"
+        ],
+        "additionalProperties": false
+      },
+      "PushPlan": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "item_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "target_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "scheduled_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "scheduled",
+              "paused",
+              "done",
+              "failed"
+            ]
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "deliveries": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "Delivery": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "integer"
+          },
+          "plan_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plan_title": {
+            "type": "string"
+          },
+          "target_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "item": {
+            "$ref": "#/components/schemas/PublicItem"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "InboxPage": {
+        "type": "object",
+        "properties": {
+          "deliveries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Delivery"
+            }
+          },
+          "next_cursor": {
+            "type": "integer"
+          },
+          "high_watermark": {
+            "type": "integer"
+          },
+          "has_more": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "Summary": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "pending": {
+            "type": "integer"
+          },
+          "draft": {
+            "type": "integer"
+          },
+          "published": {
+            "type": "integer"
+          },
+          "week_new": {
+            "type": "integer"
+          },
+          "asset_bytes": {
+            "type": "integer"
+          },
+          "asset_count": {
+            "type": "integer"
+          },
+          "by_kind": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "by_category": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "by_source": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "trends": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "date": {
+                  "type": "string"
+                },
+                "client": {
+                  "type": "integer"
+                },
+                "internet": {
+                  "type": "integer"
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "Workspace": {
+        "type": "object",
+        "properties": {
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Source"
+            }
+          },
+          "summary": {
+            "$ref": "#/components/schemas/Summary"
+          },
+          "collections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Collection"
+            }
+          },
+          "plans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PushPlan"
+            }
+          },
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
+          },
+          "recent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Item"
+            }
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "Administrator": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "email",
+          "display_name",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "EmailLogin": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "writeOnly": true,
+            "description": "8-128 UTF-8 bytes; leading/trailing whitespace is preserved. Not an API key."
+          }
+        }
       }
     }
   }

@@ -1,0 +1,18 @@
+{
+  "keywords": ["Python"],
+  "keyword_match": "all",
+  "keyword_fields": ["title", "description", "tags"],
+  "tags": ["教程"],
+  "tag_match": "all",
+  "tids": [],
+  "tid_v2s": [],
+  "partition_names": [],
+  "lookback_days": 7,
+  "limit": 20,
+  "max_pages": 5,
+  "max_candidates": 100,
+  "max_requests": 250,
+  "interval_seconds": 2,
+  "timeout": 30,
+  "order": "pubdate"
+}

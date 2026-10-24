@@ -1,0 +1,33 @@
+{
+  "synthetic": true,
+  "note": "仅供隔离本地测试的合成视频，不是真实采集成果；禁止向原站请求这些占位BV，不得入库。",
+  "videos": [
+    {
+      "bvid": "BV0000000000",
+      "aid": 1,
+      "title": "Python 离线合成教程（不是真实视频）",
+      "owner": {"mid": 1, "name": "合成测试作者"},
+      "published_at": "2026-10-10T08:00:00+08:00",
+      "tid": 201,
+      "tname": "合成分区",
+      "tid_v2": 10001,
+      "tname_v2": "合成新版分区",
+      "tags": ["Python", "教程"],
+      "duration": 120,
+      "pages": [{"page": 1}],
+      "stat": {"view": 100, "like": 10, "coin": 2, "favorite": 3, "share": 1, "reply": 1, "danmaku": 0}
+    },
+    {
+      "bvid": "BV1111111111",
+      "aid": 2,
+      "title": "Python 标题命中但没有教程tag的合成条目",
+      "owner": {"mid": 2, "name": "另一合成作者"},
+      "published_at": "2026-10-11T00:00:00+08:00",
+      "tid": 201,
+      "tname": "合成分区",
+      "tags": ["Python"],
+      "duration": 60,
+      "stat": {"view": 50}
+    }
+  ]
+}

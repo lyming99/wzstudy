@@ -106,12 +106,12 @@ func (s *Server) adminItems(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, e)
 		return
 	}
-	v, e := s.service.Items(r.Context(), f)
+	v, total, e := s.service.AdminPage(r.Context(), f)
 	if e != nil {
 		s.fail(w, e)
 		return
 	}
-	success(w, 200, map[string]any{"items": v, "limit": f.Limit, "offset": f.Offset})
+	success(w, 200, map[string]any{"items": v, "total": total, "limit": f.Limit, "offset": f.Offset})
 }
 func (s *Server) adminItem(w http.ResponseWriter, r *http.Request) {
 	v, e := s.service.Item(r.Context(), chi.URLParam(r, "id"))

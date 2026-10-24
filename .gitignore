@@ -5,6 +5,14 @@
 /dist/
 /.tmp/
 /coverage.out
+/.local/
+/.artifacts/
+/data/
+# Compatibility with workspaces created before the root-level layout.
+/internal/.local/
+/internal/.artifacts/
+/internal/data/
+/internal/dist/
 *.log
 *.exe
 __pycache__/

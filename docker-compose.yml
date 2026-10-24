@@ -24,14 +24,22 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       STORE: postgres
+      DATA_DIR: /var/lib/wzstudy
       HTTP_ADDR: :8080
       DATABASE_URL: postgres://wzstudy:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/wzstudy?sslmode=disable
       ADMIN_API_KEY: ${ADMIN_API_KEY:?Set ADMIN_API_KEY}
       READ_API_KEY: ${READ_API_KEY:?Set READ_API_KEY}
+      SYSTEM_ADMIN_EMAIL: ${SYSTEM_ADMIN_EMAIL:-}
+      SYSTEM_ADMIN_PASSWORD: ${SYSTEM_ADMIN_PASSWORD:-}
+      SYSTEM_ADMIN_DISPLAY_NAME: ${SYSTEM_ADMIN_DISPLAY_NAME:-}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       POLL_ENABLED: ${POLL_ENABLED:-true}
       SSE_MAX_CLIENTS: ${SSE_MAX_CLIENTS:-128}
     command: ["/bin/sh", "-c", "/app/migrate && exec /app/api"]
+    volumes:
+      - api_data:/var/lib/wzstudy
     ports:
       - "127.0.0.1:${API_PORT:-8091}:8080"
     healthcheck:
@@ -43,3 +51,4 @@ services:
     stop_grace_period: 15s
 volumes:
   postgres_data:
+  api_data:

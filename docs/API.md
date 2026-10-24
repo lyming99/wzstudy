@@ -1,5 +1,7 @@
 # WzStudy HTTP API v1
 
+实现版本 **v0.3.0**。真实管理页面为 `/admin/`，完整管理/上传/推送补充文档为 `/docs/management`（对应 `MANAGEMENT.md`）。所有新旧业务路由均列入 `/openapi.json`。
+
 基地址：`http://127.0.0.1:8091/api/v1`（生产必须通过 HTTPS 代理）。
 
 成功：`{"data": ...}`。错误：`{"error":{"code":"conflict","message":"..."}}`。请求 ID 在 `X-Request-ID`；JSON 请求必须带 `Content-Type: application/json`。未知字段、拼接 JSON、无效 UTF-8 内容、超限和空正文均会拒绝，不接受批次内重复 external_id。
@@ -8,9 +10,10 @@
 
 `Authorization: Bearer <key>`：
 
-- `ADMIN_API_KEY`：管理/审核/读取，不能代替数据源密钥接入。
+- `ADMIN_API_KEY`：管理/审核/读取的自动化 API 凭据，不是浏览器登录密码，也不能代替数据源密钥接入。
+- 管理页面使用系统管理员邮箱与密码，见 `ADMIN_AUTH.md`；登录提交 `email/password`，建立 HttpOnly 会话。
 - `READ_API_KEY`：读取已发布内容、changes 和 stream，不可读取草稿或管理。
-- `wzsk_...`：创建数据源/重置密钥时返回一次，只可调用该源 `/ingest/{id}`。
+- `wzsk_...`：创建数据源/重置密钥时返回一次，可调用该源 `/ingest/{id}`、`/ingest/{id}/files` 与 `/clients/{id}/inbox`。
 
 源密钥在同一接入事务内校验；轮换后旧 Key 无法晚提交。管理员/读取密钥由环境变量管理，修改后需重启服务。不要放入 URL 或日志。
 
@@ -49,7 +52,7 @@
 - 修改配置会撤销正在进行的采集结果；修改 URL 同时清除旧 ETag/Last-Modified。
 - `POST /admin/sources/{id}/key`：正文 `{"revision":1}`；返回新 source 和一次性的 access_key，旧 Key 立即失效。
 - `POST /admin/sources/{id}/refresh`：无请求体，立即采集，成功返回接入计数。最长约 25 秒；正在采集返回 409；不安全目标/网络/格式错误返回 502，并记录通用 last_error。
-- enabled=false 仅停止接入/采集，不影响已有线上快照；没有隐式级联删除接口。
+- enabled=false 停止接入、采集与该来源收件箱读取，不影响已有线上快照；没有隐式级联删除接口。
 
 读取端 `GET /sources` 仅返回 id、slug、name、description、category、language，不暴露上游 URL、状态错误或密钥设置。
 
