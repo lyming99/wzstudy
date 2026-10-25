@@ -87,6 +87,11 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 		failure(w, 401, "unauthorized", "需要数据源专属 Bearer 密钥")
 		return
 	}
+	// Reject revoked/unauthorized clients before decoding a potentially large body.
+	if _, e := s.service.AuthorizeSource(r.Context(), chi.URLParam(r, "id"), key, study.PermissionIngest); e != nil {
+		s.fail(w, e)
+		return
+	}
 	var in struct {
 		Items []study.Content `json:"items"`
 	}

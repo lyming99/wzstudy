@@ -39,7 +39,7 @@ func (s *Service) CreateSource(ctx context.Context, in SourceInput) (out Source,
 		enabled = *in.Enabled
 	}
 	now := s.Now()
-	out = Source{ID: uuid.NewString(), Slug: in.Slug, Name: in.Name, Description: in.Description, Kind: in.Kind, FeedURL: in.FeedURL, Category: in.Category, Language: in.Language, Enabled: enabled, AutoPublish: in.AutoPublish, PollIntervalSeconds: in.PollIntervalSeconds, Revision: 1, CreatedAt: now, UpdatedAt: now, NextPollAt: now, KeyHash: HashKey(key)}
+	out = Source{ID: uuid.NewString(), Slug: in.Slug, Name: in.Name, Description: in.Description, Kind: in.Kind, FeedURL: in.FeedURL, Category: in.Category, Language: in.Language, Enabled: enabled, AutoPublish: in.AutoPublish, Permissions: in.Permissions, PollIntervalSeconds: in.PollIntervalSeconds, Revision: 1, CreatedAt: now, UpdatedAt: now, NextPollAt: now, KeyHash: HashKey(key)}
 	err = s.Store.Update(ctx, func(tx Tx) error { return tx.SaveSource(out) })
 	if err != nil {
 		key = ""
@@ -78,6 +78,11 @@ func (s *Service) UpdateSource(ctx context.Context, id string, rev int64, in Sou
 			old.Enabled = *in.Enabled
 		}
 		old.AutoPublish = in.AutoPublish
+		// Older clients omit this field on updates. Preserve an explicit policy;
+		// only an explicit [] revokes every capability.
+		if in.Permissions != nil {
+			old.Permissions = in.Permissions
+		}
 		old.PollIntervalSeconds = in.PollIntervalSeconds
 		old.PollToken = ""
 		old.PollUntil = time.Time{}
@@ -120,15 +125,9 @@ func (s *Service) RotateKey(ctx context.Context, id string, rev int64) (out Sour
 
 func (s *Service) Ingest(ctx context.Context, id, key string, inputs []Content) (out IngestResult, err error) {
 	err = s.Store.Update(ctx, func(tx Tx) error {
-		source, e := tx.Source(id)
+		source, e := sourceAccess(tx, id, key, PermissionIngest)
 		if e != nil {
-			return ErrUnauthorized
-		}
-		if source.System || !EqualKey(source.KeyHash, key) {
-			return ErrUnauthorized
-		}
-		if !source.Enabled {
-			return ErrDisabled
+			return e
 		}
 		out, e = s.ingest(tx, source, inputs)
 		return e

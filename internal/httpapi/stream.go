@@ -54,6 +54,12 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	defer expiry.Stop()
 	firstPage := true
 	for {
+		// Existing streams must observe permission edits, disabling and key
+		// rotation too; do not keep a cached credential valid for 30 minutes.
+		if err = s.readAccess(r, "sync"); err != nil {
+			_ = write("error", after, map[string]string{"code": "access_revoked"})
+			return
+		}
 		select {
 		case <-r.Context().Done():
 			return

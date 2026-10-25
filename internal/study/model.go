@@ -22,6 +22,7 @@ var (
 	ErrConflict     = errors.New("revision_conflict")
 	ErrUnauthorized = errors.New("invalid_source_key")
 	ErrDisabled     = errors.New("source_disabled")
+	ErrForbidden    = errors.New("permission_denied")
 	ErrBusy         = errors.New("source_busy")
 	ErrInvalid      = errors.New("invalid_input")
 )
@@ -38,6 +39,7 @@ type Source struct {
 	Language            string     `json:"language"`
 	Enabled             bool       `json:"enabled"`
 	AutoPublish         bool       `json:"auto_publish"`
+	Permissions         []string   `json:"permissions"`
 	PollIntervalSeconds int        `json:"poll_interval_seconds"`
 	Revision            int64      `json:"revision"`
 	CreatedAt           time.Time  `json:"created_at"`
@@ -54,16 +56,17 @@ type Source struct {
 }
 
 type SourceInput struct {
-	Slug                string `json:"slug"`
-	Name                string `json:"name"`
-	Description         string `json:"description"`
-	Kind                string `json:"kind"`
-	FeedURL             string `json:"feed_url"`
-	Category            string `json:"category"`
-	Language            string `json:"language"`
-	Enabled             *bool  `json:"enabled,omitempty"`
-	AutoPublish         bool   `json:"auto_publish"`
-	PollIntervalSeconds int    `json:"poll_interval_seconds"`
+	Slug                string   `json:"slug"`
+	Name                string   `json:"name"`
+	Description         string   `json:"description"`
+	Kind                string   `json:"kind"`
+	FeedURL             string   `json:"feed_url"`
+	Category            string   `json:"category"`
+	Language            string   `json:"language"`
+	Enabled             *bool    `json:"enabled,omitempty"`
+	AutoPublish         bool     `json:"auto_publish"`
+	Permissions         []string `json:"permissions"`
+	PollIntervalSeconds int      `json:"poll_interval_seconds"`
 }
 
 type Content struct {
@@ -225,6 +228,11 @@ func normalizeSource(in SourceInput) (SourceInput, error) {
 	if in.Kind == "manual" && in.FeedURL != "" {
 		return in, ErrInvalid
 	}
+	permissions, err := normalizePermissions(in.Permissions)
+	if err != nil || (in.Kind != "manual" && permissions != nil) {
+		return in, ErrInvalid
+	}
+	in.Permissions = permissions
 	return in, nil
 }
 

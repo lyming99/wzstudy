@@ -325,13 +325,8 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	admin := chi.URLParam(r, "id") == ""
 	sourceID := chi.URLParam(r, "id")
 	if !admin {
-		source, e := s.service.Source(r.Context(), sourceID)
-		if e != nil || source.System || !study.EqualKey(source.KeyHash, bearer(r)) {
-			s.fail(w, study.ErrUnauthorized)
-			return
-		}
-		if !source.Enabled {
-			s.fail(w, study.ErrDisabled)
+		if _, e := s.service.AuthorizeSource(r.Context(), sourceID, bearer(r), study.PermissionIngest, study.PermissionUpload); e != nil {
+			s.fail(w, e)
 			return
 		}
 	}
@@ -405,7 +400,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func retainUploadOnUncertainCommit(err error) bool {
-	for _, known := range []error{study.ErrInvalid, study.ErrConflict, study.ErrUnauthorized, study.ErrDisabled, study.ErrNotFound, study.ErrBusy} {
+	for _, known := range []error{study.ErrInvalid, study.ErrConflict, study.ErrUnauthorized, study.ErrDisabled, study.ErrForbidden, study.ErrNotFound, study.ErrBusy} {
 		if errors.Is(err, known) {
 			return false
 		}

@@ -116,9 +116,9 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 			r.Get("/sources", s.publicSources)
 			r.Get("/items", s.publicItems)
 			r.Get("/items/{id}", s.publicItem)
-			r.Get("/changes", s.changes)
-			r.Get("/stream", s.stream)
 		})
+		r.With(s.requirePermission(study.PermissionSync)).Get("/changes", s.changes)
+		r.With(s.requirePermission(study.PermissionSync)).Get("/stream", s.stream)
 		r.Post("/auth/login", s.login)
 		r.With(s.require(true)).Get("/auth/session", s.session)
 		r.With(s.require(true)).Post("/auth/logout", s.logout)
@@ -175,7 +175,9 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 	case errors.Is(err, study.ErrConflict):
 		failure(w, 409, "conflict", "版本冲突或记录已被修改，请刷新后重试")
 	case errors.Is(err, study.ErrDisabled):
-		failure(w, 403, "source_disabled", "数据源已停用接入")
+		failure(w, 403, "source_disabled", "客户端或数据源已停用接入")
+	case errors.Is(err, study.ErrForbidden):
+		failure(w, 403, "permission_denied", "当前客户端未获授此操作权限，请联系管理员")
 	case errors.Is(err, study.ErrBusy):
 		failure(w, 409, "source_busy", "该数据源正在采集或尚未到采集时间")
 	case errors.Is(err, context.DeadlineExceeded):
@@ -245,13 +247,13 @@ func bearer(r *http.Request) string {
 	return key
 }
 func (s *Server) require(admin bool) func(http.Handler) http.Handler {
+	if !admin {
+		return s.requirePermission(study.PermissionRead)
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			key := bearer(r)
 			valid := s.isAdmin(r)
-			if !admin {
-				valid = valid || study.EqualKey(study.HashKey(s.cfg.ReadKey), key)
-			}
 			if !valid {
 				w.Header().Set("WWW-Authenticate", "Bearer")
 				failure(w, 401, "unauthorized", "需要有效的访问密钥")

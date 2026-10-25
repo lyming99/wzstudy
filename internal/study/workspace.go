@@ -277,12 +277,9 @@ func (s *Service) SaveManaged(ctx context.Context, id string, in ManagedInput, a
 }
 func (s *Service) IngestAssets(ctx context.Context, id, key string, c Content, assets []Asset) (out IngestResult, err error) {
 	err = s.Store.Update(ctx, func(tx Tx) error {
-		source, e := tx.Source(id)
-		if e != nil || source.System || !EqualKey(source.KeyHash, key) {
-			return ErrUnauthorized
-		}
-		if !source.Enabled {
-			return ErrDisabled
+		source, e := sourceAccess(tx, id, key, PermissionIngest, PermissionUpload)
+		if e != nil {
+			return e
 		}
 		if e = registerAssets(tx, assets, id); e != nil {
 			return e
@@ -552,7 +549,7 @@ func validateTargets(tx Tx, ids []string) error {
 	}
 	for _, id := range ids {
 		v, e := tx.Source(id)
-		if e != nil || v.Kind != "manual" || v.System || !v.Enabled || seen[id] {
+		if e != nil || v.Kind != "manual" || v.System || !v.Enabled || !v.Allows(PermissionInbox) || seen[id] {
 			return ErrInvalid
 		}
 		seen[id] = true
@@ -631,7 +628,7 @@ func (s *Service) deliver(tx Tx, p *PushPlan) error {
 			return e
 		}
 		for _, v := range sources {
-			if v.Kind == "manual" && !v.System && v.Enabled {
+			if v.Kind == "manual" && !v.System && v.Enabled && v.Allows(PermissionInbox) {
 				targets = append(targets, v.ID)
 			}
 		}
@@ -728,12 +725,12 @@ func (s *Service) Inbox(ctx context.Context, id, key string, after int64, limit 
 		return out, ErrInvalid
 	}
 	err = s.Store.View(ctx, func(tx Tx) error {
-		source, e := tx.Source(id)
-		if e != nil || source.System || source.Kind != "manual" || !EqualKey(source.KeyHash, key) {
-			return ErrUnauthorized
+		source, e := sourceAccess(tx, id, key, PermissionInbox)
+		if e != nil {
+			return e
 		}
-		if !source.Enabled {
-			return ErrDisabled
+		if source.Kind != "manual" {
+			return ErrUnauthorized
 		}
 		window, e := tx.Changes(after, limit, nil)
 		if e != nil {

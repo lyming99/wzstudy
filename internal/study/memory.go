@@ -46,7 +46,7 @@ func (s *MemoryStore) Update(ctx context.Context, fn func(Tx) error) error {
 		copyState.records[k] = append(json.RawMessage(nil), v...)
 	}
 	for k, v := range s.state.sources {
-		copyState.sources[k] = v
+		copyState.sources[k] = cloneSource(v)
 	}
 	for k, v := range s.state.items {
 		copyState.items[k] = cloneItem(v)
@@ -66,7 +66,7 @@ type memoryTx struct{ state *memoryState }
 func (t *memoryTx) Sources() ([]Source, error) {
 	out := make([]Source, 0, len(t.state.sources))
 	for _, v := range t.state.sources {
-		out = append(out, v)
+		out = append(out, cloneSource(v))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Slug < out[j].Slug })
 	return out, nil
@@ -76,7 +76,7 @@ func (t *memoryTx) Source(id string) (Source, error) {
 	if !ok {
 		return v, ErrNotFound
 	}
-	return v, nil
+	return cloneSource(v), nil
 }
 func (t *memoryTx) SaveSource(v Source) error {
 	for _, s := range t.state.sources {
@@ -84,7 +84,7 @@ func (t *memoryTx) SaveSource(v Source) error {
 			return ErrConflict
 		}
 	}
-	t.state.sources[v.ID] = v
+	t.state.sources[v.ID] = cloneSource(v)
 	return nil
 }
 func (t *memoryTx) Item(id string) (Item, error) {
