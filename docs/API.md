@@ -1,6 +1,6 @@
 # WzStudy HTTP API v1
 
-实现版本 **v0.3.0**。真实管理页面为 `/admin/`，完整管理/上传/推送补充文档为 `/docs/management`（对应 `MANAGEMENT.md`）。所有新旧业务路由均列入 `/openapi.json`。
+实现版本 **v0.3.0**。真实管理页面为 `/admin/`，完整管理/上传/客户端查询补充文档为 `/docs/management`（对应 `MANAGEMENT.md`）。所有新旧业务路由均列入 `/openapi.json`。
 
 基地址：`http://127.0.0.1:8091/api/v1`（生产必须通过 HTTPS 代理）。
 
@@ -12,10 +12,11 @@
 
 - `ADMIN_API_KEY`：管理/审核/读取的自动化 API 凭据，不是浏览器登录密码，也不能代替数据源密钥接入。
 - 管理页面使用系统管理员邮箱与密码，见 `ADMIN_AUTH.md`；登录提交 `email/password`，建立 HttpOnly 会话。
-- `READ_API_KEY`：读取已发布内容、changes 和 stream，不可读取草稿或管理。
-- `wzsk_...`：创建数据源/重置密钥时返回一次，可调用该源 `/ingest/{id}`、`/ingest/{id}/files` 与 `/clients/{id}/inbox`。
+- `READ_API_KEY`：旧版全局只读兼容凭据，读取已发布内容、changes，不可读取草稿或管理；新客户端无需分发它。
+- `wzsk_...`：录入端 Source 的独立 Key，只允许自己的 ingest/upload，不能查询资料。
+- `wzck_...`：查询客户端 Client 的独立 Key，允许 read/sync，以及显式授予的 feedback；不能资料入库、上传或管理。旧 Key 显式迁移后可保留原前缀，授权依据独立身份记录。
 
-源密钥在同一接入事务内校验；轮换后旧 Key 无法晚提交。管理员/读取密钥由环境变量管理，修改后需重启服务。不要放入 URL 或日志。
+客户端 Key 和权限由管理员配置并持久保存，无需为每个录入端或查询端修改环境变量。写入在同一事务内复查 Key、启用状态和权限；轮换后旧 Key 无法晚提交。后续查询和增量拉取立即按最新权限校验。管理员 API 凭据/旧版全局只读凭据仍由启动配置维护。不要将任何 Key 放入 URL 或日志。
 
 ## 2. 数据源
 
@@ -32,15 +33,18 @@
   "language": "zh-CN",
   "enabled": true,
   "auto_publish": false,
+  "permissions": ["ingest", "upload"],
   "poll_interval_seconds": 900
 }
 ```
 
 - slug：1–64 字符，小写字母/数字/连字符，首字符为字母或数字，唯一。
 - name：非空，最多 200 UTF-8 字节；description 最多 4000 字节。
+- integration：manual 录入来源可标记 `collector/skill/mcp`，创建缺省为 collector、更新省略保留；不影响权限。
 - kind：`manual`（默认）或 `rss`；`rss` 可读取 RSS 2.0 / Atom，必须给出公开 HTTP(S) feed_url；manual 必须为空。
 - language 默认 `zh-CN`；enabled 默认 true；auto_publish 默认 false；采集间隔默认 900，范围 60–86400 秒。
 - auto_publish 为 true 时，接入新内容/修改内容直接更新公开快照并产生事件；应仅给可信来源开启。
+- manual 录入端的 `permissions` 只接受 `ingest/upload` 且不允许重复；`[]` 撤销全部。创建时省略/null 保留旧默认 `ingest + upload`，不会自动授予阅读/同步；查询客户端单独通过 `/admin/clients` 创建，不复用 Source。RSS 不能设置客户端权限。
 
 返回 201：`{"data":{"source":{"id":"...","revision":1,...},"access_key":"wzsk_..."}}`。
 
@@ -48,15 +52,36 @@
 
 - `GET /admin/sources`：所有源配置及采集状态，不返回 Key/hash、ETag 或采集租约。
 - `GET /admin/sources/{id}`：单源详情。
-- `PUT /admin/sources/{id}`：完整替换可编辑字段，正文为创建字段加 `revision`。slug/kind 必须与原值相同，其他遗漏字段会恢复默认/清空（enabled 未给出则保留），不要作为 PATCH 使用。
+- `PUT /admin/sources/{id}`：完整替换可编辑字段，正文为创建字段加 `revision`。slug/kind 必须与原值相同，其他遗漏字段会恢复默认/清空（enabled、permissions 未给出或为 null 时保留原值；permissions=[] 明确撤销全部），不要作为 PATCH 使用。
 - 修改配置会撤销正在进行的采集结果；修改 URL 同时清除旧 ETag/Last-Modified。
 - `POST /admin/sources/{id}/key`：正文 `{"revision":1}`；返回新 source 和一次性的 access_key，旧 Key 立即失效。
 - `POST /admin/sources/{id}/refresh`：无请求体，立即采集，成功返回接入计数。最长约 25 秒；正在采集返回 409；不安全目标/网络/格式错误返回 502，并记录通用 last_error。
-- enabled=false 停止接入、采集与该来源收件箱读取，不影响已有线上快照；没有隐式级联删除接口。
+- 录入端 enabled=false 停止该 Key 的入库、上传及来源采集，不影响其他客户端读取已有线上快照；没有隐式级联删除接口。
 
 读取端 `GET /sources` 仅返回 id、slug、name、description、category、language，不暴露上游 URL、状态错误或密钥设置。
 
+### 查询客户端与身份迁移
+
+查询客户端是独立 Client，不再是 manual Source 的权限组合：
+
+```text
+GET/POST /admin/clients
+GET/PUT  /admin/clients/{id}
+POST     /admin/clients/{id}/key
+GET/POST /admin/identity-migration
+```
+
+创建请求为 `{"slug":"desktop-query","name":"桌面学习端","permissions":["read","sync"]}`，可带 description/enabled；返回 `{"data":{"client":{...},"access_key":"<仅本次返回>"}}`。权限可配置 read/sync/feedback，反馈必须显式授予，创建省略/null 默认两项，更新省略/null 保留、[] 撤销全部。PUT 和轮换需要最新 revision，客户端不能管理其他身份。
+
+来源增加 integration（collector/skill/mcp；RSS 固定 rss），仅作接入标记。来源不接受 read/sync，客户端不接受 ingest/upload/inbox。待拆分旧来源的普通编辑/轮换返回 409，应先预检并显式迁移，避免丢失旧 Key 归属。
+
+迁移不会由启动或 GET 自动执行；纯查询 Key 仅迁入 Client，混合 Key 必须明确选择保留给 ingest 或 query，另一侧生成新 Key。全部选择与修订校验成功后原子保存，不修改资料、附件或内容游标。请求及回退说明见 `MANAGEMENT.md`。
+
 ## 3. 手动批量接入
+
+### `GET /ingest/{id}/status`
+
+来源专属 Bearer Key 的只读连通检查，要求来源已启用、类型为 `manual` 且具备 `ingest` 权限；不需要 `read`、`sync`、`upload`。仅返回自己的 `source_id`、`enabled`、`auto_publish` 与有效 `permissions`，不返回密钥、资料、其他来源或收件箱，不写入资料、游标或来源配置。Key / 来源不匹配为 401，停用或无入库权限为 403，RSS 来源不支持此客户端入库检查。供 AI Skill `doctor` 使用。
 
 ### `POST /ingest/{source_id}`
 
@@ -107,6 +132,14 @@
 
 草稿更新保留旧 published 快照。批次遗漏的内容不删除。源 Key 不能通过传入其他 source_id 越权。
 
+### 成功入库回执
+
+响应新增 `receipt_id/source_id/received_at`，保留 created/updated/unchanged/published/items；每项资料返回真实 ID、revision 与状态。回执与资料同事务保存，相同内容重放不增加资料 revision，但可以产生新的成功请求回执。
+
+`GET /admin/intakes?limit=20&offset=0&source_id=<可选UUID>` 仅管理员可读，返回 items/total/limit/offset。limit 1–100、offset 0–10000，按接收时间倒序；不包含资料标题、正文或 Key，不伪造失败/历史批次。回执公开状态是提交时快照。
+
+采集程序、Skill 与 MCP 均调用同一录入服务；MCP 的具体协议、文件授权和运行方式见 `mcp/wzstudy_ingest/README.md`。录入成功不等于已公开，也不会向学习客户端分发。
+
 ## 4. 审核、发布和下架
 
 - `GET /admin/items`：管理列表，内容包括 draft 和可选 published 快照。
@@ -122,6 +155,7 @@
 
 `GET /items` 仅返回公开快照。查询参数：
 
+- `kind`：`article/audio/video/carousel`，未传则全部。
 - `source_id`：可选，最多 20 个 UUID，逗号分隔。
 - `category`、`tag`：精确匹配。
 - `q`：标题/摘要子串，大小写不敏感，最多 200 字节。
@@ -164,38 +198,32 @@ PublicItem 字段为 `id`、`source_id`、`revision`、全部 Content 字段、`
 - 日志当前没有自动过期，删除墓碑永久保留。
 - 日志只同步内容的公开快照；来源名称等元信息变更请重新读取 `GET /sources`，不属于内容变更事件。
 
-## 7. SSE 实时流
+## 7. 客户端查询与推荐
 
-### `GET /stream?after=0&source_id=<可选UUID列表>`
+服务端只提供已发布资料及变更查询，不主动向客户端分发数据，也不计算个性化推荐。客户端结合学习记录、兴趣标签与自己的学习算法，主动选择候选资料或在本地缓存中排序。
 
-需要读取/管理 Bearer Key。返回 `text/event-stream`，禁止反向代理缓冲。`Last-Event-ID` 请求头存在时优先于 after（用于重连）。
+- 浏览候选：`GET /items?kind=video&category=人工智能&tag=AI&limit=20&offset=0`；各过滤条件取交集，可按实际需要省略。
+- 阅读详情：`GET /items/{id}`，媒体地址由 `assets` 返回，媒体读取仍需 `read` 权限。
+- 更新本地缓存：用 `sync` 权限定期调用 `/changes?after=<已提交游标>`，按 `has_more` 补齐后再按客户端策略等待下一次拉取。
+- 学习端默认权限为 `read + sync`；不需要接收推送权限。推荐算法与个性化排序属于客户端；学习反馈/进度可按显式授权上报，用于候选排除。
+- 示例 `examples/subscribe.py` 已改为 HTTP 主动轮询，SQLite 在同一事务中保存资料变更和游标；保留旧文件名以兼容已有运行方式。
 
-```text
-retry: 3000
-
-id: 1
-event: change
-data: {"cursor":1,"operation":"upsert","item_id":"...","source_id":"...","revision":2,"item":{...}}
-
-id: 2
-event: checkpoint
-data: {"cursor":2}
-
-: heartbeat
-
-```
-
-- change：完整的持久化事件；处理成功后再保存 id。
-- checkpoint：过滤扫描进度，没有匹配事件也需保存 id。
-- error：存储读取失败，关闭并重连；不是需要写入本地业务数据的事件。
-- 心跳注释不修改游标；每约 10 秒发送，空闲连接仍保活。
-- 断线后带最后**已成功落盘**的 id 重连；可能重复投递，不保证恰好一次。
-- 单连接约 30 分钟后关闭，客户端应重连；单实例连接上限默认 128，满时 503。
-
-可运行客户端见 `examples/subscribe.py`，其 SQLite 事务同时提交数据和游标。
+旧的推送计划、收件箱、SSE 及专题管理路由已移除并返回 404。历史资料、附件和变更游标保留，不清空客户端缓存；旧工作空间的推送/专题记录不再读取或执行；遗留 `inbox` 授权被忽略且不会转换为阅读权限。旧查询或混合 Source 须显式迁入 Client 后才能用原 Key 查询。
 
 ## 8. 错误码
 
-400 invalid_request/invalid_json；401 unauthorized；403 source_disabled/origin_denied；404 not_found；405 method_not_allowed；409 conflict/source_busy；413 payload_too_large；415 unsupported_media_type；500 internal_error；502 feed_fetch_failed；503 not_ready/stream_limit/polling_unavailable；504 timeout。
+400 invalid_request/invalid_json；401 unauthorized；403 permission_denied/source_disabled/origin_denied；404 not_found；405 method_not_allowed；409 conflict/source_busy；413 payload_too_large；415 unsupported_media_type；500 internal_error；502 feed_fetch_failed；503 not_ready/polling_unavailable；504 timeout。
 
 超时/断线不能证明服务端没有提交。接入依赖 external_id+内容哈希重试；管理更新先刷新 revision，不要盲目重放旧 revision。
+
+
+## 查询客户端扫码身份校验
+
+`GET /client/connection` 只接受独立查询客户端 Bearer Key，需要 read 或 sync 中至少一项。它不读取 Cookie、不接受管理员/全局只读/录入 Key，也不会轮换或创建身份。成功返回 `{data:{type:"wzstudy.query_client",version:1,client_id,name,permissions}}`，失败 401/403，不包含任何 Key 或哈希，禁止缓存。
+
+管理端二维码直接携带 UTF-8 JSON 的 type/version/base_url/client_id/name/access_key（v1 严格六字段、最大 1200 字节）。扫码端确认目标并调用上述接口，核对身份后才保存；不将 Key 放在 URL，不转发到重定向地址。完整协议和标准库解析/注册示例见 `CLIENT_QR.md` 与 `examples/client_connection.py`。
+
+
+## 客户端反馈与去重
+
+客户端可显式申请 feedback 权限，上报推荐/曝光、已读、喜欢、学习记录和收藏，按事件 ID 幂等保存。`POST /api/v1/client/feedback` 仅写本身份；`GET /api/v1/items?exclude=recommended,read` 或 `unseen=true` 可过滤旧候选，支持时间窗口和本页状态。管理员只读查看反馈或按身份模拟查询，不替用户上报。默认 read/sync 及所有旧 Key 不自动扩权。详见 `docs/CLIENT_FEEDBACK.md`（文档目录内为 `CLIENT_FEEDBACK.md`），示例为 `examples/feedback_client.py`。

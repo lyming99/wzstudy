@@ -2,6 +2,7 @@
 Never reads real credentials or starts the user's workspace. No third-party modules.
 """
 from pathlib import Path
+import ast
 import json
 import os
 import re
@@ -32,8 +33,10 @@ def free_port():
 
 required = [
     'go.mod', 'cmd/api/main.go', 'internal/adminui/embed.go',
-    'start-local.ps1', 'scripts/start-local.ps1', 'scripts/admin-environment.ps1', 'internal/start-local.ps1',
-    'scripts/start-dev.ps1', 'scripts/verify_go.py', 'scripts/verify_live.py',
+    'start-local.ps1', 'scripts/start-local.ps1', 'scripts/admin-environment.ps1',
+    'scripts/local-service-lifecycle.ps1', 'internal/start-local.ps1',
+    'scripts/start-dev.ps1', 'scripts/restart-local.ps1', 'scripts/restart-local.cmd',
+    'scripts/verify_go.py', 'scripts/verify_live.py',
     'scripts/verify_package.py', 'scripts/package_release.py',
     'docs/RUNNING.md', 'docs/PROJECT_LAYOUT.md',
     'docs/VERIFICATION.md', 'docs/VERIFICATION_MANAGEMENT.md', 'design/index.html',
@@ -64,22 +67,79 @@ for filename in ['scripts/verify_live.py', 'scripts/verify_package.py', 'scripts
     source = (ROOT / filename).read_text(encoding='utf-8')
     assert 'parents[1]' in source, filename
 check('Verification and packaging tools derive their repository root from their own location')
+package_tree = ast.parse((ROOT / 'scripts/package_release.py').read_text(encoding='utf-8'))
+package_files = next(node.value for node in package_tree.body
+                     if isinstance(node, ast.Assign)
+                     and any(isinstance(target, ast.Name) and target.id == 'files'
+                             for target in node.targets))
+package_keys = {key.value for key in package_files.keys if isinstance(key, ast.Constant)}
+launcher_files = {'start-local.ps1', 'scripts/start-local.ps1', 'scripts/admin-environment.ps1',
+                  'scripts/local-service-lifecycle.ps1', 'scripts/restart-local.ps1',
+                  'scripts/restart-local.cmd'}
+assert launcher_files <= package_keys, launcher_files - package_keys
+for key, value in zip(package_files.keys, package_files.values):
+    if isinstance(key, ast.Constant) and key.value in launcher_files:
+        assert (isinstance(value, ast.BinOp) and isinstance(value.op, ast.Div)
+                and isinstance(value.left, ast.Name) and value.left.id == 'ROOT'
+                and isinstance(value.right, ast.Constant) and value.right.value == key.value), key.value
+check('Portable archive whitelist includes every local launcher runtime dependency and restart entry point')
 
 powershell = shutil.which('powershell.exe') if os.name == 'nt' else None
 if powershell:
     paths = [ROOT / name for name in ['start-local.ps1', 'scripts/start-local.ps1',
-             'scripts/start-dev.ps1', 'scripts/init-env.ps1', 'scripts/admin-environment.ps1', 'internal/start-local.ps1']]
+             'scripts/start-dev.ps1', 'scripts/restart-local.ps1', 'scripts/init-env.ps1',
+             'scripts/admin-environment.ps1', 'scripts/local-service-lifecycle.ps1', 'internal/start-local.ps1']]
     quoted = ','.join("'" + str(p).replace("'", "''") + "'" for p in paths)
     syntax = "$ErrorActionPreference='Stop';foreach($p in @(" + quoted + ")){$t=$null;$e=$null;[void][System.Management.Automation.Language.Parser]::ParseFile($p,[ref]$t,[ref]$e);if($e.Count){throw ('PowerShell syntax error: '+$p)}}"
     subprocess.run([powershell, '-NoProfile', '-NonInteractive', '-Command', syntax],
                    check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
     check('All PowerShell entry points parse successfully')
+    lifecycle_path = str(ROOT / 'scripts/local-service-lifecycle.ps1').replace("'", "''")
+    lifecycle_checks = r'''
+$ErrorActionPreference = 'Stop'
+. '__HELPER__'
+Assert-LocalServiceExit -ExitCode 0 -ServiceAddress '127.0.0.1:1'
+Assert-LocalServiceExit -ExitCode -1 -ServiceAddress '127.0.0.1:1' -RestartRequested $true
+foreach ($case in @(
+    @{ Code = -1; Restart = $false; Expected = '0xFFFFFFFF' },
+    @{ Code = 1; Restart = $true; Expected = '0x00000001' },
+    @{ Code = -1073741510; Restart = $false; Expected = 'console interruption' }
+)) {
+    try {
+        Assert-LocalServiceExit -ExitCode $case.Code -ServiceAddress '127.0.0.1:1' -RestartRequested $case.Restart
+        throw 'Expected an error for this exit code'
+    } catch {
+        if ($_.Exception.Message -notlike ('*' + $case.Expected + '*')) { throw }
+    }
+}
+$signal = New-LocalRestartSignal -Port 65531
+$opened = $null
+try {
+    if ($signal.WaitOne(0)) { throw 'A fresh restart signal must not be set' }
+    $self = Get-Process -Id $PID
+    $name = Get-LocalRestartSignalName -LauncherProcessId $PID -LauncherStartTime $self.StartTime -Port 65531
+    $otherPort = Get-LocalRestartSignalName -LauncherProcessId $PID -LauncherStartTime $self.StartTime -Port 65530
+    $otherStart = Get-LocalRestartSignalName -LauncherProcessId $PID -LauncherStartTime ($self.StartTime.AddTicks(1)) -Port 65531
+    if ($name -eq $otherPort -or $name -eq $otherStart) { throw 'Restart signals must be scoped to port and launcher lifetime' }
+    $opened = [Threading.EventWaitHandle]::OpenExisting($name)
+    $null = $opened.Set()
+    if (-not $signal.WaitOne(0)) { throw 'Expected explicit restart acknowledgement' }
+} finally {
+    if ($null -ne $opened) { $opened.Dispose() }
+    $signal.Dispose()
+}
+'''.replace('__HELPER__', lifecycle_path)
+    subprocess.run([powershell, '-NoProfile', '-NonInteractive', '-Command', lifecycle_checks],
+                   check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+    check('Only explicitly acknowledged restart exits are accepted; unknown failures remain errors and signals are isolated')
     with tempfile.TemporaryDirectory(prefix='structure-', dir=ARTIFACTS) as temp:
         project = Path(temp) / 'project with spaces'
         caller = Path(temp) / 'unrelated caller'
         project.mkdir()
         caller.mkdir()
-        for name in ['start-local.ps1', 'scripts/start-local.ps1', 'scripts/admin-environment.ps1', 'scripts/start-dev.ps1', 'internal/start-local.ps1']:
+        for name in ['start-local.ps1', 'scripts/start-local.ps1', 'scripts/admin-environment.ps1', 'scripts/local-service-lifecycle.ps1',
+                     'scripts/start-dev.ps1', 'scripts/restart-local.ps1', 'scripts/restart-local.cmd',
+                     'internal/start-local.ps1']:
             destination = project / name
             destination.parent.mkdir(exist_ok=True)
             shutil.copyfile(ROOT / name, destination)
@@ -98,12 +158,27 @@ if powershell:
         initial = run('start-local.ps1', '-Check')
         assert Path(initial['project_root']) == project
         assert Path(initial['data_directory']) == project / '.local/data'
+        assert initial['address'] == '0.0.0.0:8091'
+        restart = run('scripts/restart-local.ps1', '-Check', '-SkipBuild', '-NoEnvFile')
+        assert restart['data_directory'] == initial['data_directory']
+        assert restart['address'] == initial['address']
+        assert Path(restart['executable']) == project / 'dist/wzstudy-v0.3.0-windows-amd64.exe'
+        batch = subprocess.run(['cmd.exe', '/d', '/c', str(project / 'scripts/restart-local.cmd'), '-Check'],
+                               cwd=caller, capture_output=True, encoding='utf-8', errors='replace', timeout=30)
+        assert batch.returncode == 0, batch.stderr[-1500:]
+        assert json.loads(batch.stdout.lstrip('\ufeff'))['data_directory'] == initial['data_directory']
         assert not (project / '.local').exists()
-        check('Root launcher works from an unrelated cwd and a path containing spaces; -Check is read-only')
+        check('Root and restart launchers (including double-click wrapper) support unrelated cwd, spaces and read-only -Check')
 
-        for entry in ['scripts/start-local.ps1', 'scripts/start-dev.ps1', 'internal/start-local.ps1']:
-            assert run(entry, '-Check')['data_directory'] == initial['data_directory']
-        check('Root, scripts, development-default and legacy launchers choose the same durable workspace')
+        entries = ['start-local.ps1', 'scripts/start-local.ps1', 'scripts/start-dev.ps1',
+                   'scripts/restart-local.ps1', 'internal/start-local.ps1']
+        for entry in entries:
+            config = run(entry, '-Check')
+            assert config['data_directory'] == initial['data_directory']
+            assert config['address'] == '0.0.0.0:8091', entry
+            for address in ['127.0.0.1:8092', '192.0.2.10:8092']:
+                assert run(entry, '-Check', '-Address', address)['address'] == address, entry
+        check('All launchers share the durable workspace and default LAN listener; explicit loopback/IP addresses are preserved')
 
         modern = run('start-local.ps1', '-Check', '-DataDirectory', 'custom data')
         legacy = run('internal/start-local.ps1', '-Check', '-DataDirectory', 'custom data')
@@ -130,6 +205,10 @@ if powershell:
         pg = run('scripts/start-dev.ps1', '-Postgres', '-Check')
         memory = run('scripts/start-dev.ps1', '-Memory', '-Check')
         assert pg['store'] == 'postgres' and memory['store'] == 'memory'
+        assert pg['address'] == memory['address'] == '0.0.0.0:8091'
+        for mode in ['-Postgres', '-Memory']:
+            assert run('scripts/start-dev.ps1', mode, '-Address', '127.0.0.1:8092',
+                       '-Check')['address'] == '127.0.0.1:8092'
         run('scripts/start-dev.ps1', '-Memory', '-Postgres', '-Check', fail=True)
         check('PostgreSQL and memory are explicit, mutually exclusive modes; diagnostics do not load .env')
 
@@ -151,6 +230,26 @@ if powershell:
                          '-ProfileDirectory', str(old_profile), '-SkipBuild', fail=True)
             assert 'already in use' in result.stderr
         check('Occupied ports are rejected before building, reading keys or starting another service')
+
+        # Only a leaf marker is needed: the foreign listener must be refused before launch.
+        packaged = project / 'dist/wzstudy-v0.3.0-windows-amd64.exe'
+        packaged.parent.mkdir()
+        packaged.write_bytes(b'synthetic executable marker; never run')
+        foreign = subprocess.Popen([sys.executable, '-c',
+            "import socket,time; s=socket.socket(); s.bind(('127.0.0.1',0)); s.listen(); "
+            "print(s.getsockname()[1],flush=True); time.sleep(60)"], stdout=subprocess.PIPE, text=True)
+        try:
+            port = int(foreign.stdout.readline().strip())
+            result = run('scripts/restart-local.ps1', '-Address', f'127.0.0.1:{port}',
+                         '-ProfileDirectory', str(old_profile), '-SkipBuild', fail=True)
+            assert 'not a recognized executable' in result.stderr, result.stderr[-1500:]
+            assert foreign.poll() is None
+        finally:
+            foreign.terminate()
+            foreign.wait(timeout=10)
+            foreign.stdout.close()
+        check('Restart refuses an unrelated port owner without stopping it or reading fixture keys')
+
         # This fixture .env is synthetic; never read the real project's .env.
         (project / '.env').write_text('SYSTEM_ADMIN_EMAIL=file@example.test\nSYSTEM_ADMIN_PASSWORD="  file-password  "\nSYSTEM_ADMIN_DISPLAY_NAME=File admin\n', encoding='utf-8')
         def resolve_admin(extra, no_file=False):

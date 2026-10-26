@@ -34,6 +34,8 @@ type Source struct {
 	Name                string     `json:"name"`
 	Description         string     `json:"description"`
 	Kind                string     `json:"kind"`
+	Integration         string     `json:"integration"`
+	MigratedClientID    string     `json:"migrated_client_id,omitempty"`
 	FeedURL             string     `json:"feed_url,omitempty"`
 	Category            string     `json:"category"`
 	Language            string     `json:"language"`
@@ -60,6 +62,7 @@ type SourceInput struct {
 	Name                string   `json:"name"`
 	Description         string   `json:"description"`
 	Kind                string   `json:"kind"`
+	Integration         string   `json:"integration"`
 	FeedURL             string   `json:"feed_url"`
 	Category            string   `json:"category"`
 	Language            string   `json:"language"`
@@ -127,24 +130,30 @@ type ChangePage struct {
 }
 
 type Filter struct {
-	Kind      string
-	Status    string
-	Ascending bool
-	SourceIDs []string
-	Category  string
-	Tag       string
-	Query     string
-	Limit     int
-	Offset    int
-	Admin     bool
+	FeedbackClientID string
+	FeedbackExclude  []string
+	FeedbackSince    *time.Time
+	Kind             string
+	Status           string
+	Ascending        bool
+	SourceIDs        []string
+	Category         string
+	Tag              string
+	Query            string
+	Limit            int
+	Offset           int
+	Admin            bool
 }
 
 type IngestResult struct {
-	Created   int    `json:"created"`
-	Updated   int    `json:"updated"`
-	Unchanged int    `json:"unchanged"`
-	Published int    `json:"published"`
-	Items     []Item `json:"items"`
+	ReceiptID  string    `json:"receipt_id"`
+	SourceID   string    `json:"source_id"`
+	ReceivedAt time.Time `json:"received_at"`
+	Created    int       `json:"created"`
+	Updated    int       `json:"updated"`
+	Unchanged  int       `json:"unchanged"`
+	Published  int       `json:"published"`
+	Items      []Item    `json:"items"`
 }
 
 // Tx is a repeatable-read snapshot (View) or a serialized write transaction (Update).
@@ -226,6 +235,14 @@ func normalizeSource(in SourceInput) (SourceInput, error) {
 		return in, ErrInvalid
 	}
 	if in.Kind == "manual" && in.FeedURL != "" {
+		return in, ErrInvalid
+	}
+	if in.Kind == "rss" {
+		if in.Integration != "" && in.Integration != "rss" {
+			return in, ErrInvalid
+		}
+		in.Integration = "rss"
+	} else if in.Integration != "" && in.Integration != "collector" && in.Integration != "skill" && in.Integration != "mcp" {
 		return in, ErrInvalid
 	}
 	permissions, err := normalizePermissions(in.Permissions)

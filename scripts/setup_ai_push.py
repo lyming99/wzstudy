@@ -70,8 +70,9 @@ def setup(base_url, config, admin_key_file=None, admin_key_env=None, slug='ai-co
             raise PushError('source_exists', 'Source slug already exists. It was not changed or rotated; recover its existing config or ask an administrator to rotate it explicitly.')
         result = admin.request('/admin/sources', 'POST', encode({
             'slug': slug, 'name': name.strip(), 'description': 'AI 采集资料的独立入库来源；默认提交审核，不自动发布。',
-            'kind': 'manual', 'feed_url': '', 'category': 'AI 采集', 'language': 'zh-CN',
-            'enabled': True, 'auto_publish': False, 'poll_interval_seconds': 900}))
+            'kind': 'manual', 'integration': 'skill', 'feed_url': '', 'category': 'AI 采集', 'language': 'zh-CN',
+            'enabled': True, 'auto_publish': False, 'poll_interval_seconds': 900,
+            'permissions': ['ingest', 'upload']}))
         created = True
         source = result['source']
         source_key = result['access_key']

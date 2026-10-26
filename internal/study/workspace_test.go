@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -157,7 +156,7 @@ func TestInvalidUploadMetadataRollsBackAssets(t *testing.T) {
 	}
 }
 
-func TestWorkspaceFiltersTotalsCollectionsAndSettings(t *testing.T) {
+func TestWorkspaceFiltersTotalsClientsAndSettings(t *testing.T) {
 	ctx := context.Background()
 	s := NewService(NewMemoryStore())
 	a := managedArticle(t, s, "pending", "知识积累")
@@ -183,133 +182,16 @@ func TestWorkspaceFiltersTotalsCollectionsAndSettings(t *testing.T) {
 	if _, e = s.SaveSettings(ctx, WorkspaceSettings{Name: "冲突"}); e != ErrConflict {
 		t.Fatal(e)
 	}
-	c, e := s.SaveCollection(ctx, "", Collection{Name: "学习方法", Category: "学习方法", Color: "green"})
+	c, _, e := s.CreateClient(ctx, ClientInput{Slug: "query", Name: "Query"})
 	if e != nil {
 		t.Fatal(e)
 	}
-	if e = s.DeleteCollection(ctx, c.ID, c.Revision-1); e != ErrConflict {
-		t.Fatal(e)
-	}
-	if e = s.DeleteCollection(ctx, c.ID, c.Revision); e != nil {
+	if _, e = s.UpdateClient(ctx, c.ID, c.Revision-1, ClientInput{Slug: c.Slug, Name: c.Name}); e != ErrConflict {
 		t.Fatal(e)
 	}
 	w, e = s.Workspace(ctx)
-	if e != nil || len(w.Collections) != 0 || w.Settings.Name != "小知" {
+	if e != nil || len(w.Clients) != 1 || w.Settings.Name != "小知" {
 		t.Fatal(e, w)
-	}
-}
-
-func TestPlanDispatchUsesOnlyApprovedSnapshotAndIsIdempotent(t *testing.T) {
-	ctx := context.Background()
-	s := NewService(NewMemoryStore())
-	now := time.Date(2026, 10, 23, 10, 0, 0, 0, time.UTC)
-	s.Now = func() time.Time { return now }
-	target, key := clientSource(t, s)
-	other, otherKey := clientSource(t, s)
-	v := approveManaged(t, s, managedArticle(t, s, "pending", "已审核的内容"))
-	plan, e := s.CreatePlan(ctx, PushPlan{Title: "今日学习", ItemIDs: []string{v.ID}, TargetIDs: []string{target.ID}, ScheduledAt: now.Add(time.Minute)})
-	if e != nil {
-		t.Fatal(e)
-	}
-	_, e = s.SaveManaged(ctx, v.ID, ManagedInput{Revision: v.Revision, Status: "pending", Content: Content{Title: "不能泄露的草稿", Content: "私有正文"}}, nil)
-	if e != nil {
-		t.Fatal(e)
-	}
-	if e = s.DispatchDue(ctx); e != nil {
-		t.Fatal(e)
-	}
-	early, _ := s.Inbox(ctx, target.ID, key, 0, 100)
-	if len(early.Deliveries) != 0 {
-		t.Fatal("delivered before schedule")
-	}
-	now = now.Add(2 * time.Minute)
-	var wg sync.WaitGroup
-	errs := make(chan error, 16)
-	for range 16 {
-		wg.Add(1)
-		go func() { defer wg.Done(); errs <- s.DispatchDue(ctx) }()
-	}
-	wg.Wait()
-	close(errs)
-	for e := range errs {
-		if e != nil {
-			t.Fatal(e)
-		}
-	}
-	inbox, e := s.Inbox(ctx, target.ID, key, 0, 100)
-	if e != nil || len(inbox.Deliveries) != 1 || inbox.Deliveries[0].Item.Title != "已审核的内容" || inbox.Deliveries[0].Item.Content.Content != "学习正文" {
-		t.Fatal(inbox, e)
-	}
-	none, e := s.Inbox(ctx, other.ID, otherKey, 0, 100)
-	if e != nil || len(none.Deliveries) != 0 || none.NextCursor != inbox.NextCursor {
-		t.Fatal("recipient isolation or cursor progress failed", none, e)
-	}
-	if _, e = s.Inbox(ctx, target.ID, otherKey, 0, 100); e != ErrUnauthorized {
-		t.Fatal("wrong source key accepted", e)
-	}
-	w, _ := s.Workspace(ctx)
-	if w.Plans[0].Status != "done" || w.Plans[0].Deliveries != 1 {
-		t.Fatal(w.Plans)
-	}
-	if _, e = s.PlanAction(ctx, plan.ID, w.Plans[0].Revision, "run"); e != ErrInvalid {
-		t.Fatal("completed plan executed twice", e)
-	}
-	after, _ := s.Inbox(ctx, target.ID, key, inbox.NextCursor, 100)
-	if len(after.Deliveries) != 0 {
-		t.Fatal(after)
-	}
-}
-
-func TestPlanValidationPauseResumeFailureAndDeletion(t *testing.T) {
-	ctx := context.Background()
-	s := NewService(NewMemoryStore())
-	now := s.Now()
-	s.Now = func() time.Time { return now }
-	target, _ := clientSource(t, s)
-	v := managedArticle(t, s, "draft", "草稿")
-	if _, e := s.CreatePlan(ctx, PushPlan{Title: "不能推送草稿", ItemIDs: []string{v.ID}, ScheduledAt: now.Add(time.Hour)}); e != ErrInvalid {
-		t.Fatal(e)
-	}
-	v = approveManaged(t, s, v)
-	p, e := s.CreatePlan(ctx, PushPlan{Title: "可暂停", ItemIDs: []string{v.ID}, TargetIDs: []string{target.ID}, ScheduledAt: now.Add(time.Hour)})
-	if e != nil {
-		t.Fatal(e)
-	}
-	p, e = s.PlanAction(ctx, p.ID, p.Revision, "pause")
-	if e != nil || p.Status != "paused" {
-		t.Fatal(p, e)
-	}
-	now = now.Add(2 * time.Hour)
-	if e = s.DispatchDue(ctx); e != nil {
-		t.Fatal(e)
-	}
-	w, _ := s.Workspace(ctx)
-	if w.Plans[0].Status != "paused" {
-		t.Fatal(w.Plans)
-	}
-	p, e = s.PlanAction(ctx, p.ID, p.Revision, "resume")
-	if e != nil {
-		t.Fatal(e)
-	}
-	if e = s.DeleteItem(ctx, v.ID, v.Revision); e != nil {
-		t.Fatal(e)
-	}
-	if e = s.DispatchDue(ctx); e != nil {
-		t.Fatal(e)
-	}
-	w, _ = s.Workspace(ctx)
-	if w.Plans[0].Status != "failed" || w.Plans[0].LastError == "" {
-		t.Fatal(w.Plans)
-	}
-	if _, e = s.PlanAction(ctx, p.ID, p.Revision, "delete"); e != ErrConflict {
-		t.Fatal("stale plan revision accepted", e)
-	}
-	if _, e = s.PlanAction(ctx, p.ID, w.Plans[0].Revision, "delete"); e != nil {
-		t.Fatal(e)
-	}
-	w, _ = s.Workspace(ctx)
-	if len(w.Plans) != 0 {
-		t.Fatal(w.Plans)
 	}
 }
 
@@ -322,12 +204,12 @@ func TestFileStoreDurableSecretsAndTransactionRollback(t *testing.T) {
 	}
 	s := NewService(store)
 	source, key := clientSource(t, s)
-	v := approveManaged(t, s, managedArticle(t, s, "pending", "重启后仍保留"))
+	_ = approveManaged(t, s, managedArticle(t, s, "pending", "重启后仍保留"))
 	_, e = s.SaveSettings(ctx, WorkspaceSettings{Name: "文件存储管理员"})
 	if e != nil {
 		t.Fatal(e)
 	}
-	if _, e = s.CreatePlan(ctx, PushPlan{Title: "持久计划", ItemIDs: []string{v.ID}, ScheduledAt: s.Now().Add(time.Hour)}); e != nil {
+	if _, _, e = s.CreateClient(ctx, ClientInput{Slug: "durable", Name: "持久查询客户端"}); e != nil {
 		t.Fatal(e)
 	}
 	before, e := os.ReadFile(file)
@@ -356,7 +238,7 @@ func TestFileStoreDurableSecretsAndTransactionRollback(t *testing.T) {
 	}
 	s2 := NewService(reopened)
 	w, e := s2.Workspace(ctx)
-	if e != nil || w.Summary.Total != 1 || len(w.Plans) != 1 || w.Settings.Name != "文件存储管理员" {
+	if e != nil || w.Summary.Total != 1 || len(w.Clients) != 1 || w.Settings.Name != "文件存储管理员" {
 		t.Fatal(w, e)
 	}
 	if _, e = s2.Ingest(ctx, source.ID, key, []Content{{ExternalID: "after-restart", Title: "来源凭据仍可验证"}}); e != nil {
@@ -375,7 +257,7 @@ func TestFileStoreDurableSecretsAndTransactionRollback(t *testing.T) {
 	}
 }
 
-func TestIdleSchedulerDoesNotRewriteFile(t *testing.T) {
+func TestClientPullDoesNotRewriteFile(t *testing.T) {
 	ctx := context.Background()
 	file := filepath.Join(t.TempDir(), "workspace.json")
 	store, e := OpenFileStore(file)
@@ -389,11 +271,17 @@ func TestIdleSchedulerDoesNotRewriteFile(t *testing.T) {
 		t.Fatal(e)
 	}
 	time.Sleep(15 * time.Millisecond)
-	if e = s.DispatchDue(ctx); e != nil {
+	if _, e = s.Items(ctx, Filter{Limit: 10}); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.Changes(ctx, 0, 100, nil); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.Workspace(ctx); e != nil {
 		t.Fatal(e)
 	}
 	after, _ := os.Stat(file)
 	if !before.ModTime().Equal(after.ModTime()) {
-		t.Fatal("idle scheduler rewrote file")
+		t.Fatal("client pull rewrote file")
 	}
 }

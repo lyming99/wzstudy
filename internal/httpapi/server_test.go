@@ -1,18 +1,14 @@
 package httpapi
 
 import (
-	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"wzstudy/internal/config"
 	"wzstudy/internal/study"
@@ -23,7 +19,7 @@ var readKey = strings.Repeat("r", 40)
 
 func app() (*study.Service, http.Handler) {
 	s := study.NewService(study.NewMemoryStore())
-	cfg := config.Config{Env: "test", AdminKey: adminKey, ReadKey: readKey, SSEMaxClients: 1, CORSOrigins: []string{"https://study.example"}}
+	cfg := config.Config{Env: "test", AdminKey: adminKey, ReadKey: readKey, CORSOrigins: []string{"https://study.example"}}
 	return s, New(cfg, s, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 func request(t *testing.T, h http.Handler, method, path, key string, body any) *httptest.ResponseRecorder {
@@ -201,111 +197,5 @@ func TestCORS(t *testing.T) {
 		} else if w.Code != 403 {
 			t.Fatal(w.Code)
 		}
-	}
-}
-
-type event struct {
-	name string
-	id   int64
-	data string
-}
-
-func nextEvent(t *testing.T, reader *bufio.Reader) event {
-	t.Helper()
-	var out event
-	for {
-		line, e := reader.ReadString('\n')
-		if e != nil {
-			t.Fatal(e)
-		}
-		line = strings.TrimSuffix(line, "\n")
-		if line == "" {
-			if out.name != "" {
-				return out
-			}
-			continue
-		}
-		if strings.HasPrefix(line, "event: ") {
-			out.name = strings.TrimPrefix(line, "event: ")
-		}
-		if strings.HasPrefix(line, "id: ") {
-			out.id, _ = strconv.ParseInt(strings.TrimPrefix(line, "id: "), 10, 64)
-		}
-		if strings.HasPrefix(line, "data: ") {
-			out.data = strings.TrimPrefix(line, "data: ")
-		}
-	}
-}
-func openStream(t *testing.T, server *httptest.Server, path, lastID string) (*http.Response, context.CancelFunc) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	req, _ := http.NewRequestWithContext(ctx, "GET", server.URL+path, nil)
-	req.Header.Set("Authorization", "Bearer "+readKey)
-	if lastID != "" {
-		req.Header.Set("Last-Event-ID", lastID)
-	}
-	resp, e := server.Client().Do(req)
-	if e != nil {
-		cancel()
-		t.Fatal(e)
-	}
-	return resp, cancel
-}
-func TestSSEReplayResumeAndConnectionLimit(t *testing.T) {
-	service, h := app()
-	source, key := create(t, h, true)
-	item := ingest(t, h, source.ID, key, "first")
-	server := httptest.NewServer(h)
-	defer server.Close()
-	resp, cancel := openStream(t, server, "/api/v1/stream?after=0", "")
-	reader := bufio.NewReader(resp.Body)
-	e := nextEvent(t, reader)
-	if e.name != "change" || e.id != 1 || !strings.Contains(e.data, "first") {
-		t.Fatal(e)
-	}
-	if e = nextEvent(t, reader); e.name != "checkpoint" || e.id != 1 {
-		t.Fatal(e)
-	}
-	second, stopSecond := openStream(t, server, "/api/v1/stream", "")
-	if second.StatusCode != 503 {
-		t.Fatal(second.StatusCode)
-	}
-	second.Body.Close()
-	stopSecond()
-	cancel()
-	resp.Body.Close()
-	// Wait for the server-side cancellation to release its one stream slot.
-	time.Sleep(30 * time.Millisecond)
-	_, err := service.Ingest(context.Background(), source.ID, key, []study.Content{{ExternalID: item.ExternalID, Title: "second"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp, cancel = openStream(t, server, "/api/v1/stream?after=0", "1")
-	defer cancel()
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		t.Fatal(resp.StatusCode)
-	}
-	e = nextEvent(t, bufio.NewReader(resp.Body))
-	if e.name != "change" || e.id != 2 || strings.Contains(e.data, "first") {
-		t.Fatal(e)
-	}
-}
-func TestSSEFilteredCheckpoint(t *testing.T) {
-	service, h := app()
-	source, key := create(t, h, true)
-	ingest(t, h, source.ID, key, "one")
-	other, _, e := service.CreateSource(context.Background(), study.SourceInput{Slug: "other", Name: "other"})
-	if e != nil {
-		t.Fatal(e)
-	}
-	server := httptest.NewServer(h)
-	defer server.Close()
-	resp, cancel := openStream(t, server, "/api/v1/stream?source_id="+other.ID, "")
-	defer cancel()
-	defer resp.Body.Close()
-	evt := nextEvent(t, bufio.NewReader(resp.Body))
-	if evt.name != "checkpoint" || evt.id != 1 {
-		t.Fatal(evt)
 	}
 }

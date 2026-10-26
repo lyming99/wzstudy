@@ -80,22 +80,6 @@ func run() error {
 	_ = os.Unsetenv("BOOTSTRAP_ADMIN_PASSWORD")
 	logger.Info("system administrator ready", "created", created)
 	worker := &feed.Worker{Service: service, Fetcher: feed.NewFetcher(), Logger: logger}
-	schedulerDone := make(chan struct{})
-	go func() {
-		defer close(schedulerDone)
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			if e := service.DispatchDue(ctx); e != nil && ctx.Err() == nil {
-				logger.Error("push scheduler failed")
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			}
-		}
-	}()
 	workerDone := make(chan struct{})
 	if cfg.PollEnabled {
 		go func() { defer close(workerDone); worker.Run(ctx) }()
@@ -129,11 +113,6 @@ func run() error {
 	case <-workerDone:
 	case <-shutdownCtx.Done():
 		return fmt.Errorf("worker shutdown timed out")
-	}
-	select {
-	case <-schedulerDone:
-	case <-shutdownCtx.Done():
-		return fmt.Errorf("scheduler shutdown timed out")
 	}
 	return err
 }

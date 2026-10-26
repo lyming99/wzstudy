@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Address = "127.0.0.1:8091",
+    [string]$Address = "0.0.0.0:8091",
     [string]$DataDirectory = "",
     [string]$ProfileDirectory = "",
     [switch]$InitializeAdmin,
@@ -13,6 +13,7 @@ param(
 # File storage is single-process development storage, never Internet production.
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
+. (Join-Path $PSScriptRoot 'local-service-lifecycle.ps1')
 function Resolve-ProjectPath([string]$Path) {
     if ([IO.Path]::IsPathRooted($Path)) { return [IO.Path]::GetFullPath($Path) }
     return [IO.Path]::GetFullPath((Join-Path $Root $Path))
@@ -117,7 +118,6 @@ $Variables = @{
     READ_API_KEY = $Credentials.read_api_key
     POLL_ENABLED = 'true'
     CORS_ORIGINS = ''
-    SSE_MAX_CLIENTS = '128'
     UPLOAD_MAX_MB = '200'
 }
 # Only administrator bootstrap variables are read from an optional project .env.
@@ -152,6 +152,7 @@ if ($InitializeAdmin) {
 foreach ($Name in $AdminNames) { $Variables[$Name] = $AdminEnvironment[$Name] }
 $Previous = @{}
 foreach ($Name in $Variables.Keys) { $Previous[$Name] = [Environment]::GetEnvironmentVariable($Name, 'Process') }
+$RestartSignal = $null
 Push-Location $Root
 try {
     if ($BuildFromSource) {
@@ -163,16 +164,28 @@ try {
         throw 'Go 1.25+ or the packaged Windows executable is required.'
     }
     foreach ($Name in $Variables.Keys) { [Environment]::SetEnvironmentVariable($Name, $Variables[$Name], 'Process') }
+    $BrowserAddress = $Address -replace '^0\.0\.0\.0:', '127.0.0.1:' -replace '^\[::\]:', '[::1]:' -replace '^:', '127.0.0.1:'
     Write-Host ''
-    Write-Host "Management: http://$Address/admin/" -ForegroundColor Green
+    Write-Host "Listening: $Address"
+    Write-Host "Management (this computer): http://$BrowserAddress/admin/" -ForegroundColor Green
+    if ($Address -match '^(0\.0\.0\.0:|\[::\]:|:)') {
+        Write-Host 'LAN access: use this computer''s LAN IP and the same port, not 0.0.0.0. Allow the port only on trusted networks if required by your firewall.' -ForegroundColor Yellow
+    }
     Write-Host 'Browser sign-in: administrator email and password. API keys are not login passwords.' -ForegroundColor Green
     Write-Host "Keys: $CredentialFile"
     Write-Host "Data: $DataDirectory"
     Write-Host 'Press Ctrl+C to stop. Back up the data directory and original keys together.'
+    Write-Host 'Keep this foreground terminal open. A restart from another terminal stops this instance.'
     Write-Host ''
+    if ($env:OS -eq 'Windows_NT' -and $Address -match ':(\d+)$') {
+        $RestartSignal = New-LocalRestartSignal -Port ([int]$Matches[1])
+    }
     & $Executable
-    if ($LASTEXITCODE -ne 0) { throw "The service stopped with exit code $LASTEXITCODE." }
+    $ServiceExitCode = $LASTEXITCODE
+    $RestartWasRequested = ($null -ne $RestartSignal -and $RestartSignal.WaitOne(0))
+    Assert-LocalServiceExit -ExitCode $ServiceExitCode -ServiceAddress $BrowserAddress -RestartRequested $RestartWasRequested
 } finally {
+    if ($null -ne $RestartSignal) { $RestartSignal.Dispose() }
     foreach ($Name in $Variables.Keys) { [Environment]::SetEnvironmentVariable($Name, $Previous[$Name], 'Process') }
     foreach ($Name in $AdminNames) { $AdminEnvironment[$Name] = $null; $Variables[$Name] = $null }; foreach ($Name in @($ResolvedAdmin.Keys)) { $ResolvedAdmin[$Name] = $null }
     Pop-Location

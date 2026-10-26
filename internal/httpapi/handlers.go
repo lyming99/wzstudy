@@ -81,6 +81,29 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 	}
 	success(w, 200, out)
 }
+
+// ingestStatus checks a source's own ingestion access without creating materials
+// or requiring client reading permissions.
+func (s *Server) ingestStatus(w http.ResponseWriter, r *http.Request) {
+	key := bearer(r)
+	if key == "" {
+		failure(w, 401, "unauthorized", "需要数据源专属 Bearer 密钥")
+		return
+	}
+	source, err := s.service.AuthorizeSource(r.Context(), chi.URLParam(r, "id"), key, study.PermissionIngest)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if source.Kind != "manual" {
+		s.fail(w, study.ErrInvalid)
+		return
+	}
+	success(w, 200, map[string]any{
+		"source_id": source.ID, "enabled": source.Enabled,
+		"auto_publish": source.AutoPublish, "permissions": source.EffectivePermissions(),
+	})
+}
 func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 	key := bearer(r)
 	if key == "" {
@@ -155,6 +178,15 @@ func (s *Server) publicSources(w http.ResponseWriter, r *http.Request) {
 	success(w, 200, out)
 }
 func (s *Server) publicItems(w http.ResponseWriter, r *http.Request) {
+	_, _, _, feedbackUsed, feedbackErr := feedbackQueryArgs(r)
+	if feedbackErr != nil {
+		s.fail(w, feedbackErr)
+		return
+	}
+	if feedbackUsed {
+		s.clientCandidateItems(w, r, "")
+		return
+	}
 	f, e := filter(r, false)
 	if e != nil {
 		s.fail(w, e)
@@ -183,11 +215,8 @@ func (s *Server) publicItem(w http.ResponseWriter, r *http.Request) {
 	}
 	success(w, 200, v.Published)
 }
-func changeArgs(r *http.Request, resume bool) (int64, int, []string, error) {
+func changeArgs(r *http.Request) (int64, int, []string, error) {
 	raw := r.URL.Query().Get("after")
-	if resume && r.Header.Get("Last-Event-ID") != "" {
-		raw = r.Header.Get("Last-Event-ID")
-	}
 	if raw == "" {
 		raw = "0"
 	}
@@ -203,7 +232,7 @@ func changeArgs(r *http.Request, resume bool) (int64, int, []string, error) {
 	return after, limit, ids, e
 }
 func (s *Server) changes(w http.ResponseWriter, r *http.Request) {
-	after, limit, ids, e := changeArgs(r, false)
+	after, limit, ids, e := changeArgs(r)
 	if e != nil {
 		s.fail(w, e)
 		return

@@ -18,10 +18,14 @@ func NewService(s Store) *Service {
 }
 func (s *Service) Sources(ctx context.Context) (out []Source, err error) {
 	err = s.Store.View(ctx, func(tx Tx) error { var e error; out, e = tx.Sources(); return e })
+	for i := range out {
+		out[i] = sourcePolicy(out[i])
+	}
 	return
 }
 func (s *Service) Source(ctx context.Context, id string) (out Source, err error) {
 	err = s.Store.View(ctx, func(tx Tx) error { var e error; out, e = tx.Source(id); return e })
+	out = sourcePolicy(out)
 	return
 }
 
@@ -38,8 +42,11 @@ func (s *Service) CreateSource(ctx context.Context, in SourceInput) (out Source,
 	if in.Enabled != nil {
 		enabled = *in.Enabled
 	}
+	if in.Kind == "manual" && in.Integration == "" {
+		in.Integration = "collector"
+	}
 	now := s.Now()
-	out = Source{ID: uuid.NewString(), Slug: in.Slug, Name: in.Name, Description: in.Description, Kind: in.Kind, FeedURL: in.FeedURL, Category: in.Category, Language: in.Language, Enabled: enabled, AutoPublish: in.AutoPublish, Permissions: in.Permissions, PollIntervalSeconds: in.PollIntervalSeconds, Revision: 1, CreatedAt: now, UpdatedAt: now, NextPollAt: now, KeyHash: HashKey(key)}
+	out = Source{ID: uuid.NewString(), Slug: in.Slug, Name: in.Name, Description: in.Description, Kind: in.Kind, Integration: in.Integration, FeedURL: in.FeedURL, Category: in.Category, Language: in.Language, Enabled: enabled, AutoPublish: in.AutoPublish, Permissions: in.Permissions, PollIntervalSeconds: in.PollIntervalSeconds, Revision: 1, CreatedAt: now, UpdatedAt: now, NextPollAt: now, KeyHash: HashKey(key)}
 	err = s.Store.Update(ctx, func(tx Tx) error { return tx.SaveSource(out) })
 	if err != nil {
 		key = ""
@@ -62,8 +69,14 @@ func (s *Service) UpdateSource(ctx context.Context, id string, rev int64, in Sou
 		if old.Revision != rev {
 			return ErrConflict
 		}
+		if len(legacyPolicy(old, []string{PermissionRead, PermissionSync})) > 0 {
+			return ErrConflict
+		}
 		if old.System || old.Kind != in.Kind || old.Slug != in.Slug {
 			return ErrInvalid
+		}
+		if in.Integration != "" {
+			old.Integration = in.Integration
 		}
 		old.Name = in.Name
 		old.Description = in.Description
@@ -89,7 +102,7 @@ func (s *Service) UpdateSource(ctx context.Context, id string, rev int64, in Sou
 		old.NextPollAt = s.Now()
 		old.Revision++
 		old.UpdatedAt = s.Now()
-		out = old
+		out = sourcePolicy(old)
 		return tx.SaveSource(old)
 	})
 	return
@@ -111,10 +124,13 @@ func (s *Service) RotateKey(ctx context.Context, id string, rev int64) (out Sour
 		if v.System {
 			return ErrInvalid
 		}
+		if len(legacyPolicy(v, []string{PermissionRead, PermissionSync})) > 0 {
+			return ErrConflict
+		}
 		v.KeyHash = HashKey(key)
 		v.Revision++
 		v.UpdatedAt = s.Now()
-		out = v
+		out = sourcePolicy(v)
 		return tx.SaveSource(v)
 	})
 	if err != nil {
@@ -194,6 +210,11 @@ func (s *Service) ingest(tx Tx, source Source, inputs []Content) (out IngestResu
 		}
 		out.Items = append(out.Items, old)
 	}
+	receipt, e := s.recordIntake(tx, source, out)
+	if e != nil {
+		return out, e
+	}
+	out.ReceiptID, out.SourceID, out.ReceivedAt = receipt.ID, source.ID, receipt.ReceivedAt
 	return
 }
 

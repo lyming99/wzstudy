@@ -36,7 +36,6 @@ services:
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       POLL_ENABLED: ${POLL_ENABLED:-true}
-      SSE_MAX_CLIENTS: ${SSE_MAX_CLIENTS:-128}
     command: ["/bin/sh", "-c", "/app/migrate && exec /app/api"]
     volumes:
       - api_data:/var/lib/wzstudy

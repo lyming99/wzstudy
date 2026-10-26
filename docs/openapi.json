@@ -3,7 +3,7 @@
   "info": {
     "title": "WzStudy 学习数据源 API",
     "version": "0.3.0",
-    "description": "学习内容管理服务。管理端支持 Bearer 或 HttpOnly 会话；来源密钥、只读密钥与管理权限严格分离。支持文章、音视频、图片轮播、审核快照、RSS、持久化推送收件箱。"
+    "description": "学习资料数据服务，仅关注数据录入与客户端数据查询。Source 仅 ingest/upload，Client 仅 read/sync；支持 HTTP、Skill 和 MCP 录入适配、公开快照查询、媒体与主动增量拉取。推荐和学习进度由客户端实现。"
   },
   "servers": [
     {
@@ -101,7 +101,16 @@
         "summary": "Published source metadata",
         "security": [
           {
+            "ClientKey": []
+          },
+          {
             "ReadKey": []
+          },
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "responses": {
@@ -135,8 +144,22 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "当前客户端没有所需权限或已停用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "x-client-permissions": [
+          "read"
+        ],
+        "description": " 受管客户端 Key 需要 read 权限，仅返回已发布内容；不获得管理权限。"
       }
     },
     "/items": {
@@ -145,7 +168,16 @@
         "summary": "Browse published snapshots",
         "security": [
           {
+            "ClientKey": []
+          },
+          {
             "ReadKey": []
+          },
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "responses": {
@@ -176,9 +208,33 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "当前客户端没有所需权限或已停用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "article",
+                "audio",
+                "video",
+                "carousel"
+              ]
+            }
+          },
           {
             "name": "source_id",
             "in": "query",
@@ -234,8 +290,46 @@
               "maximum": 10000,
               "default": 0
             }
+          },
+          {
+            "in": "query",
+            "name": "exclude",
+            "schema": {
+              "type": "string",
+              "example": "recommended,read"
+            },
+            "description": "Comma-separated OR exclusions: recommended,seen,read,liked,recorded,favorited. Scoped to authenticated Client only, before pagination."
+          },
+          {
+            "in": "query",
+            "name": "unseen",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Alias for excluding all previous positive interactions/recommendations."
+          },
+          {
+            "in": "query",
+            "name": "exclude_since",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Restrict excluded states to this feedback-time window; requires an exclusion."
+          },
+          {
+            "in": "query",
+            "name": "include_feedback",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Include state for returned items; requires independent Client read Key."
           }
-        ]
+        ],
+        "x-client-permissions": [
+          "read"
+        ],
+        "description": "客户端按筛选条件主动查询已发布资料候选。个性化排序、学习进度和推荐算法由客户端负责；列表分页不是冻结快照，可靠缓存更新使用 /changes。"
       }
     },
     "/items/{id}": {
@@ -244,7 +338,16 @@
         "summary": "Read a published snapshot",
         "security": [
           {
+            "ClientKey": []
+          },
+          {
             "ReadKey": []
+          },
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "responses": {
@@ -275,6 +378,16 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "当前客户端没有所需权限或已停用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "parameters": [
@@ -287,7 +400,11 @@
               "format": "uuid"
             }
           }
-        ]
+        ],
+        "x-client-permissions": [
+          "read"
+        ],
+        "description": " 受管客户端 Key 需要 read 权限，仅返回已发布内容；不获得管理权限。"
       }
     },
     "/changes": {
@@ -296,7 +413,16 @@
         "summary": "Replay durable commit-ordered changes",
         "security": [
           {
+            "ClientKey": []
+          },
+          {
             "ReadKey": []
+          },
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "responses": {
@@ -327,65 +453,9 @@
                 }
               }
             }
-          }
-        },
-        "parameters": [
-          {
-            "name": "after",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 0
-            }
           },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 100
-            },
-            "description": "Global scan window; filtered result may be empty but advances cursor"
-          },
-          {
-            "name": "source_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "description": "Comma-separated UUIDs; changing filter requires replay from 0"
-            }
-          }
-        ]
-      }
-    },
-    "/stream": {
-      "get": {
-        "operationId": "get__stream",
-        "summary": "SSE change/checkpoint events with resume",
-        "security": [
-          {
-            "ReadKey": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "SSE. Persist both change and checkpoint ids; reconnect with Last-Event-ID. Heartbeats every 10s, max connection ~30m.",
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error; see error.code",
+          "403": {
+            "description": "当前客户端没有所需权限或已停用",
             "content": {
               "application/json": {
                 "schema": {
@@ -426,16 +496,12 @@
               "type": "string",
               "description": "Comma-separated UUIDs; changing filter requires replay from 0"
             }
-          },
-          {
-            "name": "Last-Event-ID",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
           }
-        ]
+        ],
+        "x-client-permissions": [
+          "sync"
+        ],
+        "description": " 受管客户端 Key 需要 sync 权限，仅返回已发布内容；不获得管理权限。"
       }
     },
     "/ingest/{source_id}": {
@@ -468,6 +534,16 @@
           },
           "default": {
             "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前客户端没有所需权限或已停用",
             "content": {
               "application/json": {
                 "schema": {
@@ -511,7 +587,11 @@
               }
             }
           }
-        }
+        },
+        "x-client-permissions": [
+          "ingest"
+        ],
+        "description": " 只允许使用对应客户端自身 Key；在业务事务内验证启用状态和权限。"
       }
     },
     "/admin/sources": {
@@ -1434,6 +1514,9 @@
         "summary": "读取获准访问的媒体，支持 HTTP Range；私有草稿只对管理员开放",
         "security": [
           {
+            "ClientKey": []
+          },
+          {
             "ReadKey": []
           },
           {
@@ -1490,59 +1573,9 @@
           },
           "416": {
             "description": "Unsatisfiable byte range."
-          }
-        },
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
           },
-          {
-            "name": "Range",
-            "in": "header",
-            "schema": {
-              "type": "string"
-            },
-            "description": "For example: bytes=0-1023"
-          }
-        ]
-      }
-    },
-    "/clients/{id}/inbox": {
-      "get": {
-        "operationId": "get__clients_id_inbox",
-        "summary": "按游标读取此来源专属的持久推送收件箱",
-        "security": [
-          {
-            "SourceKey": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/InboxPage"
-                    }
-                  },
-                  "required": [
-                    "data"
-                  ]
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+          "403": {
+            "description": "当前客户端没有所需权限或已停用",
             "content": {
               "application/json": {
                 "schema": {
@@ -1563,20 +1596,18 @@
             }
           },
           {
-            "name": "after",
-            "in": "query",
+            "name": "Range",
+            "in": "header",
             "schema": {
-              "type": "integer"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": {
-              "type": "integer"
-            }
+              "type": "string"
+            },
+            "description": "For example: bytes=0-1023"
           }
-        ]
+        ],
+        "x-client-permissions": [
+          "read"
+        ],
+        "description": " 受管客户端 Key 需要 read 权限，仅返回已发布内容；不获得管理权限。"
       }
     },
     "/admin/workspace": {
@@ -1885,6 +1916,89 @@
         }
       }
     },
+    "/ingest/{id}/status": {
+      "get": {
+        "operationId": "get__ingest_id_status",
+        "summary": "只读检查自己的来源认证与入库权限，不读取收件箱或提交资料",
+        "description": "仅支持已启用的 manual 客户端来源，须具备 ingest 权限。不要求 read、upload 或 sync 权限，不返回密钥、其他来源或资料。",
+        "security": [
+          {
+            "SourceKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "自己的入库来源状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "source_id",
+                        "enabled",
+                        "auto_publish",
+                        "permissions"
+                      ],
+                      "properties": {
+                        "source_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "const": true
+                        },
+                        "auto_publish": {
+                          "type": "boolean"
+                        },
+                        "permissions": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "ingest",
+                              "upload"
+                            ]
+                          }
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "invalid_request / unauthorized / source_disabled / permission_denied / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/ingest/{id}/files": {
       "post": {
         "operationId": "post__ingest_id_files",
@@ -1915,6 +2029,16 @@
           },
           "default": {
             "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前客户端没有所需权限或已停用",
             "content": {
               "application/json": {
                 "schema": {
@@ -1968,13 +2092,18 @@
               }
             }
           }
-        }
+        },
+        "x-client-permissions": [
+          "ingest",
+          "upload"
+        ],
+        "description": " 只允许使用对应客户端自身 Key；在业务事务内验证启用状态和权限。"
       }
     },
-    "/admin/collections": {
-      "post": {
-        "operationId": "post__admin_collections",
-        "summary": "创建按分类自动归集的专题",
+    "/admin/clients": {
+      "get": {
+        "operationId": "get__admin_clients",
+        "summary": "列出查询客户端，不返回 Key 或哈希",
         "security": [
           {
             "AdminKey": []
@@ -1992,18 +2121,22 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/Collection"
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Client"
+                      }
                     }
                   },
                   "required": [
                     "data"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
           },
           "default": {
-            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "description": "Error; see error.code",
             "content": {
               "application/json": {
                 "schema": {
@@ -2012,153 +2145,11 @@
               }
             }
           }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Collection"
-              }
-            }
-          }
         }
-      }
-    },
-    "/admin/collections/{id}": {
-      "put": {
-        "operationId": "put__admin_collections_id",
-        "summary": "按修订号修改专题",
-        "security": [
-          {
-            "AdminKey": []
-          },
-          {
-            "AdminSession": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/Collection"
-                    }
-                  },
-                  "required": [
-                    "data"
-                  ]
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Collection"
-              }
-            }
-          }
-        }
-      }
-    },
-    "/admin/collections/{id}/delete": {
+      },
       "post": {
-        "operationId": "post__admin_collections_id_delete",
-        "summary": "删除专题定义，不删除资料",
-        "security": [
-          {
-            "AdminKey": []
-          },
-          {
-            "AdminSession": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "object"
-                    }
-                  },
-                  "required": [
-                    "data"
-                  ]
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Revision"
-              }
-            }
-          }
-        }
-      }
-    },
-    "/admin/plans": {
-      "post": {
-        "operationId": "post__admin_plans",
-        "summary": "创建持久定时推送计划",
+        "operationId": "post__admin_clients",
+        "summary": "创建查询客户端并一次性返回 Key",
         "security": [
           {
             "AdminKey": []
@@ -2176,18 +2167,19 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/PushPlan"
+                      "$ref": "#/components/schemas/ClientKey"
                     }
                   },
                   "required": [
                     "data"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
           },
           "default": {
-            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "description": "Error; see error.code",
             "content": {
               "application/json": {
                 "schema": {
@@ -2202,17 +2194,17 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PlanCreate"
+                "$ref": "#/components/schemas/ClientInput"
               }
             }
           }
         }
       }
     },
-    "/admin/plans/{id}/action": {
-      "post": {
-        "operationId": "post__admin_plans_id_action",
-        "summary": "暂停、恢复、立即执行或删除推送计划",
+    "/admin/clients/{id}": {
+      "get": {
+        "operationId": "get__admin_clients_id",
+        "summary": "读取查询客户端配置",
         "security": [
           {
             "AdminKey": []
@@ -2230,18 +2222,19 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "object"
+                      "$ref": "#/components/schemas/Client"
                     }
                   },
                   "required": [
                     "data"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
           },
           "default": {
-            "description": "Error: invalid_request / conflict / unauthorized / source_disabled / payload_too_large / invalid_upload / internal_error",
+            "description": "Error; see error.code",
             "content": {
               "application/json": {
                 "schema": {
@@ -2261,6 +2254,509 @@
               "format": "uuid"
             }
           }
+        ]
+      },
+      "put": {
+        "operationId": "put__admin_clients_id",
+        "summary": "按 revision 更新查询客户端",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Client"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientUpdate"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/admin/clients/{id}/key": {
+      "post": {
+        "operationId": "post__admin_clients_id_key",
+        "summary": "轮换查询 Key，旧 Key 立即失效",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ClientKey"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Revision"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/admin/identity-migration": {
+      "get": {
+        "operationId": "get__admin_identity-migration",
+        "summary": "只读预检旧来源的查询/混合身份",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/IdentityMigrationPreview"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post__admin_identity-migration",
+        "summary": "原子迁移旧身份，混合 Key 必须明确归属",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/IdentityMigrationResult"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityMigrationInput"
+              }
+            }
+          }
+        },
+        "description": "所有混合身份必须提供当前 revision 和 keep_key。未选择或修订冲突返回409；整批回滚。新 Key 仅本次返回，旧 Key 不复制给两个角色。资料、附件、external_id 和内容游标不变。"
+      }
+    },
+    "/admin/intakes": {
+      "get": {
+        "operationId": "get__admin_intakes",
+        "summary": "分页读取已提交的入库回执，不包含正文或密钥",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/IntakePage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 0
+            }
+          }
+        ]
+      }
+    },
+    "/client/connection": {
+      "get": {
+        "operationId": "get__client_connection",
+        "summary": "Verify the active query client Key and identity for QR onboarding",
+        "security": [
+          {
+            "ClientKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ClientConnectionInfo"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前客户端没有所需权限或已停用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A query client Key is required; no fallback identity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Bearer query client Key only; requires read OR sync. No administrator cookie, administrator Key, legacy global reader Key or source Key fallback. Does not rotate credentials or modify records.",
+        "x-client-permissions-any": [
+          "read",
+          "sync"
+        ]
+      }
+    },
+    "/client/feedback": {
+      "get": {
+        "summary": "Read own feedback state and counters",
+        "tags": [
+          "Client feedback"
+        ],
+        "security": [
+          {
+            "ClientKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/FeedbackPage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Independent Client Key required"
+          },
+          "403": {
+            "description": "Disabled or permission denied"
+          },
+          "409": {
+            "description": "Event ID reused with different input"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "item_id",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional comma-separated UUIDs, at most 100"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": ""
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "minimum": 0,
+              "maximum": 10000
+            },
+            "description": ""
+          }
+        ],
+        "x-client-permissions-any": [
+          "read",
+          "sync",
+          "feedback"
+        ]
+      },
+      "post": {
+        "summary": "Atomically report own feedback; event-ID retries are idempotent",
+        "tags": [
+          "Client feedback"
+        ],
+        "security": [
+          {
+            "ClientKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/FeedbackResult"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Independent Client Key required"
+          },
+          "403": {
+            "description": "Disabled or permission denied"
+          },
+          "409": {
+            "description": "Event ID reused with different input"
+          }
+        },
+        "x-client-permissions": [
+          "feedback"
         ],
         "requestBody": {
           "required": true,
@@ -2268,29 +2764,435 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "additionalProperties": false,
                 "properties": {
-                  "revision": {
-                    "type": "integer"
-                  },
-                  "action": {
-                    "type": "string",
-                    "enum": [
-                      "pause",
-                      "resume",
-                      "run",
-                      "delete"
-                    ]
+                  "events": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "items": {
+                      "$ref": "#/components/schemas/FeedbackInput"
+                    }
                   }
                 },
                 "required": [
-                  "revision",
-                  "action"
-                ],
-                "additionalProperties": false
+                  "events"
+                ]
               }
             }
           }
         }
+      }
+    },
+    "/client/feedback/events": {
+      "get": {
+        "summary": "Read own independent feedback event cursor",
+        "tags": [
+          "Client feedback"
+        ],
+        "security": [
+          {
+            "ClientKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/FeedbackEventPage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Independent Client Key required"
+          },
+          "403": {
+            "description": "Disabled or permission denied"
+          },
+          "409": {
+            "description": "Event ID reused with different input"
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 0,
+              "minimum": 0
+            },
+            "description": ""
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": ""
+          }
+        ],
+        "x-client-permissions-any": [
+          "read",
+          "sync",
+          "feedback"
+        ]
+      }
+    },
+    "/admin/clients/{id}/feedback": {
+      "get": {
+        "summary": "Read own feedback state and counters",
+        "tags": [
+          "Client feedback"
+        ],
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/FeedbackPage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Independent Client Key required"
+          },
+          "403": {
+            "description": "Disabled or permission denied"
+          },
+          "409": {
+            "description": "Event ID reused with different input"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "item_id",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional comma-separated UUIDs, at most 100"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": ""
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "minimum": 0,
+              "maximum": 10000
+            },
+            "description": ""
+          }
+        ]
+      }
+    },
+    "/admin/clients/{id}/feedback/events": {
+      "get": {
+        "summary": "Read own independent feedback event cursor",
+        "tags": [
+          "Client feedback"
+        ],
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/FeedbackEventPage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Independent Client Key required"
+          },
+          "403": {
+            "description": "Disabled or permission denied"
+          },
+          "409": {
+            "description": "Event ID reused with different input"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 0,
+              "minimum": 0
+            },
+            "description": ""
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": ""
+          }
+        ]
+      }
+    },
+    "/admin/clients/{id}/items": {
+      "get": {
+        "summary": "Preview public candidates using the selected client feedback (no mutation)",
+        "tags": [
+          "Client feedback"
+        ],
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ClientItemPage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Independent Client Key required"
+          },
+          "403": {
+            "description": "Disabled or permission denied"
+          },
+          "409": {
+            "description": "Event ID reused with different input"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "article",
+                "audio",
+                "video",
+                "carousel"
+              ]
+            }
+          },
+          {
+            "name": "source_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated UUIDs, max 20"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Title/summary substring, <=200 UTF-8 bytes"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "exclude",
+            "schema": {
+              "type": "string",
+              "example": "recommended,read"
+            },
+            "description": "Comma-separated OR exclusions: recommended,seen,read,liked,recorded,favorited. Scoped to authenticated Client only, before pagination."
+          },
+          {
+            "in": "query",
+            "name": "unseen",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Alias for excluding all previous positive interactions/recommendations."
+          },
+          {
+            "in": "query",
+            "name": "exclude_since",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Restrict excluded states to this feedback-time window; requires an exclusion."
+          },
+          {
+            "in": "query",
+            "name": "include_feedback",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Include state for returned items; requires independent Client read Key."
+          }
+        ]
       }
     }
   },
@@ -2304,18 +3206,23 @@
       "ReadKey": {
         "type": "http",
         "scheme": "bearer",
-        "description": "READ_API_KEY; published data only; admin key also accepted"
+        "description": "旧版全局 READ_API_KEY 兼容凭据；新接入使用独立 ClientKey。"
       },
       "SourceKey": {
         "type": "http",
         "scheme": "bearer",
-        "description": "独立来源密钥，仅允许该来源的 JSON / 文件入库与客户端收件箱。"
+        "description": "独立录入来源 Key（wzsk_），只允许 ingest/upload，不可查询资料或管理系统。"
       },
       "AdminSession": {
         "type": "apiKey",
         "in": "cookie",
         "name": "wzstudy_admin",
         "description": "管理员通过 /auth/login 建立的 HttpOnly、SameSite=Strict、8 小时会话。生产环境要求 HTTPS。Cookie 写请求必须携带已授权 Origin。"
+      },
+      "ClientKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "独立查询客户端 Key（新建为 wzck_），只允许 read/sync，不可入库、上传或访问管理接口。"
       }
     },
     "schemas": {
@@ -2388,6 +3295,33 @@
             "minimum": 60,
             "maximum": 86400,
             "default": 900
+          },
+          "permissions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "ingest",
+                "upload"
+              ]
+            },
+            "maxItems": 2,
+            "uniqueItems": true,
+            "description": "录入来源权限，仅 ingest/upload；省略/null 的旧来源保留原入库/上传默认，显式 [] 撤销全部。不能授予 read/sync。"
+          },
+          "integration": {
+            "type": "string",
+            "enum": [
+              "",
+              "collector",
+              "skill",
+              "mcp",
+              "rss"
+            ],
+            "description": "接入方式元数据，不决定权限。manual 来源默认 collector；rss 来源固定 rss。"
           }
         },
         "required": [
@@ -2447,6 +3381,33 @@
             "type": "integer",
             "format": "int64",
             "minimum": 1
+          },
+          "permissions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "ingest",
+                "upload"
+              ]
+            },
+            "maxItems": 2,
+            "uniqueItems": true,
+            "description": "录入来源权限，仅 ingest/upload；省略/null 的旧来源保留原入库/上传默认，显式 [] 撤销全部。不能授予 read/sync。"
+          },
+          "integration": {
+            "type": "string",
+            "enum": [
+              "",
+              "collector",
+              "skill",
+              "mcp",
+              "rss"
+            ],
+            "description": "接入方式元数据，不决定权限。manual 来源默认 collector；rss 来源固定 rss。"
           }
         },
         "required": [
@@ -2539,6 +3500,38 @@
             "type": "boolean",
             "readOnly": true,
             "description": "管理工作台内部来源，不能用于客户端接入或密钥轮换。"
+          },
+          "permissions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "ingest",
+                "upload"
+              ]
+            },
+            "maxItems": 2,
+            "uniqueItems": true,
+            "description": "录入来源权限，仅 ingest/upload；省略/null 的旧来源保留原入库/上传默认，显式 [] 撤销全部。不能授予 read/sync。"
+          },
+          "integration": {
+            "type": "string",
+            "enum": [
+              "",
+              "collector",
+              "skill",
+              "mcp",
+              "rss"
+            ],
+            "description": "接入方式元数据，不决定权限。manual 来源默认 collector；rss 来源固定 rss。"
+          },
+          "migrated_client_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
           }
         },
         "required": [
@@ -2548,7 +3541,8 @@
           "kind",
           "enabled",
           "auto_publish",
-          "revision"
+          "revision",
+          "permissions"
         ]
       },
       "Revision": {
@@ -2878,6 +3872,18 @@
             "items": {
               "$ref": "#/components/schemas/Item"
             }
+          },
+          "receipt_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -3161,194 +4167,6 @@
         ],
         "additionalProperties": false
       },
-      "Collection": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "name": {
-            "type": "string"
-          },
-          "category": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "color": {
-            "type": "string",
-            "enum": [
-              "green",
-              "purple",
-              "blue"
-            ]
-          },
-          "revision": {
-            "type": "integer"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "name",
-          "category",
-          "color"
-        ],
-        "additionalProperties": false
-      },
-      "PlanCreate": {
-        "type": "object",
-        "properties": {
-          "title": {
-            "type": "string"
-          },
-          "item_ids": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 50,
-            "uniqueItems": true,
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          "target_ids": {
-            "type": "array",
-            "maxItems": 100,
-            "uniqueItems": true,
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "description": "空数组表示执行时所有已启用、非内部的手动接入端。"
-          },
-          "scheduled_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "title",
-          "item_ids",
-          "scheduled_at"
-        ],
-        "additionalProperties": false
-      },
-      "PushPlan": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "title": {
-            "type": "string"
-          },
-          "item_ids": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          "target_ids": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          "scheduled_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "scheduled",
-              "paused",
-              "done",
-              "failed"
-            ]
-          },
-          "revision": {
-            "type": "integer"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "completed_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "last_error": {
-            "type": "string"
-          },
-          "deliveries": {
-            "type": "integer"
-          }
-        },
-        "required": [],
-        "additionalProperties": false
-      },
-      "Delivery": {
-        "type": "object",
-        "properties": {
-          "cursor": {
-            "type": "integer"
-          },
-          "plan_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "plan_title": {
-            "type": "string"
-          },
-          "target_ids": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          "item": {
-            "$ref": "#/components/schemas/PublicItem"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [],
-        "additionalProperties": false
-      },
-      "InboxPage": {
-        "type": "object",
-        "properties": {
-          "deliveries": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Delivery"
-            }
-          },
-          "next_cursor": {
-            "type": "integer"
-          },
-          "high_watermark": {
-            "type": "integer"
-          },
-          "has_more": {
-            "type": "boolean"
-          }
-        },
-        "required": [],
-        "additionalProperties": false
-      },
       "Summary": {
         "type": "object",
         "properties": {
@@ -3426,18 +4244,6 @@
           "summary": {
             "$ref": "#/components/schemas/Summary"
           },
-          "collections": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Collection"
-            }
-          },
-          "plans": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PushPlan"
-            }
-          },
           "settings": {
             "$ref": "#/components/schemas/Settings"
           },
@@ -3446,6 +4252,15 @@
             "items": {
               "$ref": "#/components/schemas/Item"
             }
+          },
+          "clients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Client"
+            }
+          },
+          "identity_migration": {
+            "$ref": "#/components/schemas/IdentityMigrationPreview"
           }
         },
         "required": [],
@@ -3499,6 +4314,872 @@
             "description": "8-128 UTF-8 bytes; leading/trailing whitespace is preserved. Not an API key."
           }
         }
+      },
+      "ClientInput": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "permissions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "read",
+                "sync",
+                "feedback"
+              ]
+            },
+            "maxItems": 2,
+            "uniqueItems": true,
+            "description": "新建省略/null 默认 read+sync；更新省略/null 保留，[] 撤销全部。"
+          }
+        },
+        "required": [
+          "slug",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "ClientUpdate": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "permissions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "read",
+                "sync"
+              ]
+            },
+            "maxItems": 2,
+            "uniqueItems": true,
+            "description": "新建省略/null 默认 read+sync；更新省略/null 保留，[] 撤销全部。"
+          },
+          "revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "revision"
+        ],
+        "additionalProperties": false
+      },
+      "Client": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "permissions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "read",
+                "sync",
+                "feedback"
+              ]
+            },
+            "maxItems": 2,
+            "uniqueItems": true,
+            "description": "新建省略/null 默认 read+sync；更新省略/null 保留，[] 撤销全部。"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "legacy_source_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "enabled",
+          "permissions",
+          "revision"
+        ],
+        "additionalProperties": false
+      },
+      "ClientKey": {
+        "type": "object",
+        "properties": {
+          "client": {
+            "$ref": "#/components/schemas/Client"
+          },
+          "access_key": {
+            "type": "string",
+            "description": "仅本次操作响应返回一次，不出现在后续查询。"
+          }
+        },
+        "required": [
+          "client",
+          "access_key"
+        ],
+        "additionalProperties": false
+      },
+      "IdentityMigrationEntry": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "ingest_permissions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ingest",
+                "upload"
+              ]
+            }
+          },
+          "query_permissions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "read",
+                "sync"
+              ]
+            }
+          },
+          "requires_key_choice": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "IdentityMigrationPreview": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IdentityMigrationEntry"
+            }
+          },
+          "pending": {
+            "type": "integer"
+          },
+          "mixed": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entries",
+          "pending",
+          "mixed"
+        ],
+        "additionalProperties": false
+      },
+      "IdentityMigrationInput": {
+        "type": "object",
+        "properties": {
+          "choices": {
+            "type": "array",
+            "maxItems": 1000,
+            "items": {
+              "type": "object",
+              "properties": {
+                "source_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "revision": {
+                  "type": "integer"
+                },
+                "keep_key": {
+                  "type": "string",
+                  "enum": [
+                    "ingest",
+                    "query"
+                  ]
+                }
+              },
+              "required": [
+                "source_id",
+                "revision",
+                "keep_key"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "choices"
+        ],
+        "additionalProperties": false
+      },
+      "IdentityMigrationResult": {
+        "type": "object",
+        "properties": {
+          "converted": {
+            "type": "integer"
+          },
+          "clients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Client"
+            }
+          },
+          "new_keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "identity_type": {
+                  "type": "string",
+                  "enum": [
+                    "source",
+                    "client"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "access_key": {
+                  "type": "string",
+                  "description": "仅本次操作响应返回一次，不出现在后续查询。"
+                }
+              },
+              "required": [
+                "identity_type",
+                "id",
+                "access_key"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "IntakeItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "pending",
+              "published"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "IntakeReceipt": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "integration": {
+            "type": "string"
+          },
+          "created": {
+            "type": "integer"
+          },
+          "updated": {
+            "type": "integer"
+          },
+          "unchanged": {
+            "type": "integer"
+          },
+          "published": {
+            "type": "integer"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntakeItem"
+            }
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "IntakePage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntakeReceipt"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "ClientConnectionInfo": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "version",
+          "client_id",
+          "name",
+          "permissions"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "wzstudy.query_client"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "client_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "read",
+                "sync",
+                "feedback"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 3,
+            "uniqueItems": true
+          }
+        }
+      },
+      "ClientConnectionConfig": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "UTF-8 JSON carried directly in a local QR code, at most 1200 UTF-8 bytes. Not a URL or public response. Scanners must review destination and verify /client/connection before saving.",
+        "required": [
+          "type",
+          "version",
+          "base_url",
+          "client_id",
+          "name",
+          "access_key"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "wzstudy.query_client"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "base_url": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 512,
+            "description": "Canonical HTTP(S) origin; no path, userinfo, query, fragment or wildcard host. HTTPS recommended. Loopback refers to the scanning device."
+          },
+          "client_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Display hint, at most 200 UTF-8 bytes; identity must be checked online."
+          },
+          "access_key": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "writeOnly": true,
+            "description": "Private query client credential. Never log, put in an HTTP URL or send to QR services. Prefix alone is not authentication."
+          }
+        }
+      },
+      "FeedbackInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "recommended",
+              "impression",
+              "read",
+              "like",
+              "record",
+              "favorite"
+            ]
+          },
+          "value": {
+            "type": "boolean",
+            "default": true
+          },
+          "item_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "progress": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "required": [
+          "event_id",
+          "item_id",
+          "action"
+        ]
+      },
+      "FeedbackEvent": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "recommended",
+              "impression",
+              "read",
+              "like",
+              "record",
+              "favorite"
+            ]
+          },
+          "value": {
+            "type": "boolean",
+            "default": true
+          },
+          "item_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "progress": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "client_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "effective_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "public_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fingerprint": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "item_id",
+          "action"
+        ]
+      },
+      "FeedbackActionState": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_positive_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "item_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "note": {
+            "type": "string"
+          },
+          "progress": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "active",
+          "count"
+        ]
+      },
+      "FeedbackState": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "actions": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FeedbackActionState"
+            }
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "client_id",
+          "item_id",
+          "actions",
+          "updated_at"
+        ]
+      },
+      "FeedbackAck": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "duplicate": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "event_id",
+          "sequence",
+          "duplicate"
+        ]
+      },
+      "FeedbackResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "accepted": {
+            "type": "integer"
+          },
+          "duplicates": {
+            "type": "integer"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeedbackAck"
+            }
+          },
+          "states": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeedbackState"
+            }
+          }
+        },
+        "required": [
+          "accepted",
+          "duplicates",
+          "events",
+          "states"
+        ]
+      },
+      "FeedbackPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeedbackState"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "summary": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "event_counts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "high_watermark": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "client_id",
+          "items",
+          "total",
+          "limit",
+          "offset",
+          "summary",
+          "event_counts",
+          "high_watermark"
+        ]
+      },
+      "FeedbackEventPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeedbackEvent"
+            }
+          },
+          "next_cursor": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "high_watermark": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "has_more": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "events",
+          "next_cursor",
+          "high_watermark",
+          "has_more"
+        ]
+      },
+      "ClientItemPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicItem"
+            }
+          },
+          "feedback": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FeedbackState"
+            }
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "client_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "items",
+          "limit",
+          "offset",
+          "client_id"
+        ]
       }
     }
   }

@@ -7,24 +7,25 @@ import (
 )
 
 const (
-	PermissionRead   = "read"
-	PermissionSync   = "sync"
-	PermissionIngest = "ingest"
-	PermissionUpload = "upload"
-	PermissionInbox  = "inbox"
+	PermissionFeedback = "feedback"
+	PermissionRead     = "read"
+	PermissionSync     = "sync"
+	PermissionIngest   = "ingest"
+	PermissionUpload   = "upload"
 )
 
-// nil is an old source's policy: preserve only its existing ingest/upload/inbox
-// capabilities, never grant newly introduced reading or synchronization access.
+// nil is an old source's policy: preserve its existing ingest/upload capabilities,
+// never grant reading or synchronization access. Legacy query grants require
+// an explicit migration to Client; inbox is retired. Source grants are write-only.
 // An explicit empty slice means no permissions, and must survive persistence.
 func (s Source) EffectivePermissions() []string {
 	if s.System {
 		return []string{}
 	}
 	if s.Permissions == nil {
-		return []string{PermissionIngest, PermissionUpload, PermissionInbox}
+		return []string{PermissionIngest, PermissionUpload}
 	}
-	return slices.Clone(s.Permissions)
+	return legacyPolicy(s, []string{PermissionIngest, PermissionUpload})
 }
 
 func (s Source) Allows(permission string) bool {
@@ -32,27 +33,7 @@ func (s Source) Allows(permission string) bool {
 }
 
 func normalizePermissions(in []string) ([]string, error) {
-	if in == nil {
-		return nil, nil
-	}
-	order := []string{PermissionRead, PermissionSync, PermissionIngest, PermissionUpload, PermissionInbox}
-	if len(in) > len(order) {
-		return nil, ErrInvalid
-	}
-	seen := map[string]bool{}
-	for _, permission := range in {
-		if !slices.Contains(order, permission) || seen[permission] {
-			return nil, ErrInvalid
-		}
-		seen[permission] = true
-	}
-	out := []string{}
-	for _, permission := range order {
-		if seen[permission] {
-			out = append(out, permission)
-		}
-	}
-	return out, nil
+	return normalizePolicy(in, []string{PermissionIngest, PermissionUpload})
 }
 
 func sourceAccess(tx Tx, id, key string, permissions ...string) (Source, error) {
@@ -87,33 +68,11 @@ func (s *Service) AuthorizeSource(ctx context.Context, id, key string, permissio
 	return
 }
 
-// ClientForKey authenticates a managed manual source on published-content APIs.
-// RSS keys and the internal studio source are never client reading credentials.
-func (s *Service) ClientForKey(ctx context.Context, key, permission string) (out Source, err error) {
-	if key == "" {
-		return out, ErrUnauthorized
+func sourcePolicy(v Source) Source {
+	if v.Permissions != nil {
+		v.Permissions = v.EffectivePermissions()
 	}
-	err = s.Store.View(ctx, func(tx Tx) error {
-		sources, e := tx.Sources()
-		if e != nil {
-			return e
-		}
-		for _, source := range sources {
-			if source.Kind != "manual" || source.System || !EqualKey(source.KeyHash, key) {
-				continue
-			}
-			if !source.Enabled {
-				return ErrDisabled
-			}
-			if !source.Allows(permission) {
-				return ErrForbidden
-			}
-			out = source
-			return nil
-		}
-		return ErrUnauthorized
-	})
-	return
+	return v
 }
 
 func cloneSource(v Source) Source {

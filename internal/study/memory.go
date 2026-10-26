@@ -114,6 +114,9 @@ func (t *memoryTx) Append(v Change) (Change, error) {
 	return v, nil
 }
 func (t *memoryTx) Items(f Filter) ([]Item, error) {
+	if ValidateFeedbackExclusions(f.FeedbackExclude) != nil {
+		return nil, ErrInvalid
+	}
 	out := make([]Item, 0)
 	for _, v := range t.state.items {
 		if v.DeletedAt != nil || (f.Admin && f.Status != "" && ReviewState(v) != f.Status) {
@@ -128,6 +131,15 @@ func (t *memoryTx) Items(f Filter) ([]Item, error) {
 				continue
 			}
 			c = v.Published.Content
+		}
+		if !f.Admin && f.FeedbackClientID != "" && len(f.FeedbackExclude) > 0 {
+			state, e := feedbackStateFor(t, f.FeedbackClientID, v.ID)
+			if e != nil {
+				return nil, e
+			}
+			if feedbackExcluded(state, f.FeedbackExclude, f.FeedbackSince) {
+				continue
+			}
 		}
 		if MatchesContent(c, f) {
 			out = append(out, cloneItem(v))

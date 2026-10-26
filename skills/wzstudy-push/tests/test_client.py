@@ -79,6 +79,31 @@ class ClientTests(unittest.TestCase):
                 self.assertEqual(push.main(['push','--input',str(path),'--dry-run']), 0)
             self.assertEqual(json.loads(out.getvalue())['network_requests'], 0)
 
+    def test_doctor_checks_ingest_status_without_inbox_or_writes(self):
+        client = push.Client('http://127.0.0.1:8091', SID, KEY)
+        status = {'source_id': SID, 'enabled': True, 'permissions': ['ingest', 'upload'], 'auto_publish': False}
+        with patch.object(client, 'request', side_effect=[{'status': 'ready'}, status]) as request:
+            result = client.doctor()
+        self.assertTrue(result['source_authenticated'])
+        self.assertEqual(result['permissions'], ['ingest', 'upload'])
+        self.assertFalse(result['auto_publish'])
+        self.assertEqual([call.args for call in request.call_args_list],
+                         [('/health/ready',), ('/ingest/' + SID + '/status',)])
+        self.assertEqual(request.call_args_list[0].kwargs, {'auth': False})
+        self.assertEqual(request.call_args_list[1].kwargs, {})
+        self.assertNotIn(KEY, json.dumps(result))
+
+    def test_doctor_rejects_unconfirmed_ingestion_status(self):
+        client = push.Client('http://127.0.0.1:8091', SID, KEY)
+        for status in [None, {}, {'source_id': SID, 'enabled': True, 'permissions': None},
+                       {'source_id': SID, 'enabled': True, 'permissions': ['inbox']},
+                       {'source_id': SID, 'enabled': False, 'permissions': ['ingest']},
+                       {'source_id': 'other', 'enabled': True, 'permissions': ['ingest']}]:
+            with self.subTest(status=status), patch.object(client, 'request', side_effect=[{'status': 'ready'}, status]):
+                with self.assertRaises(push.PushError) as error:
+                    client.doctor()
+                self.assertEqual(error.exception.code, 'invalid_response')
+
     def test_upload_stream_and_validation(self):
         class Capture:
             source_id = SID

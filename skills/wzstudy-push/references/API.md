@@ -1,12 +1,12 @@
-# WzStudy 客户端入库契约
+# WzStudy 录入端契约
 
 本项目 v0.3.0 接口；完整契约在项目 `docs/API.md`、`docs/MANAGEMENT.md`、`docs/openapi.json`。运行时可读服务 `/docs`、`/docs/management`、`/openapi.json`，不要据此读取管理员凭据。
 
 ## 权限
 
 - 日常入库：`Authorization: Bearer <来源专属 wzsk_ 密钥>`，仅能操作自己的来源。
-- 管理员密钥、邮箱密码及只读密钥不能代替来源密钥入库。
-- `doctor`：`GET /api/v1/health/ready` 加 `GET /api/v1/clients/{source_id}/inbox?after=0&limit=1`，只验证连接与来源权限，不提交资料，也不修改客户端游标。
+- 管理员密钥、邮箱密码及查询客户端 Key 不能代替来源密钥入库。Source 仅 ingest/upload，Client 仅 read/sync，不混用身份。
+- `doctor`：`GET /api/v1/health/ready` 加 `GET /api/v1/ingest/{source_id}/status`，只验证连接、当前来源和 `ingest` 权限，不提交资料、不查询资料库，也不修改客户端游标。只配置 `ingest` / `upload` 即可，无需 read/sync 查询权限；返回自己的有效权限与发布策略。该状态接口要求同步更新服务端，旧服务返回 404 时应更新服务，而不是额外扩权。
 
 ## 文章 / 外部链接
 
@@ -47,7 +47,7 @@
 
 `kind` 为媒体且没有资产时必须有有效外部 URL；登记 URL 不表示下载文件。无出处 URL 的文章使用内容哈希 ID，正文变化会生成新 ID；要持续更新同一资料请显式指定稳定 ID。
 
-响应：`{"data":{"created":1,"updated":0,"unchanged":0,"published":0,"items":[...]}}`。相同来源、external_id 和相同规范化内容返回 unchanged，不增加 revision。客户端跨多批可能部分成功，保留批次回执。
+响应：`{"data":{"receipt_id":"...","source_id":"...","received_at":"...","created":1,"updated":0,"unchanged":0,"published":0,"items":[...]}}`。相同来源、external_id 和相同规范化内容返回 unchanged，不增加 revision。客户端跨多批可能部分成功，保留批次回执。
 
 ## 本地媒体
 
@@ -66,7 +66,7 @@
 
 ## 发布与失败
 
-新专用来源默认 `auto_publish=false`，正常入库为 pending。若管理员以后修改来源策略，响应可能 published>0，必须据实报告。Skill 不调用 `/admin/items/.../publish`、不更改来源配置、不创建客户端投递计划。
+新专用来源默认 `auto_publish=false`，正常入库为 pending。若管理员以后修改来源策略，响应可能 published>0，必须据实报告。Skill 不调用 `/admin/items/.../publish`、不更改来源配置、不查询客户端资料或实现推荐算法。
 
 - 401：密钥或来源不匹配，停止，不回显密钥。
 - 403：来源停用，通知管理员，不绕过。

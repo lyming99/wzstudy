@@ -34,20 +34,16 @@ type Server struct {
 	service       *study.Service
 	worker        *feed.Worker
 	logger        *slog.Logger
-	streams       chan struct{}
 }
 
 func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger *slog.Logger) http.Handler {
-	if cfg.SSEMaxClients < 1 {
-		cfg.SSEMaxClients = 128
-	}
 	if cfg.DataDir == "" {
 		cfg.DataDir = "data"
 	}
 	if cfg.MaxUploadBytes <= 0 {
 		cfg.MaxUploadBytes = 200 << 20
 	}
-	s := &Server{loginBuckets: map[string]loginBucket{}, passwordSlots: make(chan struct{}, 2), sessions: map[string]time.Time{}, cfg: cfg, service: service, worker: worker, logger: logger, streams: make(chan struct{}, cfg.SSEMaxClients)}
+	s := &Server{loginBuckets: map[string]loginBucket{}, passwordSlots: make(chan struct{}, 2), sessions: map[string]time.Time{}, cfg: cfg, service: service, worker: worker, logger: logger}
 	r := chi.NewRouter()
 	r.Use(s.middleware)
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) { failure(w, 404, "not_found", "接口不存在") })
@@ -65,7 +61,7 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 		if name == "" {
 			name = "index.html"
 		}
-		if name != "index.html" && name != "app.js" && name != "app.css" {
+		if name != "index.html" && name != "app.js" && name != "app.css" && name != "qrcodegen.js" {
 			http.NotFound(w, r)
 			return
 		}
@@ -76,7 +72,7 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 		}
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 		typ := "text/html; charset=utf-8"
-		if name == "app.js" {
+		if name == "app.js" || name == "qrcodegen.js" {
 			typ = "text/javascript; charset=utf-8"
 		} else if name == "app.css" {
 			typ = "text/css; charset=utf-8"
@@ -118,27 +114,36 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 			r.Get("/items/{id}", s.publicItem)
 		})
 		r.With(s.requirePermission(study.PermissionSync)).Get("/changes", s.changes)
-		r.With(s.requirePermission(study.PermissionSync)).Get("/stream", s.stream)
 		r.Post("/auth/login", s.login)
 		r.With(s.require(true)).Get("/auth/session", s.session)
 		r.With(s.require(true)).Post("/auth/logout", s.logout)
-		r.Get("/clients/{id}/inbox", s.inbox)
+		r.Get("/client/connection", s.clientConnection)
+		r.Post("/client/feedback", s.reportFeedback)
+		r.Get("/client/feedback", s.clientFeedback)
+		r.Get("/client/feedback/events", s.clientFeedbackEvents)
+		r.Get("/ingest/{id}/status", s.ingestStatus)
 		r.Post("/ingest/{id}/files", s.upload)
 		r.Post("/ingest/{id}", s.ingest)
 		r.Route("/admin", func(r chi.Router) {
 			r.Use(s.require(true))
 			r.Get("/workspace", s.workspace)
+			r.Get("/clients", s.clients)
+			r.Post("/clients", s.createClient)
+			r.Get("/clients/{id}", s.client)
+			r.Get("/clients/{id}/feedback", s.adminClientFeedback)
+			r.Get("/clients/{id}/feedback/events", s.adminClientFeedbackEvents)
+			r.Get("/clients/{id}/items", s.adminClientItems)
+			r.Put("/clients/{id}", s.updateClient)
+			r.Post("/clients/{id}/key", s.rotateClientKey)
+			r.Get("/identity-migration", s.previewIdentityMigration)
+			r.Post("/identity-migration", s.migrateIdentities)
+			r.Get("/intakes", s.intakeHistory)
 			r.Put("/settings", s.saveSettings)
 			r.Post("/uploads", s.upload)
 			r.Post("/items", s.saveItem)
 			r.Put("/items/{id}", s.saveItem)
 			r.Post("/items/{id}/submit", s.submitItem)
 			r.Post("/items/{id}/delete", s.deleteItem)
-			r.Post("/collections", s.saveCollection)
-			r.Put("/collections/{id}", s.saveCollection)
-			r.Post("/collections/{id}/delete", s.deleteCollection)
-			r.Post("/plans", s.createPlan)
-			r.Post("/plans/{id}/action", s.planAction)
 			r.Get("/sources", s.sources)
 			r.Post("/sources", s.createSource)
 			r.Get("/sources/{id}", s.source)
@@ -327,19 +332,17 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 				return
 			}
 			sw.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
-			sw.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Last-Event-ID")
+			sw.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 			sw.WriteHeader(204)
 			return
 		}
-		if r.URL.Path != "/api/v1/stream" {
-			timeout := 30 * time.Second
-			if strings.HasSuffix(r.URL.Path, "/files") || r.URL.Path == "/api/v1/admin/uploads" {
-				timeout = 5 * time.Minute
-			}
-			ctx, cancel := context.WithTimeout(r.Context(), timeout)
-			defer cancel()
-			r = r.WithContext(ctx)
+		timeout := 30 * time.Second
+		if strings.HasSuffix(r.URL.Path, "/files") || r.URL.Path == "/api/v1/admin/uploads" {
+			timeout = 5 * time.Minute
 		}
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
+		defer cancel()
+		r = r.WithContext(ctx)
 		next.ServeHTTP(sw, r)
 	})
 }

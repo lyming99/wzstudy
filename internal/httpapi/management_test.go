@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"wzstudy/internal/config"
 	"wzstudy/internal/study"
@@ -251,10 +250,8 @@ func TestUTF8TextUploadAndSourceUploadOwnership(t *testing.T) {
 	}
 }
 
-func TestManagementEndpointsPersistAndExposeDeliveryInbox(t *testing.T) {
-	s, h, _ := managementApp(t, 1<<20)
-	ctx := context.Background()
-	source, key := create(t, h, false)
+func TestManagementEndpointsPersistAndExposeClientQueries(t *testing.T) {
+	_, h, _ := managementApp(t, 1<<20)
 	var item study.Item
 	data(t, request(t, h, "POST", "/api/v1/admin/items", adminKey, study.ManagedInput{Status: "draft", Content: study.Content{Kind: "article", Title: "API 学习资料", Content: "安全正文", Category: "学习方法"}}), &item)
 	if w := request(t, h, "POST", "/api/v1/admin/items/"+item.ID+"/publish", adminKey, map[string]int64{"revision": item.Revision}); w.Code != 400 {
@@ -270,31 +267,20 @@ func TestManagementEndpointsPersistAndExposeDeliveryInbox(t *testing.T) {
 	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].Draft.Content != "" {
 		t.Fatal(page)
 	}
-	var collection study.Collection
-	data(t, request(t, h, "POST", "/api/v1/admin/collections", adminKey, study.Collection{Name: "学习方法", Category: "学习方法", Color: "green"}), &collection)
+	_, queryKey := managedClient(t, h, "learning", []string{"read", "sync"})
 	var settings study.WorkspaceSettings
 	data(t, request(t, h, "PUT", "/api/v1/admin/settings", adminKey, study.WorkspaceSettings{Name: "空间管理员"}), &settings)
-	var plan study.PushPlan
-	data(t, request(t, h, "POST", "/api/v1/admin/plans", adminKey, map[string]any{"title": "正式投递", "item_ids": []string{item.ID}, "target_ids": []string{source.ID}, "scheduled_at": time.Now().Add(time.Hour).Format(time.RFC3339)}), &plan)
-	data(t, request(t, h, "POST", "/api/v1/admin/plans/"+plan.ID+"/action", adminKey, map[string]any{"revision": plan.Revision, "action": "run"}), &plan)
-	if plan.Status != "done" || plan.Deliveries != 1 {
-		t.Fatal(plan)
-	}
-	var inbox study.InboxPage
-	data(t, request(t, h, "GET", "/api/v1/clients/"+source.ID+"/inbox?after=0", key, nil), &inbox)
-	if len(inbox.Deliveries) != 1 || inbox.Deliveries[0].Item.Title != "API 学习资料" {
-		t.Fatal(inbox)
-	}
-	if w := request(t, h, "GET", "/api/v1/clients/"+source.ID+"/inbox?after=0", readKey, nil); w.Code != 401 {
-		t.Fatal("read key became source", w.Code)
-	}
 	var workspace study.Workspace
 	data(t, request(t, h, "GET", "/api/v1/admin/workspace", adminKey, nil), &workspace)
-	if workspace.Settings.Name != "空间管理员" || len(workspace.Collections) != 1 || len(workspace.Plans) != 1 {
+	if workspace.Settings.Name != "空间管理员" || len(workspace.Clients) != 1 {
 		t.Fatal(workspace)
 	}
-	if _, e := s.Inbox(ctx, source.ID, key, inbox.NextCursor, 100); e != nil {
-		t.Fatal(e)
+	var public study.PublicItem
+	data(t, request(t, h, "GET", "/api/v1/items/"+item.ID, queryKey, nil), &public)
+	if public.Title != "API 学习资料" {
+		t.Fatal(public)
 	}
-	data(t, request(t, h, "POST", "/api/v1/admin/collections/"+collection.ID+"/delete", adminKey, map[string]int64{"revision": collection.Revision}), &map[string]bool{})
+	if out := request(t, h, "POST", "/api/v1/admin/collections", adminKey, map[string]any{}); out.Code != 404 {
+		t.Fatal(out.Code)
+	}
 }

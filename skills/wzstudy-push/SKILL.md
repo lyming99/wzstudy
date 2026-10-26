@@ -1,13 +1,13 @@
 ---
 name: wzstudy-push
-description: 为 WzStudy/知序学习系统采集、整理并入库学习资料。当用户要求“采集资料推送到学习系统”“把文章/音频/视频/轮播入库”“同步学习资料到知序”时使用。支持有出处的文章/摘要 JSON 批量入库、本地媒体上传、幂等标识、预检和来源认证；不负责管理员登录、审批发布或客户端推送计划。
+description: 为 WzStudy/知序学习系统采集、整理并入库学习资料。当用户要求“采集资料推送到学习系统”“把文章/音频/视频/轮播入库”“同步学习资料到知序”时使用。支持有出处的文章/摘要 JSON 批量入库、本地媒体上传、幂等标识、预检和来源认证；不负责管理员登录、审批发布、客户端查询或推荐算法。
 ---
 
 # WzStudy 资料采集与入库
 
 ## 目标与边界
 
-将用户授权的学习资料，通过**专用来源密钥**提交到 WzStudy。这里的“推送”是资料入库，不是批准发布、发通知或向其他客户端创建推送计划。新建的专用 AI 来源默认 `auto_publish=false`，资料进入待审核；已有来源的发布策略由管理员控制，必须报告响应中的 `published` 数量，不能一概声称待审核。
+将用户授权的学习资料，通过**专用来源密钥**提交到 WzStudy。这里的“推送”是资料入库，不是批准发布、发通知或向学习客户端分发。录入来源 Source 与查询客户端 Client 独立，此 Skill 只使用 Source 的 ingest/upload 权限。新建的专用 AI 来源默认 `auto_publish=false`，资料进入待审核；已有来源的发布策略由管理员控制，必须报告响应中的 `published` 数量，不能一概声称待审核。
 
 不得将管理员邮箱/密码、管理 API key、会话 Cookie 或来源密钥写入本 Skill、示例、文章、日志或对话。不要读取应用 `.local/access-keys.json` 来代替来源密钥；初始化由用户或项目专用管理脚本一次完成。日常执行只用来源凭据。
 
@@ -16,7 +16,7 @@ description: 为 WzStudy/知序学习系统采集、整理并入库学习资料�
 1. 用户要采集的主题、链接/文件、数量、语言，以及是否已明确授权入库。没有主题或输入资料时先确认，不自行批量抓取、填充示例或发送任意内容。
 2. 来源配置位于用户明确提供的 `--config` / `WZSTUDY_CONFIG`，或环境变量 `WZSTUDY_SOURCE_ID` 与 `WZSTUDY_SOURCE_KEY`；可选 `WZSTUDY_BASE_URL`。不要把密钥作为命令行参数。
 3. 脚本位置是本 Skill 目录的 `scripts/wzstudy_push.py`。从任意工作目录运行时使用实际脚本绝对路径；不要假定当前目录就是项目根。
-4. 优先运行 `doctor`。它只检查健康和专用来源权限，不写资料。服务地址可为 HTTPS 或本机 HTTP；客户端拒绝重定向和把绑定配置的密钥改发其他地址。
+4. 优先运行 `doctor`。它通过健康与只读入库状态接口检查专用来源的 `ingest` 权限，不写资料、不查询资料库，不要求 read/sync；来源不能配置查询权限。来源建议只授予 `ingest`，需要媒体时再授予 `upload`。服务地址可为 HTTPS 或本机 HTTP；客户端拒绝重定向和把绑定配置的密钥改发其他地址。若旧服务缺少 `/api/v1/ingest/{source_id}/status`，先更新服务与 Skill，不以扩权替代兼容修复。
 
 本项目已经配置时的路径约定：
 
@@ -60,7 +60,7 @@ python skills/wzstudy-push/scripts/wzstudy_push.py push --input .artifacts/colle
 python skills/wzstudy-push/scripts/wzstudy_push.py --config .local/ai-push-client.json push --input .artifacts/collected-items.json
 ```
 
-每批最多 100 条且不超过 4 MiB，脚本按两种上限拆分。**单批原子，多个批次不是一个大事务**；失败时输出已经完成的批次回执。请保留返回的系统 ID、external_id、revision 及 created/updated/unchanged/published 数量。
+每批最多 100 条且不超过 4 MiB，脚本按两种上限拆分。**单批原子，多个批次不是一个大事务**；失败时输出已经完成的批次回执。请保留返回的系统 ID、external_id、revision 及 receipt_id、source_id、received_at 和 created/updated/unchanged/published 数量。回执与资料同事务保存，公开状态以实际响应为准。
 
 不会自动重试写请求。网络中断、非 JSON 响应或 5xx 可能表示提交结果不确定，先核对系统状态，不要自动声称全部失败或重复上传。文章在稳定 ID 和相同内容下可由服务端去重，但媒体每次上传会新建不可变资产，不能把反复上传当成无副作用重试。
 

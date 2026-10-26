@@ -2,7 +2,7 @@
 param(
     [switch]$Postgres,
     [switch]$Memory,
-    [string]$Address = '127.0.0.1:8091',
+    [string]$Address = '0.0.0.0:8091',
     [string]$DataDirectory = '',
     [string]$ProfileDirectory = '',
     [switch]$InitializeAdmin,
@@ -28,7 +28,7 @@ if ($Check) {
 if ($InitializeAdmin) { throw 'Interactive -InitializeAdmin is for local file mode. For -Postgres or -Memory configure SYSTEM_ADMIN_EMAIL and SYSTEM_ADMIN_PASSWORD in environment or project .env.' }
 if (-not [string]::IsNullOrWhiteSpace($ProfileDirectory)) { throw '-ProfileDirectory is for file mode; PostgreSQL/memory use project .env or process environment.' }
 if (-not (Get-Command go -ErrorAction SilentlyContinue)) { throw 'Go 1.25+ is required for explicit development modes.' }
-$Allowed = @('ADMIN_API_KEY','READ_API_KEY','CORS_ORIGINS','POLL_ENABLED','SSE_MAX_CLIENTS','HTTP_ADDR','DATABASE_URL','DATA_DIR','UPLOAD_MAX_MB','SYSTEM_ADMIN_EMAIL','SYSTEM_ADMIN_PASSWORD','SYSTEM_ADMIN_DISPLAY_NAME','SYSTEM_ADMIN_USERNAME','BOOTSTRAP_ADMIN_EMAIL','BOOTSTRAP_ADMIN_PASSWORD','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_USERNAME')
+$Allowed = @('ADMIN_API_KEY','READ_API_KEY','CORS_ORIGINS','POLL_ENABLED','HTTP_ADDR','DATABASE_URL','DATA_DIR','UPLOAD_MAX_MB','SYSTEM_ADMIN_EMAIL','SYSTEM_ADMIN_PASSWORD','SYSTEM_ADMIN_DISPLAY_NAME','SYSTEM_ADMIN_USERNAME','BOOTSTRAP_ADMIN_EMAIL','BOOTSTRAP_ADMIN_PASSWORD','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_USERNAME')
 $Previous = @{}
 foreach ($Name in ($Allowed + @('APP_ENV','STORE'))) { $Previous[$Name] = [Environment]::GetEnvironmentVariable($Name,'Process') }
 Push-Location $Root

@@ -25,42 +25,6 @@ type AuditEvent struct {
 	Action string    `json:"action"`
 	At     time.Time `json:"at"`
 }
-type Collection struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Category    string    `json:"category"`
-	Description string    `json:"description"`
-	Color       string    `json:"color"`
-	Revision    int64     `json:"revision"`
-	UpdatedAt   time.Time `json:"updated_at"`
-}
-type PushPlan struct {
-	ID          string     `json:"id"`
-	Title       string     `json:"title"`
-	ItemIDs     []string   `json:"item_ids"`
-	TargetIDs   []string   `json:"target_ids"`
-	ScheduledAt time.Time  `json:"scheduled_at"`
-	Status      string     `json:"status"`
-	Revision    int64      `json:"revision"`
-	CreatedAt   time.Time  `json:"created_at"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
-	LastError   string     `json:"last_error,omitempty"`
-	Deliveries  int        `json:"deliveries"`
-}
-type Delivery struct {
-	Cursor    int64      `json:"cursor"`
-	PlanID    string     `json:"plan_id"`
-	PlanTitle string     `json:"plan_title"`
-	TargetIDs []string   `json:"target_ids"`
-	Item      PublicItem `json:"item"`
-	CreatedAt time.Time  `json:"created_at"`
-}
-type InboxPage struct {
-	Deliveries    []Delivery `json:"deliveries"`
-	NextCursor    int64      `json:"next_cursor"`
-	HighWatermark int64      `json:"high_watermark"`
-	HasMore       bool       `json:"has_more"`
-}
 type WorkspaceSettings struct {
 	Name     string `json:"name"`
 	Compact  bool   `json:"compact"`
@@ -91,12 +55,12 @@ type Summary struct {
 	AssetCount int            `json:"asset_count"`
 }
 type Workspace struct {
-	Sources     []Source          `json:"sources"`
-	Summary     Summary           `json:"summary"`
-	Collections []Collection      `json:"collections"`
-	Plans       []PushPlan        `json:"plans"`
-	Settings    WorkspaceSettings `json:"settings"`
-	Recent      []Item            `json:"recent"`
+	Sources   []Source                 `json:"sources"`
+	Summary   Summary                  `json:"summary"`
+	Clients   []Client                 `json:"clients"`
+	Migration IdentityMigrationPreview `json:"identity_migration"`
+	Settings  WorkspaceSettings        `json:"settings"`
+	Recent    []Item                   `json:"recent"`
 }
 
 func recordSave(tx Tx, kind, id string, v any) error {
@@ -270,6 +234,15 @@ func (s *Service) SaveManaged(ctx context.Context, id string, in ManagedInput, a
 		if e = tx.SaveItem(v); e != nil {
 			return e
 		}
+		result := IngestResult{Items: []Item{v}}
+		if id == "" {
+			result.Created = 1
+		} else {
+			result.Updated = 1
+		}
+		if _, e = s.recordIntake(tx, source, result, "manual"); e != nil {
+			return e
+		}
 		out = v
 		return nil
 	})
@@ -405,11 +378,19 @@ func (s *Service) Workspace(ctx context.Context) (out Workspace, err error) {
 		if e != nil {
 			return e
 		}
-		out.Collections, e = recordsAs[Collection](tx, "collection")
+		for i := range out.Sources {
+			out.Sources[i] = sourcePolicy(out.Sources[i])
+		}
+		clients, e := recordsAs[clientRecord](tx, "client")
 		if e != nil {
 			return e
 		}
-		out.Plans, e = recordsAs[PushPlan](tx, "plan")
+		out.Clients = []Client{}
+		for _, record := range clients {
+			out.Clients = append(out.Clients, cloneClient(record.Client))
+		}
+		sort.Slice(out.Clients, func(i, j int) bool { return out.Clients[i].Slug < out.Clients[j].Slug })
+		out.Migration, e = identityPreview(tx)
 		if e != nil {
 			return e
 		}
@@ -477,7 +458,6 @@ func (s *Service) Workspace(ctx context.Context) (out Workspace, err error) {
 			out.Recent[i].Draft.Content = ""
 			out.Recent[i].Published = nil
 		}
-		sort.Slice(out.Plans, func(i, j int) bool { return out.Plans[i].ScheduledAt.Before(out.Plans[j].ScheduledAt) })
 		return nil
 	})
 	return
@@ -498,256 +478,6 @@ func (s *Service) SaveSettings(ctx context.Context, in WorkspaceSettings) (out W
 		in.Revision++
 		out = in
 		return recordSave(tx, "settings", "workspace", in)
-	})
-	return
-}
-func (s *Service) SaveCollection(ctx context.Context, id string, in Collection) (out Collection, err error) {
-	in.Name = strings.TrimSpace(in.Name)
-	in.Category = strings.TrimSpace(in.Category)
-	if in.Name == "" || in.Category == "" || !validText(in.Name, 150) || !validText(in.Category, 200) || !validText(in.Description, 1000) || (in.Color != "green" && in.Color != "purple" && in.Color != "blue") {
-		return out, ErrInvalid
-	}
-	err = s.Store.Update(ctx, func(tx Tx) error {
-		if id == "" {
-			if in.Revision != 0 {
-				return ErrInvalid
-			}
-			id = uuid.NewString()
-		} else {
-			old, e := recordAs[Collection](tx, "collection", id)
-			if e != nil {
-				return e
-			}
-			if old.Revision != in.Revision {
-				return ErrConflict
-			}
-		}
-		in.ID = id
-		in.Revision++
-		in.UpdatedAt = s.Now()
-		out = in
-		return recordSave(tx, "collection", id, in)
-	})
-	return
-}
-func (s *Service) DeleteCollection(ctx context.Context, id string, rev int64) error {
-	return s.Store.Update(ctx, func(tx Tx) error {
-		v, e := recordAs[Collection](tx, "collection", id)
-		if e != nil {
-			return e
-		}
-		if v.Revision != rev {
-			return ErrConflict
-		}
-		return tx.DeleteRecord("collection", id)
-	})
-}
-func validateTargets(tx Tx, ids []string) error {
-	seen := map[string]bool{}
-	if len(ids) > 100 {
-		return ErrInvalid
-	}
-	for _, id := range ids {
-		v, e := tx.Source(id)
-		if e != nil || v.Kind != "manual" || v.System || !v.Enabled || !v.Allows(PermissionInbox) || seen[id] {
-			return ErrInvalid
-		}
-		seen[id] = true
-	}
-	return nil
-}
-func (s *Service) CreatePlan(ctx context.Context, in PushPlan) (out PushPlan, err error) {
-	in.Title = strings.TrimSpace(in.Title)
-	if in.Title == "" || !validText(in.Title, 150) || len(in.ItemIDs) < 1 || len(in.ItemIDs) > 50 || !in.ScheduledAt.After(s.Now()) || in.ScheduledAt.After(s.Now().AddDate(2, 0, 0)) {
-		return out, ErrInvalid
-	}
-	err = s.Store.Update(ctx, func(tx Tx) error {
-		if e := validateTargets(tx, in.TargetIDs); e != nil {
-			return e
-		}
-		seen := map[string]bool{}
-		for _, id := range in.ItemIDs {
-			v, e := tx.Item(id)
-			if e != nil || v.DeletedAt != nil || v.Published == nil || seen[id] {
-				return ErrInvalid
-			}
-			seen[id] = true
-		}
-		out = PushPlan{ID: uuid.NewString(), Title: in.Title, ItemIDs: append([]string(nil), in.ItemIDs...), TargetIDs: append([]string{}, in.TargetIDs...), ScheduledAt: in.ScheduledAt.UTC(), Status: "scheduled", Revision: 1, CreatedAt: s.Now()}
-		return recordSave(tx, "plan", out.ID, out)
-	})
-	return
-}
-func (s *Service) PlanAction(ctx context.Context, id string, rev int64, action string) (out PushPlan, err error) {
-	err = s.Store.Update(ctx, func(tx Tx) error {
-		v, e := recordAs[PushPlan](tx, "plan", id)
-		if e != nil {
-			return e
-		}
-		if v.Revision != rev {
-			return ErrConflict
-		}
-		switch action {
-		case "delete":
-			return tx.DeleteRecord("plan", id)
-		case "pause":
-			if v.Status != "scheduled" {
-				return ErrInvalid
-			}
-			v.Status = "paused"
-		case "resume":
-			if v.Status != "paused" && v.Status != "failed" {
-				return ErrInvalid
-			}
-			v.Status = "scheduled"
-			v.LastError = ""
-		case "run":
-			if v.Status != "scheduled" && v.Status != "paused" && v.Status != "failed" {
-				return ErrInvalid
-			}
-			if e = s.deliver(tx, &v); e != nil {
-				return e
-			}
-		default:
-			return ErrInvalid
-		}
-		v.Revision++
-		out = v
-		return recordSave(tx, "plan", id, v)
-	})
-	return
-}
-
-// Each plan, its outbox events and inbox deliveries commit in the same store
-// transaction. The feed clock serializes writers across PostgreSQL processes.
-func (s *Service) deliver(tx Tx, p *PushPlan) error {
-	targets := append([]string{}, p.TargetIDs...)
-	if len(targets) == 0 {
-		sources, e := tx.Sources()
-		if e != nil {
-			return e
-		}
-		for _, v := range sources {
-			if v.Kind == "manual" && !v.System && v.Enabled && v.Allows(PermissionInbox) {
-				targets = append(targets, v.ID)
-			}
-		}
-	}
-	if len(targets) == 0 {
-		p.Status = "failed"
-		p.LastError = "没有可接收内容的已启用客户端，请先接入客户端"
-		return nil
-	}
-	if e := validateTargets(tx, targets); e != nil {
-		p.Status = "failed"
-		p.LastError = "接收客户端已停用或不存在"
-		return nil
-	}
-	items := make([]PublicItem, 0, len(p.ItemIDs))
-	for _, id := range p.ItemIDs {
-		v, e := tx.Item(id)
-		if e != nil && e != ErrNotFound {
-			return e
-		}
-		if e == ErrNotFound || v.DeletedAt != nil || v.Published == nil {
-			p.Status = "failed"
-			p.LastError = "计划中的资料已下架或删除，请重新创建计划"
-			return nil
-		}
-		items = append(items, *v.Published)
-	}
-	now := s.Now()
-	for _, item := range items {
-		event, e := tx.Append(Change{Operation: "upsert", ItemID: item.ID, SourceID: item.SourceID, Revision: item.Revision, Item: &item, CreatedAt: now})
-		if e != nil {
-			return e
-		}
-		d := Delivery{Cursor: event.Cursor, PlanID: p.ID, PlanTitle: p.Title, TargetIDs: targets, Item: item, CreatedAt: now}
-		if e = recordSave(tx, "delivery", uuid.NewString(), d); e != nil {
-			return e
-		}
-	}
-	p.Status = "done"
-	p.CompletedAt = &now
-	p.LastError = ""
-	p.Deliveries = len(items) * len(targets)
-	return nil
-}
-func (s *Service) DispatchDue(ctx context.Context) error {
-	// Avoid rewriting a durable file snapshot every two seconds when nothing is due.
-	due := false
-	if err := s.Store.View(ctx, func(tx Tx) error {
-		plans, e := recordsAs[PushPlan](tx, "plan")
-		if e != nil {
-			return e
-		}
-		for _, p := range plans {
-			if p.Status == "scheduled" && !p.ScheduledAt.After(s.Now()) {
-				due = true
-				break
-			}
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-	if !due {
-		return nil
-	}
-	return s.Store.Update(ctx, func(tx Tx) error {
-		plans, e := recordsAs[PushPlan](tx, "plan")
-		if e != nil {
-			return e
-		}
-		sort.Slice(plans, func(i, j int) bool { return plans[i].ScheduledAt.Before(plans[j].ScheduledAt) })
-		processed := 0
-		for _, v := range plans {
-			if v.Status != "scheduled" || v.ScheduledAt.After(s.Now()) {
-				continue
-			}
-			if e = s.deliver(tx, &v); e != nil {
-				return e
-			}
-			v.Revision++
-			if e = recordSave(tx, "plan", v.ID, v); e != nil {
-				return e
-			}
-			processed++
-			if processed >= 20 {
-				break
-			}
-		}
-		return nil
-	})
-}
-func (s *Service) Inbox(ctx context.Context, id, key string, after int64, limit int) (out InboxPage, err error) {
-	if after < 0 || limit < 1 || limit > 100 {
-		return out, ErrInvalid
-	}
-	err = s.Store.View(ctx, func(tx Tx) error {
-		source, e := sourceAccess(tx, id, key, PermissionInbox)
-		if e != nil {
-			return e
-		}
-		if source.Kind != "manual" {
-			return ErrUnauthorized
-		}
-		window, e := tx.Changes(after, limit, nil)
-		if e != nil {
-			return e
-		}
-		out = InboxPage{Deliveries: []Delivery{}, NextCursor: window.NextCursor, HighWatermark: window.HighWatermark, HasMore: window.HasMore}
-		deliveries, e := recordsAs[Delivery](tx, "delivery")
-		if e != nil {
-			return e
-		}
-		for _, d := range deliveries {
-			if d.Cursor > after && d.Cursor <= window.NextCursor && MatchesSource(id, d.TargetIDs) {
-				out.Deliveries = append(out.Deliveries, d)
-			}
-		}
-		sort.Slice(out.Deliveries, func(i, j int) bool { return out.Deliveries[i].Cursor < out.Deliveries[j].Cursor })
-		return nil
 	})
 	return
 }

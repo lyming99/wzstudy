@@ -22,7 +22,6 @@ type Config struct {
 	AdminKey               string
 	ReadKey                string
 	PollEnabled            bool
-	SSEMaxClients          int
 	CORSOrigins            []string
 }
 
@@ -34,7 +33,7 @@ func FromEnv(get func(string) string) (c Config, err error) {
 		}
 		return d
 	}
-	c = Config{Env: value("APP_ENV", "development"), HTTPAddr: value("HTTP_ADDR", "127.0.0.1:8091"), Store: value("STORE", "postgres"), DatabaseURL: get("DATABASE_URL"), AdminKey: get("ADMIN_API_KEY"), ReadKey: get("READ_API_KEY"), SSEMaxClients: 128}
+	c = Config{Env: value("APP_ENV", "development"), HTTPAddr: value("HTTP_ADDR", "0.0.0.0:8091"), Store: value("STORE", "postgres"), DatabaseURL: get("DATABASE_URL"), AdminKey: get("ADMIN_API_KEY"), ReadKey: get("READ_API_KEY")}
 	if c.Env != "development" && c.Env != "test" && c.Env != "production" {
 		return c, errors.New("APP_ENV must be development, test or production")
 	}
@@ -89,10 +88,6 @@ func FromEnv(get func(string) string) (c Config, err error) {
 	c.PollEnabled, err = strconv.ParseBool(value("POLL_ENABLED", "true"))
 	if err != nil {
 		return c, errors.New("invalid POLL_ENABLED")
-	}
-	c.SSEMaxClients, err = strconv.Atoi(value("SSE_MAX_CLIENTS", "128"))
-	if err != nil || c.SSEMaxClients < 1 || c.SSEMaxClients > 10000 {
-		return c, errors.New("SSE_MAX_CLIENTS must be 1-10000")
 	}
 	for _, v := range strings.Split(get("CORS_ORIGINS"), ",") {
 		v = strings.TrimSpace(v)

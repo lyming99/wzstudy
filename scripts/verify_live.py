@@ -53,8 +53,13 @@ def request(path, method='GET', body=None, key=ADMIN):
 
 
 def nav(page, route):
-    page.locator(f'.sidebar [data-route="{route}"]').click()
-    expect(page.locator('h1')).to_have_text({'library': '学习资料库', 'clients': '客户端管理', 'sources': '内容来源', 'collections': '专题合集', 'push': '推送管理', 'overview': '内容总览', 'analytics': '数据洞察'}[route])
+    main = 'query' if route in ('query', 'clients') else 'library'
+    if page.viewport_size['width'] <= 700 and 'mobile-open' not in (page.locator('body').get_attribute('class') or ''):
+        page.locator('[data-action="open-nav"]').click()
+    page.locator(f'.sidebar [data-route="{main}"]').click()
+    if route != main:
+        page.locator(f'.section-tabs [data-route="{route}"]').click()
+    expect(page.locator('h1')).to_have_text({'library':'数据录入','query':'数据查询','clients':'查询客户端','sources':'录入端管理','access':'接入指引','receipts':'入库记录'}[route])
 
 
 def login(page):
@@ -63,7 +68,7 @@ def login(page):
     page.locator('#login-password').fill(PASSWORD)
     page.locator('#login-form button[type="submit"]').click()
     expect(page.locator('#login-root')).to_be_empty()
-    expect(page.locator('#main-content h1')).to_have_text('学习资料库')
+    expect(page.locator('#main-content h1')).to_have_text('数据录入')
     expect(page.locator('#main-content h1')).to_be_visible()
     expect(page.locator('#library-results [role="status"]')).to_have_count(0)
 
@@ -158,19 +163,27 @@ try:
             assert page.evaluate("document.cookie.includes('wzstudy_admin')") is False
             check('邮箱密码登录、错误凭据、HttpOnly 会话与无演示数据的空工作区')
 
-            nav(page, 'clients')
-            page.locator('.heading-actions [data-action="new-client"]').click()
-            page.locator('#source-name').fill('桌面学习客户端')
-            page.locator('#source-desc').fill('连接日常上传与离线学习收件箱')
+            nav(page, 'sources')
+            page.locator('.heading-actions [data-action="new-source"]').click()
+            page.locator('#source-name').fill('桌面采集程序')
+            page.locator('#source-desc').fill('统一资料录入专用身份')
             page.locator('button[form="source-form"]').click()
-            expect(page.locator('#dialog-title')).to_have_text('来源已连接，请保存密钥')
+            expect(page.locator('#one-time-key')).to_be_visible()
             source_key = page.locator('#one-time-key').input_value()
             assert source_key.startswith('wzsk_')
             workspace = request('/admin/workspace')
-            client = next(s for s in workspace['sources'] if s['name'] == '桌面学习客户端')
+            client = next(s for s in workspace['sources'] if s['name'] == '桌面采集程序')
+            close_modal(page)
+            nav(page, 'clients')
+            page.locator('.heading-actions [data-action="new-client"]').click()
+            page.locator('#client-name').fill('桌面查询客户端')
+            page.locator('button[form="client-form"]').click()
+            expect(page.locator('#one-time-key')).to_be_visible()
+            query_key = page.locator('#one-time-key').input_value()
+            assert query_key.startswith('wzck_') and query_key != source_key
             close_modal(page)
             expect(page.locator('.client-row')).to_have_count(1)
-            check('真实客户端登记、来源 ID 与仅显示一次的独立密钥')
+            check('录入来源与查询客户端独立登记、独立 Key，权限不混用')
 
             nav(page, 'library')
             page.locator('.heading-actions [data-action="upload"]').click()
@@ -323,64 +336,74 @@ try:
             assert request('/admin/workspace')['summary']['pending'] == 2
             check('编辑摘要保留原作者、原标签、来源和不在缓存中的自定义分类')
 
-            nav(page, 'collections')
-            page.locator('.heading-actions [data-action="new-collection"]').click()
-            page.locator('#collection-name').fill('AI 通识小课堂')
-            page.locator('#collection-category').select_option('人工智能')
-            page.locator('#collection-color').select_option('purple')
-            page.locator('#collection-desc').fill('理解技术，也发现新的可能')
-            page.locator('button[form="collection-form"]').click()
-            expect(page.locator('.collection-body h3')).to_have_text('AI 通识小课堂')
-            page.locator('[data-action="edit-collection"]').click()
-            page.locator('#collection-desc').fill('从原理到日常，让技术变得易懂')
-            page.locator('button[form="collection-form"]').click()
-            page.locator('[data-action="open-collection"]').click()
-            expect(page.locator('#category-filter')).to_have_value('人工智能')
-            expect(page.locator('.materials-table tbody tr')).to_have_count(1)
-            check('专题创建、按修订号编辑与真实分类归集')
+            nav(page, 'query')
+            page.locator('#query-kind').select_option('video')
+            page.locator('#query-category').fill('人工智能')
+            page.locator('button[form="query-form"]').click()
+            expect(page.locator('.query-table tbody tr')).to_have_count(1)
+            page.locator('.query-result-row td').nth(1).click()
+            expect(page.locator('[data-query-detail-state=ready]')).to_be_visible()
+            wait_js(page, "document.querySelector('.public-query-detail video')?.readyState >= 2")
+            assert page.locator('.public-query-detail video').evaluate('video=>video.duration') > 0
+            expect(page.locator('.toast')).to_have_count(0, timeout=7000)
+            page.screenshot(path=str(ARTIFACTS / 'query-detail-video-desktop.png'), full_page=True, animations='disabled')
+            page.set_viewport_size({'width': 390, 'height': 920})
+            wait_js(page, "document.querySelector('.sidebar').getBoundingClientRect().right <= 0.5")
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+            page.screenshot(path=str(ARTIFACTS / 'query-detail-video-mobile.png'), full_page=True, animations='disabled')
+            page.set_viewport_size({'width': 1600, 'height': 1100})
+            close_modal(page)
+            page.locator('#query-category').fill('')
+            page.locator('#query-kind').select_option('audio')
+            page.locator('button[form="query-form"]').click()
+            expect(page.locator('.query-detail-button')).to_have_count(1)
+            page.locator('.query-detail-button').click()
+            expect(page.locator('[data-query-detail-state=ready]')).to_be_visible()
+            wait_js(page, "document.querySelector('.public-query-detail audio')?.readyState >= 2")
+            assert page.locator('.public-query-detail audio').evaluate('audio=>audio.duration') > 1
+            close_modal(page)
+            page.locator('#query-kind').select_option('carousel')
+            page.locator('button[form="query-form"]').click()
+            expect(page.locator('.query-title')).to_have_count(1)
+            page.locator('.query-title').click()
+            expect(page.locator('[data-query-detail-state=ready]')).to_be_visible()
+            expect(page.locator('.public-query-detail .public-image')).to_have_count(2)
+            wait_js(page, "[...document.querySelectorAll('.public-query-detail .public-image')].every(image=>image.complete&&image.naturalWidth>0)")
+            close_modal(page)
+            check('数据查询可打开视频/音频/轮播详情，公开媒体实际解码且手机弹窗无页面溢出')
+            nav(page, 'receipts')
+            expect(page.locator('.receipt-table')).to_be_visible()
+            assert request('/admin/intakes?limit=100')['total'] >= 8
+            check('公开查询过滤与真实入库回执内页，不再依赖专题或统计业务')
 
-            nav(page, 'push')
-            page.locator('.heading-actions [data-action="new-plan"]').click()
-            page.locator('#plan-title').fill('下班后的 20 分钟')
-            page.locator('#plan-channel').select_option(client['id'])
-            page.locator('.checklist-label', has_text='把时间当作朋友').locator('input').check()
-            page.locator('button[form="plan-form"]').click()
-            plan_card = page.locator('.push-card').filter(has=page.locator('h3', has_text='下班后的 20 分钟'))
-            expect(plan_card.locator('.badge')).to_have_text('待推送')
-            plan_card.locator('[data-action="pause-plan"]').click()
-            expect(plan_card.locator('.badge')).to_have_text('已暂停')
-            plan_card.locator('[data-action="resume-plan"]').click()
-            expect(plan_card.locator('.badge')).to_have_text('待推送')
-            plan_card.locator('[data-action="run-plan"]').click()
-            page.locator('#confirm-operation').click()
-            expect(plan_card.locator('.badge')).to_have_text('已完成')
-            inbox = request('/clients/' + client['id'] + '/inbox?after=0', key=source_key)
-            assert len(inbox['deliveries']) == 1
-            assert inbox['deliveries'][0]['item']['id'] == audio_item['id']
-            plan_card.locator('[data-action="plan-report"]').click()
-            expect(page.locator('.dialog-body')).to_contain_text('不代表客户端已读')
-            page.keyboard.press('Escape')
-            check('界面创建计划、暂停恢复、真实立即投递和客户端专属收件箱')
+            expect(page.locator('.sidebar [data-route="push"]')).to_have_count(0)
+            expect(page.locator('[data-action="bulk-push"]')).to_have_count(0)
+            for path, method in [('/admin/plans', 'POST'), ('/admin/plans/old-plan/action', 'POST'), ('/clients/' + client['id'] + '/inbox', 'GET'), ('/stream', 'GET')]:
+                response = context.request.fetch(BASE + '/api/v1' + path, method=method,
+                    headers={'Authorization': 'Bearer ' + ADMIN}, data={} if method == 'POST' else None)
+                try:
+                    assert response.status == 404, (path, response.status)
+                    assert response.json()['error']['code'] == 'not_found'
+                finally:
+                    response.dispose()
+            candidates = request('/items?kind=audio&limit=20', key=query_key)['items']
+            assert any(i['id'] == audio_item['id'] for i in candidates)
+            published_changes = request('/changes?after=0&limit=100', key=query_key)
+            assert any(c['item_id'] == audio_item['id'] for c in published_changes['changes'])
+            assert 'plans' not in request('/admin/workspace')
+            check('推送界面与计划/收件箱/SSE 接口已移除，客户端可主动筛选资料和拉取变更')
 
-            due = request('/admin/plans', 'POST', {'title': '定时学习提醒', 'item_ids': [audio_item['id']], 'target_ids': [client['id']], 'scheduled_at': __import__('datetime').datetime.fromtimestamp(time.time() + 3, __import__('datetime').timezone.utc).isoformat()})
-            for _ in range(80):
-                current = next(p for p in request('/admin/workspace')['plans'] if p['id'] == due['id'])
-                if current['status'] == 'done':
-                    break
-                time.sleep(0.15)
-            assert current['status'] == 'done', current
-            time.sleep(2.2)
-            assert len(request('/clients/' + client['id'] + '/inbox?after=0', key=source_key)['deliveries']) == 2
-            check('实际主进程后台定时执行、持久收件箱与执行后不重复投递')
-
+            nav(page, 'library')
             page.reload()
-            expect(page.locator('h1')).to_have_text('推送管理')
+            expect(page.locator('h1')).to_have_text('数据录入')
+            expect(page.locator('.client-pull-widget')).to_contain_text('推荐算法')
+            expect(page.locator('.sidebar [data-route="push"]')).to_have_count(0)
             nav(page, 'sources')
-            page.locator('.heading-actions [data-action="new-source"]').click()
+            page.locator('.heading-actions [data-action="new-rss-source"]').click()
             page.locator('#source-name').fill('受限地址安全验证')
             page.locator('#source-url').fill('http://127.0.0.1:9099/private-feed')
             page.locator('button[form="source-form"]').click()
-            expect(page.locator('#one-time-key')).to_be_visible()
+            expect(page.locator('#dialog-title')).to_have_text('RSS 订阅已添加')
             close_modal(page)
             rss_card = page.locator('.source-card').filter(has=page.locator('h3', has_text='受限地址安全验证'))
             rss_card.locator('[data-action="sync-source"]').click()
@@ -392,20 +415,20 @@ try:
             check('来源真实启停、RSS 失败反馈与内网地址抓取保护')
 
             nav(page, 'clients')
-            page.locator('[data-action="source-access"]').click()
-            page.locator('[data-action="rotate-source"]').click()
+            page.locator('[data-action="client-access"]').click()
+            page.locator('[data-action="rotate-client"]').click()
             page.locator('#confirm-operation').click()
             expect(page.locator('#one-time-key')).to_be_visible()
-            old_source_key = source_key
-            source_key = page.locator('#one-time-key').input_value()
-            assert source_key != old_source_key
+            old_query_key = query_key
+            query_key = page.locator('#one-time-key').input_value()
+            assert query_key != old_query_key
             close_modal(page)
             try:
-                request('/clients/' + client['id'] + '/inbox?after=0', key=old_source_key)
+                request('/items', key=old_query_key)
                 raise AssertionError('Old key was accepted')
             except HTTPError as error:
                 assert error.code == 401
-            assert len(request('/clients/' + client['id'] + '/inbox?after=0', key=source_key)['deliveries']) == 2
+            assert any(i['id'] == audio_item['id'] for i in request('/items?kind=audio', key=query_key)['items'])
             check('来源密钥真实轮换、旧密钥即时失效和权限延续')
 
             page.locator('.user-button').click()
@@ -419,7 +442,7 @@ try:
             page.locator('.user-button').click()
             page.locator('#setting-compact').click()
             page.locator('button[form="settings-form"]').click()
-            nav(page, 'analytics')
+            nav(page, 'library')
             with page.expect_download() as download:
                 page.locator('[data-action="export"]').click()
             download.value.save_as(ARTIFACTS / 'materials-export.csv')
@@ -428,7 +451,7 @@ try:
             assert rows[0][0] == '标题'
             check('服务端设置、刷新后持久化、紧凑视图与真实 CSV 导出')
 
-            for route in ['overview', 'sources', 'clients', 'collections', 'push', 'analytics', 'library']:
+            for route in ['sources', 'clients', 'access', 'receipts', 'query', 'library']:
                 nav(page, route)
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), route
             page.locator('[data-action="reset-filters"]').click() if page.locator('[data-action="reset-filters"]').count() else None
@@ -438,7 +461,7 @@ try:
             expect(page.locator('.materials-table tbody tr')).to_have_count(6)
             expect(page.locator('.toast')).to_have_count(0, timeout=7000)
             page.screenshot(path=str(ARTIFACTS / 'management-desktop.png'), full_page=True)
-            check('7 个真实导航页面与桌面截图')
+            check('6 个真实导航页面与桌面截图')
 
             page.locator('.heading-actions [data-action="upload"]').click()
             page.locator('.dialog-header button').focus()
@@ -469,9 +492,9 @@ try:
             expect(page.locator('#nav-count')).to_have_text('8')
             expect(page.locator('#profile-name')).to_have_text('知序管理员')
             restarted = request('/admin/workspace')
-            assert len(restarted['plans']) == 2
-            assert len(restarted['collections']) == 1
-            assert len(request('/clients/' + client['id'] + '/inbox?after=0', key=source_key)['deliveries']) == 2
+            assert 'plans' not in restarted
+            assert 'collections' not in restarted and len(restarted['clients']) == 1
+            assert any(i['id'] == audio_item['id'] for i in request('/items?kind=audio', key=query_key)['items'])
             page.locator('#type-filter').select_option('audio')
             expect(page.locator('.materials-table tbody tr')).to_have_count(1)
             detail(page, '把时间当作朋友')
@@ -479,7 +502,7 @@ try:
             assert page.locator('audio').evaluate('a=>a.duration') > 1
             page.keyboard.press('Escape')
             assert page.evaluate('Object.keys(localStorage)') == []
-            check('服务进程重启后资料、附件、设置、轮换密钥、计划及投递记录全部保留')
+            check('服务进程重启后资料、附件、设置、轮换密钥及客户端查询权限全部保留')
 
             held = []
             detail_pattern = BASE + '/api/v1/admin/items/' + audio_item['id']
@@ -510,7 +533,7 @@ try:
             assert not ERRORS, ERRORS
             assert not EXTERNAL, EXTERNAL
             check('安全退出、无资料 localStorage 缓存、零外部网页请求与零未捕获 JS 异常')
-            report = {'result': 'passed', 'version': '0.3.0', 'groups': len(CHECKS), 'checks': CHECKS, 'javascript_errors': ERRORS, 'external_requests': EXTERNAL, 'browser': browser.version, 'store': 'isolated real file store', 'viewport_widths': [1600, 1440, 1280, 1024, 768, 390], 'screenshots': ['management-desktop.png', 'management-mobile.png'], 'binary_sha256': hashlib.sha256((ARTIFACTS / 'wzstudy.exe').read_bytes()).hexdigest(), 'postgres_integration': 'not run by the isolated file-store browser suite'}
+            report = {'result': 'passed', 'version': '0.3.0', 'groups': len(CHECKS), 'checks': CHECKS, 'javascript_errors': ERRORS, 'external_requests': EXTERNAL, 'browser': browser.version, 'store': 'isolated real file store', 'viewport_widths': [1600, 1440, 1280, 1024, 768, 390], 'screenshots': ['management-desktop.png', 'management-mobile.png', 'query-detail-video-desktop.png', 'query-detail-video-mobile.png'], 'binary_sha256': hashlib.sha256((ARTIFACTS / 'wzstudy.exe').read_bytes()).hexdigest(), 'postgres_integration': 'not run by the isolated file-store browser suite'}
             (ARTIFACTS / 'live-verification.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
             context.close()
             browser.close()

@@ -1,7 +1,7 @@
 # Compatibility entry point for v0.2.0 workspaces. New entry: ../start-local.ps1.
 [CmdletBinding()]
 param(
-    [string]$Address = '127.0.0.1:8091',
+    [string]$Address = '0.0.0.0:8091',
     [string]$DataDirectory = '',
     [string]$ProfileDirectory = '',
     [switch]$InitializeAdmin,

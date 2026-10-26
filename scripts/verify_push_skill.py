@@ -45,7 +45,7 @@ def check(name):
 units = subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'skills/wzstudy-push/tests', '-v'], cwd=ROOT,
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 assert units.returncode == 0, units.stdout.decode('utf-8', errors='replace')
-check('10 standard-library unit tests: validation, batching, dry-run, endpoint binding, redirects, uncertainty and multipart')
+check('12 standard-library unit tests: validation, batching, dry-run, endpoint binding, ingest-only doctor, redirects, uncertainty and multipart')
 
 with socket.socket() as sock:
     sock.bind(('127.0.0.1', 0))
@@ -84,8 +84,10 @@ with ExitStack() as stack:
     client = Client(base, source_id, source_key)
     assert client.doctor()['source_authenticated']
     assert setup(base,config,admin_key_file=keys)['existing_config_reused']
-    assert len(admin.request('/admin/sources')) == 1
-    check('One-time setup stores only a dedicated source key, disables auto-publish and safely reuses existing config')
+    configured_sources = admin.request('/admin/sources')
+    assert len(configured_sources) == 1
+    assert configured_sources[0]['permissions'] == ['ingest', 'upload']
+    check('One-time setup uses only ingest/upload permissions, stores a dedicated source key, disables auto-publish and safely reuses config')
 
     article = {'title':'隔离验证的学习摘要','summary':'仅存在临时工作区','content':'# 学习摘要\n\nAI 整理的测试内容。',
                'format':'markdown','url':'https://example.org/learning/source#section','author':'测试作者','category':'学习方法','tags':['学习','AI']}
@@ -143,7 +145,7 @@ with ExitStack() as stack:
     check('Disabled-source failures stop ingestion without bypassing permissions or changing the source policy')
     stop()
 
-report={'result':'passed','groups':len(CHECKS),'checks':CHECKS,'unit_tests':10,
+report={'result':'passed','groups':len(CHECKS),'checks':CHECKS,'unit_tests':12,
         'workspace':'isolated temporary file store; no user materials submitted',
         'credentials':'synthetic only; no user passwords or live source keys printed'}
 (ARTIFACTS/'push-skill-verification.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')

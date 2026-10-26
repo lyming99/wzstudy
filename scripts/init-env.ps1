@@ -15,7 +15,6 @@ ADMIN_API_KEY=$(New-Secret)
 READ_API_KEY=$(New-Secret)
 API_PORT=8091
 POLL_ENABLED=true
-SSE_MAX_CLIENTS=128
 CORS_ORIGINS=
 "@
 # CreateNew prevents a concurrent run from overwriting existing credentials.

@@ -159,10 +159,13 @@ class Client:
 
     def doctor(self):
         ready = self.request('/health/ready', auth=False)
-        inbox = self.request('/clients/' + self.source_id + '/inbox?after=0&limit=1')
+        status = self.request('/ingest/' + self.source_id + '/status')
+        if not isinstance(status, dict) or status.get('source_id') != self.source_id or status.get('enabled') is not True or not isinstance(status.get('permissions'), list) or 'ingest' not in status['permissions']:
+            raise PushError('invalid_response', 'Ingestion status did not confirm this source and its ingest permission.')
         return {'ok': True, 'base_url': self.base_url, 'source_id': self.source_id,
                 'health': ready.get('status'), 'source_authenticated': True,
-                'inbox_cursor': inbox.get('next_cursor'), 'note': 'No materials were submitted.'}
+                'permissions': status['permissions'], 'auto_publish': status.get('auto_publish', False),
+                'note': 'No materials were submitted; no inbox or reading permission is required.'}
 
 
 def normalize(item, with_files=False):
@@ -217,6 +220,10 @@ def load_items(path):
             raise PushError('invalid_input', 'Invalid UTF-8 JSONL input.') from None
     else:
         data = read_json(path)
+    return normalize_items(data)
+
+
+def normalize_items(data):
     if isinstance(data, dict):
         data = data.get('items', [data])
     if not isinstance(data, list) or not data:
@@ -243,7 +250,7 @@ def batches(items):
 
 
 def receipt(data):
-    return {key: data.get(key, 0) for key in ('created', 'updated', 'unchanged', 'published')} | {
+    return {key: data.get(key, 0) for key in ('created', 'updated', 'unchanged', 'published')} | {key: data[key] for key in ('receipt_id', 'source_id', 'received_at') if key in data} | {
         'items': [{'id': x.get('id'), 'external_id': x.get('external_id'), 'revision': x.get('revision'),
                    'status': x.get('status', 'pending')} for x in data.get('items', [])]}
 
@@ -274,6 +281,9 @@ def upload(client, metadata, paths, dry_run=False):
     expected = {'audio':'audio/', 'video':'video/', 'carousel':'image/', 'article':'text/'}[item['kind']]
     if any(not MIME[p.suffix.lower()].startswith(expected) for p in files):
         raise PushError('invalid_upload', 'File extensions do not match the declared content kind.')
+    for path in files:
+        if any(ord(c) < 32 for c in path.name) or '"' in path.name or '\\' in path.name:
+            raise PushError('invalid_upload', 'Unsafe file name.')
     if dry_run:
         return {'dry_run': True, 'files': len(files), 'bytes': sum(p.stat().st_size for p in files), 'external_id': item['external_id'], 'kind': item['kind']}
     boundary = 'wzstudy-' + secrets.token_hex(16)

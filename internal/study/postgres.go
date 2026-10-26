@@ -41,7 +41,24 @@ func (s *PostgresStore) Ping(ctx context.Context) error {
 		return err
 	}
 	var count int
-	return s.Pool.QueryRow(ctx, `SELECT count(*) FROM workspace_records WHERE false`).Scan(&count)
+	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM workspace_records WHERE false`).Scan(&count); err != nil {
+		return err
+	}
+	var ready bool
+	if err := s.Pool.QueryRow(ctx, `SELECT to_regclass('workspace_client_key_hash') IS NOT NULL`).Scan(&ready); err != nil {
+		return err
+	}
+	if !ready {
+		return errors.New("identity schema migration required")
+	}
+	var feedbackReady bool
+	if err := s.Pool.QueryRow(ctx, `SELECT to_regclass('workspace_feedback_state_client_item') IS NOT NULL`).Scan(&feedbackReady); err != nil {
+		return err
+	}
+	if !feedbackReady {
+		return errors.New("client feedback schema migration required")
+	}
+	return nil
 }
 func (s *PostgresStore) Close() { s.Pool.Close() }
 func (s *PostgresStore) View(ctx context.Context, fn func(Tx) error) error {
@@ -204,6 +221,9 @@ func (t *postgresTx) Append(v Change) (Change, error) {
 	return v, err
 }
 func (t *postgresTx) Items(f Filter) ([]Item, error) {
+	if ValidateFeedbackExclusions(f.FeedbackExclude) != nil {
+		return nil, ErrInvalid
+	}
 	column := "live"
 	where := []string{"live IS NOT NULL", "record->>'deleted_at' IS NULL"}
 	if f.Admin {
@@ -229,6 +249,15 @@ func (t *postgresTx) Items(f Filter) ([]Item, error) {
 	}
 	if f.Query != "" {
 		where = append(where, "strpos(lower(("+column+"->>'title') || ' ' || ("+column+"->>'summary') || ' ' || COALESCE("+column+"->>'author','') || ' ' || COALESCE("+column+"->>'category','') || ' ' || COALESCE(("+column+"->'tags')::text,'')),lower("+arg(f.Query)+")) > 0")
+	}
+	if !f.Admin && f.FeedbackClientID != "" && len(f.FeedbackExclude) > 0 {
+		clientArg := arg(f.FeedbackClientID)
+		sinceArg := ""
+		if f.FeedbackSince != nil {
+			sinceArg = arg(*f.FeedbackSince)
+		}
+		condition := feedbackSQLConditions("fs", f.FeedbackExclude, sinceArg)
+		where = append(where, "NOT EXISTS (SELECT 1 FROM workspace_records fs WHERE fs.kind='feedback_state' AND fs.record->>'client_id'="+clientArg+" AND fs.record->>'item_id'=items.id AND ("+condition+"))")
 	}
 	order := "published_at DESC,id DESC"
 	if f.Admin {
