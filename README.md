@@ -54,6 +54,8 @@
 
 作者主页：[https://space.bilibili.com/445597242](https://space.bilibili.com/445597242)
 
+直播间：[https://live.bilibili.com/26897779](https://live.bilibili.com/26897779)
+
 联系方式：44185539@qq.com
 
 AI交流群：1102616387

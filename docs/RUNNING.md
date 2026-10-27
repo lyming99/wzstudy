@@ -1,4 +1,4 @@
-# 知序资料数据服务
+# 温知资料数据服务
 
 当前版本按数据录入与数据查询两条链路组织；`design/index.html` 仅保留历史设计参考。正式界面在 **`/admin/`**，不是直接打开 `design` 中的演示 HTML。
 
@@ -72,7 +72,7 @@ go run wzstudy/cmd/api
 | `ADMIN_API_KEY` | 32–256 字符；仅 Bearer 管理 API 自动化，不用于浏览器登录 |
 | `SYSTEM_ADMIN_EMAIL` | 首次初始化管理员的邮箱；之后可省略，同邮箱不改密码，不同邮箱拒绝 |
 | `SYSTEM_ADMIN_PASSWORD` | 首次初始化密码，8–128 UTF-8 字节；原始空白保留，仅持久化 Argon2id 哈希 |
-| `SYSTEM_ADMIN_DISPLAY_NAME` | 可选，默认“知序管理员” |
+| `SYSTEM_ADMIN_DISPLAY_NAME` | 可选，默认“温知管理员” |
 | `READ_API_KEY` | 与管理密钥不同；公开目录、公开媒体、changes |
 | `UPLOAD_MAX_MB` | 200，支持 1–1024；单次上传所有文件合计大小限制 |
 | `POLL_ENABLED` | `true`；只控制 RSS 资料采集轮询，不向学习客户端分发数据 |

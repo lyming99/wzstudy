@@ -16,7 +16,7 @@
 
 ## 身份与本地配置约定
 
-Skill 只使用独立录入来源 Source 的 ingest/upload 权限，不使用查询客户端 Client Key。可在“数据录入 → 录入端管理”创建 integration=skill 的来源，新来源默认待审核；既有来源的启用与发布策略以 doctor 和实际响应为准。
+Skill 只使用独立录入来源 Source 的 ingest/upload 权限，不使用查询客户端 Client Key。可在“数据录入 → 录入端管理”创建 integration=skill 的来源。入库成功即对客户端发布，不经过人工审核；回执中的 `published` 数量表示已公开的资料数，既有来源的启用状态以 doctor 和实际响应为准。
 
 本项目既有工作区可能使用 `.local/ai-push-client.json`，它是私有配置约定，不代表每台机器已配置。本轮开发不自动创建或轮换真实来源 Key；实际凭据应只保存在用户授权的私有配置中，不进入 Skill、示例、日志或发行包。
 

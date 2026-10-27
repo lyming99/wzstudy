@@ -50,7 +50,7 @@ class ConnectionTests(unittest.TestCase):
                           ('http://127.0.0.1:8091/', 'http://127.0.0.1:8091'),
                           ('http://１２７.０.０.１:8091', 'http://127.0.0.1:8091'),
                           ('https://[::1]:443', 'https://[::1]'),
-                          ('https://知序.example', 'https://xn--8wtw77c.example')]:
+                          ('https://温知.example', 'https://xn--d6wq1s.example')]:
             with self.subTest(raw=raw):
                 self.assertEqual(connection.normalize_base_url(raw), want)
 

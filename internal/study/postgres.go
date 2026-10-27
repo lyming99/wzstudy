@@ -58,6 +58,20 @@ func (s *PostgresStore) Ping(ctx context.Context) error {
 	if !feedbackReady {
 		return errors.New("client feedback schema migration required")
 	}
+	var catalogReady bool
+	if err := s.Pool.QueryRow(ctx, `SELECT to_regclass('workspace_catalog_change_cursor') IS NOT NULL`).Scan(&catalogReady); err != nil {
+		return err
+	}
+	if !catalogReady {
+		return errors.New("catalog collection schema migration required")
+	}
+	var learningReady bool
+	if err := s.Pool.QueryRow(ctx, `SELECT to_regclass('workspace_learning_state_client_item') IS NOT NULL`).Scan(&learningReady); err != nil {
+		return err
+	}
+	if !learningReady {
+		return errors.New("learning data schema migration required")
+	}
 	return nil
 }
 func (s *PostgresStore) Close() { s.Pool.Close() }

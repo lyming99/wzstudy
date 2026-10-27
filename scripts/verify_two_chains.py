@@ -93,17 +93,59 @@ def login(page):
     page.locator('#login-password').fill(PASSWORD)
     page.locator('#login-form button[type=submit]').click()
     expect(page.locator('#login-root')).to_be_empty()
-    expect(page.locator('.sidebar [data-route]')).to_have_count(2)
+    expect(page.locator('.sidebar [data-route]')).to_have_count(4)
 
 
 def nav(page, route):
-    main = 'query' if route in ('query', 'clients') else 'library'
+    main = 'query' if route in ('query', 'catalog') else route if route in ('clients', 'roadmaps') else 'library'
     if page.viewport_size['width'] <= 700 and 'mobile-open' not in (page.locator('body').get_attribute('class') or ''):
         page.locator('[data-action=open-nav]').click()
     page.locator(f'.sidebar [data-route="{main}"]').click()
     if route != main:
         page.locator(f'.section-tabs [data-route="{route}"]').click()
-    expect(page.locator('h1')).to_have_text({'library': '数据录入', 'sources': '录入端管理', 'access': '接入指引', 'receipts': '入库记录', 'query': '数据查询', 'clients': '查询客户端'}[route])
+    expect(page.locator('h1')).to_have_text({'library': '数据录入', 'sources': '录入端管理', 'access': '接入指引', 'receipts': '入库记录', 'query': '数据查询', 'catalog': '合集管理', 'clients': '客户端管理', 'roadmaps': '学习路线图'}[route])
+    expect(page.locator('.sidebar [data-route].active')).to_have_count(1)
+    expect(page.locator(f'.sidebar [data-route="{main}"]')).to_have_attribute('aria-current', 'page')
+
+
+def verify_client_navigation(page):
+    for width in (1600, 1024, 768, 390):
+        page.set_viewport_size({'width': width, 'height': 920})
+        nav(page, 'clients')
+        expect(page.locator('.section-tabs')).to_have_count(0)
+        expect(page.locator('#breadcrumb-current')).to_have_text('客户端管理')
+        expect(page.locator('.client-list')).to_be_visible()
+        assert page.url.endswith('#clients')
+        assert page.title() == '客户端管理 · 温知数据服务'
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), (width, 'clients')
+        page.reload()
+        expect(page.locator('h1')).to_have_text('客户端管理')
+        expect(page.locator('.section-tabs')).to_have_count(0)
+        expect(page.locator('.sidebar [data-route=clients]')).to_have_attribute('aria-current', 'page')
+        page.locator('[data-action=new-client]').click()
+        expect(page.locator('#client-form')).to_be_visible()
+        page.locator('.dialog-footer [data-action=close-modal]').click()
+
+        nav(page, 'query')
+        expect(page.locator('.section-tabs [data-route]')).to_have_text(['资料查询', '合集管理'])
+        expect(page.locator('.section-tabs [data-route=clients]')).to_have_count(0)
+        expect(page.locator('.section-tabs [data-route=query]')).to_have_attribute('aria-current', 'page')
+        expect(page.locator('#breadcrumb-current')).to_have_text('数据管理 / 数据查询')
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), (width, 'query')
+        page.locator('.section-tabs [data-route=catalog]').click()
+        expect(page.locator('h1')).to_have_text('合集管理')
+        expect(page.locator('.section-tabs [data-route=catalog]')).to_have_attribute('aria-current', 'page')
+        expect(page.locator('.sidebar [data-route=query]')).to_have_attribute('aria-current', 'page')
+        expect(page.locator('.section-tabs [data-route=clients]')).to_have_count(0)
+        expect(page.locator('#breadcrumb-current')).to_have_text('数据管理 / 合集管理')
+        assert page.url.endswith('#catalog')
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), (width, 'catalog')
+        page.reload()
+        expect(page.locator('h1')).to_have_text('合集管理')
+        expect(page.locator('.sidebar [data-route=query]')).to_have_attribute('aria-current', 'page')
+        expect(page.locator('.section-tabs [data-route=catalog]')).to_have_attribute('aria-current', 'page')
+    page.set_viewport_size({'width': 1600, 'height': 1100})
+    check('客户端独立页面、数据管理双标签及桌面/手机导航刷新状态正确')
 
 
 def close_modal(page):
@@ -216,7 +258,9 @@ def main():
                 expect(page.locator('h1')).to_have_text('数据录入')
                 expect(page.locator('.intake-card h3')).to_have_text(['采集程序', 'Skill', 'MCP'])
                 expect(page.locator('.sidebar [data-route=push]')).to_have_count(0)
-                check('旧推送地址回落数据录入，仅有录入/查询两个一级入口，三类录入方式准确展示')
+                expect(page.locator('.sidebar [data-route=query] .nav-label')).to_have_text('数据管理')
+                expect(page.locator('.sidebar [data-route=clients] .nav-label')).to_have_text('客户端管理')
+                verify_client_navigation(page)
 
                 nav(page, 'sources')
                 page.locator('.heading-actions [data-action=new-source]').click()
@@ -368,14 +412,14 @@ def main():
                 expect(page.locator('#one-time-key')).to_have_count(0)
                 close_modal(page)
                 page.screenshot(path=str(ARTIFACTS / 'two-chains-access.png'), full_page=True)
-                for route in ['library', 'sources', 'receipts', 'access', 'query', 'clients']:
+                for route in ['library', 'sources', 'receipts', 'access', 'query', 'catalog', 'clients']:
                     nav(page, route)
                     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), route
                 nav(page, 'query')
                 page.screenshot(path=str(ARTIFACTS / 'two-chains-query.png'), full_page=True)
                 for width in [1280, 1024, 768, 390]:
                     page.set_viewport_size({'width': width, 'height': 920})
-                    for route in ['library', 'sources', 'receipts', 'access', 'query', 'clients']:
+                    for route in ['library', 'sources', 'receipts', 'access', 'query', 'catalog', 'clients']:
                         nav(page, route)
                         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), (width, route)
                 nav(page, 'library')
@@ -383,7 +427,7 @@ def main():
                 assert page.evaluate('window.__two_chain_xss') is None
                 assert page.locator('.source-card img,.client-row img').count() == 0
                 assert page.evaluate('Object.keys(localStorage).length+Object.keys(sessionStorage).length') == 0
-                check('接入指引不读取真实 Key；六个内页在桌面/手机可用，恶意描述转义且无凭据持久缓存')
+                check('接入指引不读取真实 Key；七个内页在桌面/手机可用，恶意描述转义且无凭据持久缓存')
 
                 config = data / 'mcp-config.json'
                 config.write_text(json.dumps({'base_url': BASE, 'source_id': source['id'], 'source_key': source_key}), encoding='utf-8')

@@ -3,7 +3,7 @@
   "info": {
     "title": "WzStudy 学习数据源 API",
     "version": "0.3.0",
-    "description": "学习资料数据服务，仅关注数据录入与客户端数据查询。Source 仅 ingest/upload，Client 仅 read/sync；支持 HTTP、Skill 和 MCP 录入适配、公开快照查询、媒体与主动增量拉取。推荐和学习进度由客户端实现。"
+    "description": "学习资料数据服务。Source 负责 ingest/upload；独立 Client 具备 read/sync 及显式 feedback 权限。支持内容与合集查询、独立增量流、私人学习上报和只读推荐查询。"
   },
   "servers": [
     {
@@ -11,6 +11,1992 @@
     }
   ],
   "paths": {
+    "/client/recommendations": {
+      "get": {
+        "operationId": "getClientRecommendations",
+        "summary": "Read a bounded recommendation snapshot without recording learning events",
+        "description": "Requires independent Client read permission. Snapshots expire after 10 minutes or on process restart; published visibility is rechecked on each page.",
+        "security": [
+          {
+            "ClientKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque, short-lived, bound to the authenticated client"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RecommendationPage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/items/{id}/learning-stats": {
+      "get": {
+        "operationId": "getLearningItemStats",
+        "summary": "Aggregate active likes and learning counts for a published item",
+        "security": [
+          {
+            "ClientKey": []
+          },
+          {
+            "ReadKey": []
+          },
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningItemStats"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/client/learning/capabilities": {
+      "get": {
+        "operationId": "learningCapabilities",
+        "summary": "Query learning features with an independent read/sync identity",
+        "security": [
+          {
+            "ClientKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningCapabilities"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/client/learning": {
+      "get": {
+        "operationId": "getClientLearning",
+        "summary": "Get own learning states; requires feedback",
+        "security": [
+          {
+            "ClientKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 0
+            }
+          },
+          {
+            "name": "item_id",
+            "in": "query",
+            "description": "Comma-separated item UUIDs, at most 100",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "UTC inclusive start; must be supplied with until",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "description": "UTC exclusive end; maximum window 32 days",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningPage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/client/learning/items/{item_id}/records/{record_id}": {
+      "get": {
+        "summary": "Read one private record belonging to the authenticated Client",
+        "tags": [
+          "Client learning"
+        ],
+        "security": [
+          {
+            "ClientKey": []
+          }
+        ],
+        "x-client-permissions": [
+          "feedback"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Own record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RemoteLearningRecord"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid identifier or query parameters"
+          },
+          "401": {
+            "description": "Client Key required"
+          },
+          "403": {
+            "description": "Feedback permission required"
+          },
+          "404": {
+            "description": "Record absent, deleted, or belongs to another item or Client"
+          }
+        }
+      }
+    },
+    "/client/learning/items/{item_id}/draft": {
+      "get": {
+        "operationId": "readLearningDraft", "summary": "Read the authenticated Client's private draft and revision",
+        "tags": ["Client learning"], "security": [{"ClientKey": []}], "x-client-permissions": ["feedback"],
+        "parameters": [
+          {"in":"path","name":"item_id","required":true,"schema":{"type":"string","format":"uuid"}},
+          {"in":"query","name":"parent_id","schema":{"type":"string","format":"uuid"}}
+        ],
+        "responses": {"200":{"description":"Own draft, null if never created","content":{"application/json":{"schema":{
+          "type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/LearningDraftRead"}}
+        }}}},"400":{"description":"Invalid request"},"401":{"description":"Client Key required"},"403":{"description":"Feedback permission required"}}
+      }
+    },
+    "/client/learning/drafts/commands": {
+      "post": {
+        "operationId":"applyLearningDraft", "summary":"Save or clear a private draft with optimistic revision and idempotency",
+        "description":"An empty text clears the draft but retains a revision tombstone. Identical event retries return the same acknowledgement; new writes must carry the current revision.",
+        "tags":["Client learning"],"security":[{"ClientKey":[]}],"x-client-permissions":["feedback"],
+        "requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/LearningDraftCommand"}}}},
+        "responses":{"200":{"description":"Accepted or duplicate","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/LearningDraftAck"}}}}}},
+          "400":{"description":"Invalid input"},"401":{"description":"Client Key required"},"403":{"description":"Feedback permission required"},"404":{"description":"Item or reply parent unavailable"},"409":{"description":"Stale draft revision or conflicting event"}}
+      }
+    },
+    "/client/learning/drafts/import-legacy": {
+      "post": {
+        "operationId":"importLegacyDraft", "summary":"Conditionally import one explicitly confirmed historical private draft",
+        "description":"Requires no existing live or deleted draft, a matching published item revision and an accessible parent. The original timestamp is preserved. This endpoint does not delete local data.",
+        "tags":["Client learning"],"security":[{"ClientKey":[]}],"x-client-permissions":["feedback"],
+        "requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/LegacyDraftInput"}}}},
+        "responses":{"200":{"description":"Accepted or duplicate","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/LearningDraftAck"}}}}}},
+          "400":{"description":"Invalid input"},"401":{"description":"Client Key required"},"403":{"description":"Feedback permission required"},"404":{"description":"Item or reply parent unavailable"},"409":{"description":"Existing draft, stale item or conflicting event"}}
+      }
+    },
+    "/client/learning/import-legacy-reviews": {
+      "post": {
+        "summary": "Conditionally import confirmed historical pending review plans",
+        "description": "The Client comes exclusively from authentication. A new pending plan is accepted only for a current published item version and when no review or review-plan history exists for that Client and item. Checks, idempotency and writes are atomic. A completed local todo must not be represented as a completed review.",
+        "tags": [
+          "Client learning"
+        ],
+        "security": [
+          {
+            "ClientKey": []
+          }
+        ],
+        "x-client-permissions": [
+          "feedback"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "reviews"
+                ],
+                "properties": {
+                  "reviews": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "event_id",
+                        "item_id",
+                        "item_revision",
+                        "occurred_at"
+                      ],
+                      "properties": {
+                        "event_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "item_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "item_revision": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "occurred_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted or exact duplicate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningResult"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Client Key required"
+          },
+          "403": {
+            "description": "Feedback permission required"
+          },
+          "404": {
+            "description": "Published item unavailable"
+          },
+          "409": {
+            "description": "Review history exists, item revision changed, or event ID reused with different content"
+          }
+        }
+      }
+    },
+    "/client/learning/import-legacy-records": {
+      "post": {
+        "summary": "Conditionally import explicitly confirmed historical private records",
+        "description": "The authenticated Client is authoritative. New records require a published item at the specified revision and an unused record ID; parent records must already exist or precede their children in the same batch. The whole batch, timestamps, state and event deduplication commit atomically. This endpoint does not verify device-side ownership or delete device data.",
+        "tags": [
+          "Client learning"
+        ],
+        "security": [
+          {
+            "ClientKey": []
+          }
+        ],
+        "x-client-permissions": [
+          "feedback"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "records"
+                ],
+                "properties": {
+                  "records": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "event_id",
+                        "item_id",
+                        "record_id",
+                        "text",
+                        "created_at",
+                        "updated_at",
+                        "item_revision"
+                      ],
+                      "properties": {
+                        "event_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "item_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "record_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "parent_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "text": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 300
+                        },
+                        "position": {
+                          "$ref": "#/components/schemas/LearningPosition"
+                        },
+                        "as_danmaku": {
+                          "type": "boolean"
+                        },
+                        "created_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updated_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "item_revision": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted or exact duplicate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningResult"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid record, position, parent or timestamp"
+          },
+          "401": {
+            "description": "Client Key required"
+          },
+          "403": {
+            "description": "Feedback permission required"
+          },
+          "404": {
+            "description": "Published item unavailable"
+          },
+          "409": {
+            "description": "Record already exists, item revision changed, or event ID reused with different content"
+          }
+        }
+      }
+    },
+    "/client/learning/events": {
+      "get": {
+        "operationId": "getClientLearningEvents",
+        "summary": "Read own independent learning event cursor; requires feedback",
+        "security": [
+          {
+            "ClientKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningEventPage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "reportClientLearningEvents",
+        "summary": "Atomically report personal learning events; requires feedback",
+        "security": [
+          {
+            "ClientKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LearningReport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningResult"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/client/learning/collections": {
+      "get": {
+        "operationId": "listPersonalCollections",
+        "summary": "List the authenticated Client's personal collections; requires feedback permission",
+        "security": [
+          {
+            "ClientKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Personal collection page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PersonalCollectionPage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/client/learning/collections/{collection_id}": {
+      "get": {
+        "operationId": "getPersonalCollection",
+        "summary": "Get one own collection, including unavailable-member placeholders",
+        "security": [
+          {
+            "ClientKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "collection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Personal collection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PersonalCollectionView"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/client/learning/collections/import-legacy": {
+      "post": {
+        "operationId": "importLegacyPersonalCollection",
+        "summary": "Create one confirmed source-specific historical personal collection atomically",
+        "description": "The authenticated Client is authoritative. The caller must split cross-source members and attest historical ownership. Every member must be published; a live or deleted collection ID is never overwritten. Original order and timestamps are preserved. The endpoint never modifies a local collection.",
+        "tags": [
+          "Client learning"
+        ],
+        "security": [
+          {
+            "ClientKey": []
+          }
+        ],
+        "x-client-permissions": [
+          "feedback"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "event_id",
+                  "collection_id",
+                  "title",
+                  "items",
+                  "created_at",
+                  "updated_at"
+                ],
+                "properties": {
+                  "event_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "collection_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 1000,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "updated_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted or exact duplicate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PersonalCollectionAck"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Client Key required"
+          },
+          "403": {
+            "description": "Feedback permission required"
+          },
+          "404": {
+            "description": "A member is unavailable or unpublished"
+          },
+          "409": {
+            "description": "Collection exists or event ID reused with different input"
+          }
+        }
+      }
+    },
+    "/client/learning/collections/commands": {
+      "post": {
+        "operationId": "applyPersonalCollectionCommand",
+        "summary": "Apply an idempotent revision-checked personal collection command",
+        "description": "Uses event_id scoped to the authenticated Client. Retry uncertain requests with the identical event_id and body. Commands never modify administrator catalogues.",
+        "security": [
+          {
+            "ClientKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonalCollectionCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Confirmed or duplicate command",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PersonalCollectionAck"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/client/learning/items/{item_id}/stats": {
+      "get": {
+        "operationId": "getClientLearningItemStats",
+        "summary": "Get aggregate counts for a published item using an independent read or sync client",
+        "security": [
+          {
+            "ClientKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregate counts only; no private records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningItemStats"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/client/learning/items/{item_id}/records": {
+      "get": {
+        "operationId": "getClientLearningRecords",
+        "summary": "Get own private records for an item",
+        "security": [
+          {
+            "ClientKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningRecordPage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/clients/{id}/learning": {
+      "get": {
+        "operationId": "adminGetClientLearning",
+        "summary": "Get one client learning states",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 0
+            }
+          },
+          {
+            "name": "item_id",
+            "in": "query",
+            "description": "Comma-separated item UUIDs, at most 100",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "UTC inclusive start; must be supplied with until",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "description": "UTC exclusive end; maximum window 32 days",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningPage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/clients/{id}/learning/events": {
+      "get": {
+        "operationId": "adminGetClientLearningEvents",
+        "summary": "Get one client learning event history",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningEventPage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/clients/{id}/learning/items/{item_id}/records": {
+      "get": {
+        "operationId": "adminGetClientLearningRecords",
+        "summary": "Get one client private records for an item",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningRecordPage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/catalog/collections": {
+      "get": {
+        "operationId": "listPublishedCatalog",
+        "summary": "List published collection summaries; requires read",
+        "security": [
+          {
+            "ClientKey": []
+          },
+          {
+            "ReadKey": []
+          },
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CatalogPublicPage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/catalog/collections/{id}": {
+      "get": {
+        "operationId": "getPublishedCatalog",
+        "summary": "Get a published collection and currently visible chapters",
+        "security": [
+          {
+            "ClientKey": []
+          },
+          {
+            "ReadKey": []
+          },
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CatalogPublic"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/catalog/collections/changes": {
+      "get": {
+        "operationId": "getCatalogChanges",
+        "summary": "Independent catalogue change cursor; requires sync",
+        "security": [
+          {
+            "ClientKey": []
+          },
+          {
+            "ReadKey": []
+          },
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CatalogChangePage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/catalog/collections": {
+      "get": {
+        "operationId": "adminListCatalog",
+        "summary": "List collection drafts and published snapshots",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CatalogAdminPage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "adminCreateCatalog",
+        "summary": "Create a collection draft",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CatalogAdmin"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/catalog/collections/{id}": {
+      "get": {
+        "operationId": "adminGetCatalog",
+        "summary": "Get a collection draft and published snapshot",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CatalogAdmin"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "adminUpdateCatalog",
+        "summary": "Update collection draft with revision check",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CatalogAdmin"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/catalog/collections/{id}/publish": {
+      "post": {
+        "operationId": "adminPublishCatalog",
+        "summary": "Publish a collection of currently published items",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogRevision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CatalogAdmin"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/catalog/collections/{id}/unpublish": {
+      "post": {
+        "operationId": "adminUnpublishCatalog",
+        "summary": "Withdraw a collection",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogRevision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CatalogAdmin"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/catalog/collections/{id}/delete": {
+      "post": {
+        "operationId": "adminDeleteCatalog",
+        "summary": "Delete a collection, not its items",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogRevision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CatalogDeleted"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health/live": {
       "get": {
         "operationId": "get__health_live",
@@ -329,7 +2315,7 @@
         "x-client-permissions": [
           "read"
         ],
-        "description": "客户端按筛选条件主动查询已发布资料候选。个性化排序、学习进度和推荐算法由客户端负责；列表分页不是冻结快照，可靠缓存更新使用 /changes。"
+        "description": "客户端按筛选条件主动查询已发布资料；规则推荐通过独立推荐接口查询，学习数据按权限上报并隔离。列表分页不是冻结快照，可靠缓存更新使用 /changes。"
       }
     },
     "/items/{id}": {
@@ -2784,6 +4770,120 @@
         }
       }
     },
+    "/client/feedback/import-legacy": {
+      "post": {
+        "summary": "Conditionally import explicitly confirmed legacy like/favorite state",
+        "description": "Authenticated Client only; all events are atomic. A new event is accepted only when the matching action has no existing server state and the item revision is current. Exact retries return the original result. This endpoint does not establish ownership of the source device data or delete it.",
+        "tags": [
+          "Client feedback"
+        ],
+        "security": [
+          {
+            "ClientKey": []
+          }
+        ],
+        "x-client-permissions": [
+          "feedback"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "events"
+                ],
+                "properties": {
+                  "events": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "event_id",
+                        "item_id",
+                        "action",
+                        "value",
+                        "item_revision",
+                        "occurred_at"
+                      ],
+                      "properties": {
+                        "event_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "item_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "like",
+                            "favorite"
+                          ]
+                        },
+                        "value": {
+                          "type": "boolean"
+                        },
+                        "item_revision": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "occurred_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted or exact duplicate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/FeedbackResult"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid import event"
+          },
+          "401": {
+            "description": "Client Key required"
+          },
+          "403": {
+            "description": "Feedback permission required"
+          },
+          "404": {
+            "description": "Published item unavailable"
+          },
+          "409": {
+            "description": "Existing action, changed item version, or different input for an existing event ID"
+          }
+        }
+      }
+    },
     "/client/feedback/events": {
       "get": {
         "summary": "Read own independent feedback event cursor",
@@ -3194,6 +5294,321 @@
           }
         ]
       }
+    },
+    "/admin/roadmaps": {
+      "get": {
+        "operationId": "adminListRoadmaps",
+        "summary": "查询学习路线图摘要",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 0
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "名称或简介关键词，不搜索节点说明。",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RoadmapPage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "仅管理员。路线图独立于公开资料、合集和个人学习进度；保存和删除使用 revision 检查，冲突返回 409。"
+      },
+      "post": {
+        "operationId": "adminCreateRoadmap",
+        "summary": "创建学习路线图",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoadmapInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningRoadmap"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "仅管理员。路线图独立于公开资料、合集和个人学习进度；保存和删除使用 revision 检查，冲突返回 409。"
+      }
+    },
+    "/admin/roadmaps/{id}": {
+      "get": {
+        "operationId": "adminGetRoadmap",
+        "summary": "读取学习路线思维导图",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningRoadmap"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "仅管理员。路线图独立于公开资料、合集和个人学习进度；保存和删除使用 revision 检查，冲突返回 409。"
+      },
+      "put": {
+        "operationId": "adminUpdateRoadmap",
+        "summary": "按最新版本整体保存学习路线图",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoadmapInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningRoadmap"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "仅管理员。路线图独立于公开资料、合集和个人学习进度；保存和删除使用 revision 检查，冲突返回 409。"
+      }
+    },
+    "/admin/roadmaps/{id}/delete": {
+      "post": {
+        "operationId": "adminDeleteRoadmap",
+        "summary": "删除路线图，不删除关联资料",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoadmapRevision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/RoadmapDeleted"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "仅管理员。路线图独立于公开资料、合集和个人学习进度；保存和删除使用 revision 检查，冲突返回 409。"
+      }
     }
   },
   "components": {
@@ -3226,6 +5641,1153 @@
       }
     },
     "schemas": {
+      "RecommendationPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicItem"
+            }
+          },
+          "next_cursor": {
+            "type": "string"
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "has_more",
+          "expires_at"
+        ]
+      },
+      "PersonalCollectionCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_id",
+          "collection_id",
+          "action",
+          "expected_revision"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "collection_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "rename",
+              "add",
+              "remove",
+              "reorder",
+              "delete"
+            ]
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "order": {
+            "type": "array",
+            "maxItems": 1000,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      },
+      "PersonalCollection": {
+        "type": "object",
+        "required": [
+          "id",
+          "client_id",
+          "title",
+          "revision",
+          "items",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "client_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PersonalCollectionAck": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "duplicate",
+          "collection"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "duplicate": {
+            "type": "boolean"
+          },
+          "collection": {
+            "$ref": "#/components/schemas/PersonalCollection"
+          }
+        }
+      },
+      "PersonalCollectionView": {
+        "type": "object",
+        "required": [
+          "id",
+          "client_id",
+          "title",
+          "revision",
+          "items",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "client_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "item_id",
+                "available"
+              ],
+              "properties": {
+                "item_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "available": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PersonalCollectionPage": {
+        "type": "object",
+        "required": [
+          "client_id",
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonalCollectionView"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        }
+      },
+      "LearningItemStats": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "like_count": {
+            "type": "integer"
+          },
+          "favorite_count": {
+            "type": "integer"
+          },
+          "view_count": {
+            "type": "integer"
+          },
+          "review_count": {
+            "type": "integer"
+          },
+          "record_count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "item_id",
+          "like_count",
+          "favorite_count",
+          "view_count",
+          "review_count",
+          "record_count"
+        ]
+      },
+      "LearningCapabilities": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "const": "wzstudy.learning"
+          },
+          "version": {
+            "const": 1
+          },
+          "client_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "read": {
+            "type": "boolean"
+          },
+          "write": {
+            "type": "boolean"
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "max_events": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "type",
+          "version",
+          "client_id",
+          "read",
+          "write",
+          "features",
+          "max_events"
+        ]
+      },
+      "LearningPosition": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "media",
+              "article",
+              "image"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "time_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "block_id": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "image_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "version"
+        ]
+      },
+      "LearningEventInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "enum": [
+              "view",
+              "review",
+              "review_plan",
+              "progress",
+              "record_create",
+              "record_delete",
+              "duration"
+            ]
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "value": {
+            "type": "boolean"
+          },
+          "position": {
+            "$ref": "#/components/schemas/LearningPosition"
+          },
+          "mode": {
+            "enum": [
+              "",
+              "preview",
+              "fulltext"
+            ]
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "record_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parent_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "as_danmaku": {
+            "type": "boolean"
+          },
+          "session_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "session_sequence": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "event_id",
+          "item_id",
+          "action"
+        ],
+        "description": "Action-specific fields are validated by the service; retries must reuse the same event ID and payload."
+      },
+      "LearningDraft": {
+        "type":"object", "required":["client_id","item_id","text","revision","updated_at","last_event_id","deleted"],
+        "properties":{"client_id":{"type":"string","format":"uuid"},"item_id":{"type":"string","format":"uuid"},
+          "parent_id":{"type":"string","format":"uuid"},"text":{"type":"string","maxLength":300},
+          "position":{"$ref":"#/components/schemas/LearningPosition"},"revision":{"type":"integer","minimum":1},
+          "updated_at":{"type":"string","format":"date-time"},"last_event_id":{"type":"string","format":"uuid"},"deleted":{"type":"boolean"}}
+      },
+      "LearningDraftRead": {
+        "type":"object","required":["client_id","item_id","draft"],
+        "properties":{"client_id":{"type":"string","format":"uuid"},"item_id":{"type":"string","format":"uuid"},
+          "parent_id":{"type":"string","format":"uuid"},"draft":{"nullable":true,"allOf":[{"$ref":"#/components/schemas/LearningDraft"}]}}
+      },
+      "LearningDraftAck": {
+        "type":"object","required":["event_id","duplicate","draft"],
+        "properties":{"event_id":{"type":"string","format":"uuid"},"duplicate":{"type":"boolean"},"draft":{"$ref":"#/components/schemas/LearningDraft"}}
+      },
+      "LearningDraftCommand": {
+        "type":"object","additionalProperties":false,"required":["event_id","item_id","text","expected_revision"],
+        "properties":{"event_id":{"type":"string","format":"uuid"},"item_id":{"type":"string","format":"uuid"},
+          "parent_id":{"type":"string","format":"uuid"},"text":{"type":"string","maxLength":300},
+          "position":{"$ref":"#/components/schemas/LearningPosition"},"expected_revision":{"type":"integer","minimum":0}}
+      },
+      "LegacyDraftInput": {
+        "type":"object","additionalProperties":false,"required":["event_id","item_id","text","item_revision","updated_at"],
+        "properties":{"event_id":{"type":"string","format":"uuid"},"item_id":{"type":"string","format":"uuid"},
+          "parent_id":{"type":"string","format":"uuid"},"text":{"type":"string","minLength":1,"maxLength":300},
+          "position":{"$ref":"#/components/schemas/LearningPosition"},"item_revision":{"type":"integer","minimum":1},
+          "updated_at":{"type":"string","format":"date-time"}}
+      },
+      "LearningProgress": {
+        "type": "object",
+        "properties": {
+          "position": {
+            "$ref": "#/components/schemas/LearningPosition"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_event_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Most recent accepted progress event; omitted for legacy data."
+          }
+        },
+        "required": [
+          "position",
+          "revision",
+          "updated_at"
+        ]
+      },
+      "LearningState": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "review_pending": {
+            "type": "boolean"
+          },
+          "review_revision": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Present after review-plan or review changes on a supporting server."
+          },
+          "review_last_event_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Most recent review-plan or review event, when available."
+          },
+          "review_count": {
+            "type": "integer"
+          },
+          "view_count": {
+            "type": "integer"
+          },
+          "record_count": {
+            "type": "integer"
+          },
+          "duration_ms": {
+            "type": "integer"
+          },
+          "last_view_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_review_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "progress": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/LearningProgress"
+            }
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "client_id",
+          "item_id",
+          "review_pending",
+          "review_count",
+          "view_count",
+          "record_count",
+          "duration_ms",
+          "progress",
+          "updated_at"
+        ]
+      },
+      "RemoteLearningRecord": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "client_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "text": {
+            "type": "string"
+          },
+          "parent_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "position": {
+            "$ref": "#/components/schemas/LearningPosition"
+          },
+          "as_danmaku": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Present when a historical record has an independently preserved update time."
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "client_id",
+          "item_id",
+          "text",
+          "as_danmaku",
+          "created_at"
+        ]
+      },
+      "LearningAck": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sequence": {
+            "type": "integer"
+          },
+          "duplicate": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "event_id",
+          "sequence",
+          "duplicate"
+        ]
+      },
+      "LearningEvent": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "enum": [
+              "view",
+              "review",
+              "review_plan",
+              "progress",
+              "record_create",
+              "record_delete",
+              "duration"
+            ]
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "value": {
+            "type": "boolean"
+          },
+          "position": {
+            "$ref": "#/components/schemas/LearningPosition"
+          },
+          "mode": {
+            "enum": [
+              "",
+              "preview",
+              "fulltext"
+            ]
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "record_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parent_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "as_danmaku": {
+            "type": "boolean"
+          },
+          "session_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "session_sequence": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "client_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sequence": {
+            "type": "integer"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "fingerprint": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "item_id",
+          "action",
+          "client_id",
+          "sequence",
+          "received_at",
+          "fingerprint"
+        ]
+      },
+      "LearningReport": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LearningEventInput"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "events"
+        ]
+      },
+      "LearningResult": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "integer"
+          },
+          "duplicates": {
+            "type": "integer"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LearningAck"
+            }
+          },
+          "states": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LearningState"
+            }
+          }
+        },
+        "required": [
+          "accepted",
+          "duplicates",
+          "events",
+          "states"
+        ]
+      },
+      "LearningPage": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LearningState"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "high_watermark": {
+            "type": "integer"
+          },
+          "duration_ms": {
+            "type": "integer",
+            "description": "Union of learning intervals, optionally bounded by from/until"
+          }
+        },
+        "required": [
+          "client_id",
+          "items",
+          "total",
+          "limit",
+          "offset",
+          "high_watermark",
+          "duration_ms"
+        ]
+      },
+      "LearningRecordPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RemoteLearningRecord"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "LearningEventPage": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LearningEvent"
+            }
+          },
+          "next_cursor": {
+            "type": "integer"
+          },
+          "high_watermark": {
+            "type": "integer"
+          },
+          "has_more": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "events",
+          "next_cursor",
+          "high_watermark",
+          "has_more"
+        ]
+      },
+      "CatalogChapter": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "UUID; may be empty when adding a new chapter"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "item_id"
+        ]
+      },
+      "CatalogDefinition": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "chapters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogChapter"
+            },
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "title",
+          "summary",
+          "chapters"
+        ]
+      },
+      "CatalogPublic": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "chapters": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CatalogChapter"
+                },
+                "maxItems": 100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "title",
+          "summary",
+          "chapters",
+          "updated_at"
+        ]
+      },
+      "CatalogAdmin": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/CatalogDefinition"
+          },
+          "published": {
+            "$ref": "#/components/schemas/CatalogPublic"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "draft",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CatalogInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "summary": {
+            "type": "string"
+          },
+          "chapters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogChapter"
+            },
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "revision",
+          "title",
+          "summary",
+          "chapters"
+        ]
+      },
+      "CatalogRevision": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "revision"
+        ]
+      },
+      "CatalogDeleted": {
+        "type": "object",
+        "properties": {
+          "deleted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deleted"
+        ]
+      },
+      "CatalogPublicPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogPublic"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "CatalogAdminPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogAdmin"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "CatalogChange": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "integer"
+          },
+          "operation": {
+            "enum": [
+              "upsert",
+              "delete"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "collection": {
+            "$ref": "#/components/schemas/CatalogPublic"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "cursor",
+          "operation",
+          "id",
+          "revision",
+          "created_at"
+        ]
+      },
+      "CatalogChangePage": {
+        "type": "object",
+        "properties": {
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogChange"
+            }
+          },
+          "next_cursor": {
+            "type": "integer"
+          },
+          "high_watermark": {
+            "type": "integer"
+          },
+          "has_more": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "changes",
+          "next_cursor",
+          "high_watermark",
+          "has_more"
+        ]
+      },
       "Error": {
         "type": "object",
         "properties": {
@@ -5179,6 +8741,230 @@
           "limit",
           "offset",
           "client_id"
+        ]
+      },
+      "RoadmapNode": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "非零 UUID，唯一根节点使用空字符串。"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "item_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 20,
+            "uniqueItems": true
+          },
+          "collapsed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "parent_id",
+          "title",
+          "note",
+          "item_ids",
+          "collapsed"
+        ]
+      },
+      "RoadmapInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "nodes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 300,
+            "items": {
+              "$ref": "#/components/schemas/RoadmapNode"
+            },
+            "description": "唯一根节点标题必须等于路线图名称；最多 12 层，无环且全部节点可达；数组顺序决定同级顺序。"
+          }
+        },
+        "required": [
+          "revision",
+          "title",
+          "summary",
+          "nodes"
+        ],
+        "description": "创建 revision=0；更新提交当前 revision。新关联的资料必须存在且未删除；原节点保留的失效关联可继续保存并在管理端移除。"
+      },
+      "LearningRoadmap": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "nodes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 300,
+            "items": {
+              "$ref": "#/components/schemas/RoadmapNode"
+            },
+            "description": "唯一根节点标题必须等于路线图名称；最多 12 层，无环且全部节点可达；数组顺序决定同级顺序。"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "title",
+          "summary",
+          "created_at",
+          "updated_at",
+          "nodes"
+        ]
+      },
+      "RoadmapSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "node_count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "resource_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "title",
+          "summary",
+          "created_at",
+          "updated_at",
+          "node_count",
+          "resource_count"
+        ]
+      },
+      "RoadmapPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoadmapSummary"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "RoadmapRevision": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "revision"
+        ]
+      },
+      "RoadmapDeleted": {
+        "type": "object",
+        "properties": {
+          "deleted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deleted"
         ]
       }
     }

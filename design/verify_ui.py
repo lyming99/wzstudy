@@ -1,4 +1,4 @@
-"""知序 HTML 原型的浏览器冒烟测试。需要 Python Playwright 与本机 Chrome。"""
+"""温知 HTML 原型的浏览器冒烟测试。需要 Python Playwright 与本机 Chrome。"""
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 import base64

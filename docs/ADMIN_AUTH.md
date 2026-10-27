@@ -37,7 +37,7 @@
 | --- | --- |
 | `SYSTEM_ADMIN_EMAIL` | 首次必填，严格邮箱格式，归一化为小写 |
 | `SYSTEM_ADMIN_PASSWORD` | 首次必填，8–128 UTF-8 字节，无 NUL；建议 12 位以上随机密码 |
-| `SYSTEM_ADMIN_DISPLAY_NAME` | 可选，默认“知序管理员”，最多 120 UTF-8 字节 |
+| `SYSTEM_ADMIN_DISPLAY_NAME` | 可选，默认“温知管理员”，最多 120 UTF-8 字节 |
 
 兼容 `BOOTSTRAP_ADMIN_EMAIL/PASSWORD`；显示名还兼容 `SYSTEM_ADMIN_USERNAME`、`BOOTSTRAP_ADMIN_DISPLAY_NAME/USERNAME`。同一逻辑配置项（包括其兼容别名）优先使用进程环境，不会从 `.env` 覆盖非空进程值。密码原始空白保留；`.env` 最外层单/双引号可去除，不执行其中代码、变量或转义。
 

@@ -18,6 +18,68 @@
 
 客户端 Key 和权限由管理员配置并持久保存，无需为每个录入端或查询端修改环境变量。写入在同一事务内复查 Key、启用状态和权限；轮换后旧 Key 无法晚提交。后续查询和增量拉取立即按最新权限校验。管理员 API 凭据/旧版全局只读凭据仍由启动配置维护。不要将任何 Key 放入 URL 或日志。
 
+## 公开合集与章节
+
+合集是管理员编排的内容目录，不是个人收藏。查询接口：
+
+```text
+GET /catalog/collections?limit=20&offset=0
+GET /catalog/collections/{id}
+GET /catalog/collections/changes?after=0&limit=20
+```
+
+列表、详情需要 read；独立变更流需要 sync（兼容全局只读 Key）。列表返回摘要，详情按章节顺序返回可见内容 ID；章节关联的内容下架后不再返回该章节。变更流只含已公开合集，使用自己的 cursor/high_watermark，不改变 `/changes` 的资料游标。旧版或下架合集的历史快照作为删除变更返回，不泄露旧快照。每页最多 20 个变更。
+
+管理员使用 `/admin/catalog/collections` 创建、编辑、发布、下架和删除合集。编辑草稿不会更改公开快照；发布时所有章节必须引用当前已发布内容。详细字段见 `/openapi.json` 和管理文档。新增功能需要数据库迁移 `000005_catalog_collections.sql`，不会覆盖历史 `collection` 记录。
+
+## 管理员学习路线图
+
+管理端新增独立“学习路线图”入口（`/admin/#roadmaps`），以思维导图编辑节点、层级、顺序、说明、折叠状态和资料引用。API 为 `/admin/roadmaps`（GET/POST）、`/admin/roadmaps/{id}`（GET/PUT）与 `/admin/roadmaps/{id}/delete`（POST）。仅管理员可读写；创建 revision=0，更新和删除检查最新 revision；最多 300 节点、12 层。该模块不发布到客户端，不写个人学习进度，不改变公开资料/合集游标。完整使用与请求示例见 `LEARNING_ROADMAPS.md`、管理文档及 `/openapi.json`。
+
+## 私人学习数据 v1
+
+`GET /client/learning/capabilities` 需要独立查询客户端 Key（read 或 sync），返回 `type=wzstudy.learning`、`version=1`、客户端 ID、功能列表和当前读写能力。它不会接受管理员、录入端或旧全局 Key 作为学习者身份。学习数据的读写都需要该查询客户端启用 `feedback`；状态以 Client ID + 资料 ID 隔离，共享 Key 的设备共享同一身份。
+
+```text
+POST /client/learning/events
+GET  /client/learning?item_id=<UUID>[,<UUID>]&limit=20&offset=0
+GET  /client/learning/events?after=0&limit=100
+GET  /client/learning/items/{item_id}/records?limit=20&offset=0
+GET  /client/learning/items/{item_id}/records/{record_id}
+GET  /items/{id}/learning-stats
+GET  /client/learning/items/{item_id}/stats
+```
+
+上报格式 `{"events":[...]}`，每批 1–100 条，在同一事务中复查权限并原子提交。每条必须有非零 UUID `event_id`、原始 WzStudy `item_id` 和 `action`；重试必须保持事件 ID 和全部字段不变。同客户端相同 ID/内容返回 duplicate，不同内容返回冲突。下架内容不接受新学习事件，已提交事件可以幂等重试；本人删除自己的旧记录仍可执行。事件和游标与原 `/client/feedback`、公开 `/changes` 相互独立。
+
+| action | 字段与语义 |
+|---|---|
+| `view` | 一次客户端确认的有效查看；查询和预加载不会自动生成 |
+| `review_plan` | `value=true/false` 设置或取消复习计划 |
+| `review` | 完成一次复习，增加次数并清除待复习状态 |
+| `progress` | `position`、`mode` 和 `expected_revision`；服务器使用版本检查拒绝旧进度覆盖，允许主动回看 |
+| `record_create` | `record_id`、`text`，可选 `position`、`parent_id`、`as_danmaku`；私人记录最多 300 字符 |
+| `record_delete` | `record_id`，只能删除本身份且所属资料一致的记录 |
+| `duration` | `session_id`、从 1 开始递增的 `session_sequence`、`start_at/end_at`；单段最多 2 分钟，重复/重叠区间按并集计算 |
+
+私人草稿可经 `GET /client/learning/items/{item_id}/draft[?parent_id=...]` 查询，经 `POST /client/learning/drafts/commands` 以事件 ID 和期望修订保存或清空。清空保留版本墓碑，旧设备不能以旧版本复活已删除草稿；回复草稿的父记录必须属于当前 Client。历史草稿只能在用户确认来源及身份后，使用 `POST /client/learning/drafts/import-legacy` 在目标不存在任何草稿或墓碑、资料修订一致时导入，保留原编辑时间；冲突时不覆盖或删除本机草稿。草稿与已提交记录独立，不计为学习记录。
+
+历史未完成的复习待办可在用户明确核验归属后调用 `POST /client/learning/import-legacy-reviews`，以 `{"reviews":[...]}` 传入事件 ID、资料 ID、当前公开修订和原待办关联时间。服务器在事务中检查该身份此资料没有任何既有复习计划或复习事件；已有撤销、完成或待复习记录都拒绝覆盖。该接口只创建待复习状态，不会伪造完成复习次数，也不删除本地待办。重复请求必须使用相同事件 ID 和载荷。
+
+历史私人记录可经用户明确确认后调用 `POST /client/learning/import-legacy-records`，每批 `{"records":[...]}` 最多 100 条。每条需显式给出事件、资料、记录 UUID、正文、原创建／更新时间和资料公开修订，可带位置、已有父记录及音频弹幕标记。要求资料仍公开、当前公开修订一致、记录 ID 未占用；检查与写入原子执行，父记录必须已存在或在批中先于回复。客户端身份由 Key 决定；同事件及全部字段完全相同可幂等重试，字段变化冲突。记录时间按原值保留，该接口不会证明旧记录归属、上传其他历史或清理本机数据；共享记录和无法保真映射的记录应保留待处理。
+
+`position` 的 `version` 是公开资料 revision；`kind=media` 使用 `time_ms`，`kind=article` 使用稳定的 `block_id=body/source` 和 UTF-16 `offset`，`kind=image` 使用原始资源 UUID `image_id`。文章进度的 mode 为 `preview/fulltext`，其他类型使用空 mode；本机 feed ID 前缀不能传给服务端。
+
+学习数据列表的 `duration_ms` 可使用同时提供的 RFC3339 `from` 和 `until` 限定半开时间窗口（最多 32 天），由客户端按本地日期计算 UTC 边界；不提供时返回全量并集。`/items/{id}/learning-stats` 只返回公开资料的聚合数量，喜欢和收藏按当前有效查询身份计数，不返回其他人的记录；独立查询客户端也可用 `read` 或 `sync` 权限访问 `/client/learning/items/{item_id}/stats`，该接口不接受管理员、录入端或旧全局 Key。管理员可在 `/admin/clients/{id}/learning` 及其 `/events`、`/items/{item_id}/records` 子路径查看指定身份，必须使用管理员凭据。
+
+## 学习推荐查询
+
+`GET /client/recommendations?limit=20&cursor=...` 只接受有 read 权限的独立查询客户端 Key，不接受管理员、录入端或旧全局 Key 冒充学习者。首屏可省略 cursor；后续请求使用返回的 `next_cursor`，直至 `has_more=false`。
+
+服务端在最多 1000 条已发布候选上执行可解释规则排序：待复习优先，结合未查看状态、喜欢、收藏和标签/分类偏好，再按公开时间及 ID 稳定排序。无 feedback 权限时使用不含个人历史的基础排序。读取推荐不会自动上报推荐、曝光、查看或复习。客户端实际选择或展示后应单独上报事件。
+
+游标绑定查询客户端，快照最多保留 10 分钟并随服务进程重启失效；权限变化时需重新查询。每页重新检查内容公开状态，已下架内容不会继续返回；快照仅固定候选顺序，不冻结资料正文。候选耗尽可开始新一轮，不等于自动完成复习。
+
 ## 2. 数据源
 
 ### `POST /admin/sources`
@@ -200,12 +262,12 @@ PublicItem 字段为 `id`、`source_id`、`revision`、全部 Content 字段、`
 
 ## 7. 客户端查询与推荐
 
-服务端只提供已发布资料及变更查询，不主动向客户端分发数据，也不计算个性化推荐。客户端结合学习记录、兴趣标签与自己的学习算法，主动选择候选资料或在本地缓存中排序。
+服务端不主动向客户端推送资料；客户端可主动查询已发布资料、内容变更及基于当前身份的规则推荐。推荐查询本身不写入查看或推荐事件。
 
 - 浏览候选：`GET /items?kind=video&category=人工智能&tag=AI&limit=20&offset=0`；各过滤条件取交集，可按实际需要省略。
 - 阅读详情：`GET /items/{id}`，媒体地址由 `assets` 返回，媒体读取仍需 `read` 权限。
 - 更新本地缓存：用 `sync` 权限定期调用 `/changes?after=<已提交游标>`，按 `has_more` 补齐后再按客户端策略等待下一次拉取。
-- 学习端默认权限为 `read + sync`；不需要接收推送权限。推荐算法与个性化排序属于客户端；学习反馈/进度可按显式授权上报，用于候选排除。
+- 学习端默认权限为 `read + sync`，学习反馈权限须显式授予。`GET /client/recommendations` 提供规则推荐；经 feedback 授权后，学习记录、复习、查看、进度及时长按客户端身份隔离。
 - 示例 `examples/subscribe.py` 已改为 HTTP 主动轮询，SQLite 在同一事务中保存资料变更和游标；保留旧文件名以兼容已有运行方式。
 
 旧的推送计划、收件箱、SSE 及专题管理路由已移除并返回 404。历史资料、附件和变更游标保留，不清空客户端缓存；旧工作空间的推送/专题记录不再读取或执行；遗留 `inbox` 授权被忽略且不会转换为阅读权限。旧查询或混合 Source 须显式迁入 Client 后才能用原 Key 查询。
@@ -223,6 +285,17 @@ PublicItem 字段为 `id`、`source_id`、`revision`、全部 Content 字段、`
 
 管理端二维码直接携带 UTF-8 JSON 的 type/version/base_url/client_id/name/access_key（v1 严格六字段、最大 1200 字节）。扫码端确认目标并调用上述接口，核对身份后才保存；不将 Key 放在 URL，不转发到重定向地址。完整协议和标准库解析/注册示例见 `CLIENT_QR.md` 与 `examples/client_connection.py`。
 
+
+## 数据源内的个人合集
+
+个人合集与管理员发布的目录合集是不同数据；按独立查询 Client 身份隔离，读写都必须明确授予 `feedback`。多个设备共享一个查询 Key 时也共享此身份的个人合集。接口不会接受客户端指定其他 `client_id`：
+
+- `GET /client/learning/collections?limit=20&offset=0` 分页查询自己的合集；
+- `GET /client/learning/collections/{collection_id}` 查询详情，成员返回 `item_id` 和 `available`，已下架资料只保留不可用占位，不暴露草稿；
+- `POST /client/learning/collections/import-legacy` 仅在用户明确核验历史归属后导入一个数据源内的成员子集；传入事件 ID、目标合集 ID、标题、有序成员及原创建／更新时间。服务器在同一事务确认全部成员已公开且目标 ID 未占用，不覆盖既有或已删除合集；相同事件及载荷可幂等重试。跨源成员须由客户端拆分，原合集、封面和其他来源成员不会自动删除。
+- `POST /client/learning/collections/commands` 提交 `event_id`、`collection_id`、`action`、`expected_revision` 和动作相应字段。`action` 可为 `create/rename/add/remove/reorder/delete`；`create` 的版本为 0，其他命令必须携带当前合集版本。重排的 `order` 必须包含所有成员，包括不可用占位，避免误删隐藏成员。
+
+客户端必须为事件生成稳定 UUID，在超时或结果未知时以完全相同的事件 ID 和正文重试。相同事件返回原回执并标记 duplicate；同一 ID 携带不同正文或版本冲突返回 409。添加成员只接受当前已发布资料；之后下架的成员仍可移除。删除合集不会删除原资料。需要同时授予 feedback 权限，断网时客户端不得转存本地冒充成功。
 
 ## 客户端反馈与去重
 

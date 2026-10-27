@@ -153,7 +153,23 @@ func feedbackStateFor(tx Tx, clientID, itemID string) (FeedbackState, error) {
 // ReportFeedback checks authorization again under the serialized write lock.
 // The whole batch, idempotency records, counters and state changes commit together.
 // Feedback never publishes content or appends to the content change cursor.
-func (s *Service) ReportFeedback(ctx context.Context, key string, inputs []FeedbackInput) (out FeedbackResult, err error) {
+func (s *Service) ReportFeedback(ctx context.Context, key string, inputs []FeedbackInput) (FeedbackResult, error) {
+	return s.reportFeedback(ctx, key, inputs, false)
+}
+
+// ImportLegacyFeedback is deliberately narrower than normal feedback: it may
+// fill missing like/favorite state only, never overwrite an existing server
+// choice. The condition, event idempotency and mutation share one transaction.
+func (s *Service) ImportLegacyFeedback(ctx context.Context, key string, inputs []FeedbackInput) (FeedbackResult, error) {
+	for _, input := range inputs {
+		if (input.Action != "like" && input.Action != "favorite") || input.Value == nil || input.OccurredAt == nil || input.ItemRevision < 1 || input.Note != "" || input.Progress != nil {
+			return FeedbackResult{}, ErrInvalid
+		}
+	}
+	return s.reportFeedback(ctx, key, inputs, true)
+}
+
+func (s *Service) reportFeedback(ctx context.Context, key string, inputs []FeedbackInput, onlyAbsent bool) (out FeedbackResult, err error) {
 	if len(inputs) < 1 || len(inputs) > 100 {
 		return out, ErrInvalid
 	}
@@ -206,6 +222,20 @@ func (s *Service) ReportFeedback(ctx context.Context, key string, inputs []Feedb
 			}
 			if revision > item.Published.Revision {
 				return ErrInvalid
+			}
+			if onlyAbsent {
+				// Version equality avoids applying a historical action to changed
+				// content. Even an inactive prior server state is a real choice.
+				if revision != item.Published.Revision {
+					return ErrConflict
+				}
+				current, stateErr := feedbackStateFor(tx, client.ID, input.ItemID)
+				if stateErr != nil {
+					return stateErr
+				}
+				if _, exists := current.Actions[input.Action]; exists {
+					return ErrConflict
+				}
 			}
 			clock.Sequence++
 			clock.Counts[input.Action]++

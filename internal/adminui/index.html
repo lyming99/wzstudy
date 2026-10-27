@@ -4,22 +4,25 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#14221f">
-<meta name="description" content="知序学习内容管理平台 · 资料入库、审核、来源管理与客户端查询接口工作台">
-<title>数据录入 · 知序</title>
+<meta name="description" content="温知学习内容管理平台 · 资料入库、审核、来源管理与客户端查询接口工作台">
+<title>数据录入 · 温知</title>
 <link rel="stylesheet" href="/admin/app.css">
+<link rel="stylesheet" href="/admin/roadmaps.css">
 </head>
 <body class="unauthenticated">
 <div class="mobile-shade" data-action="close-nav"></div>
 <aside class="sidebar" aria-label="主导航">
-  <a class="brand" href="#library" aria-label="知序数据服务首页">
+  <a class="brand" href="#library" aria-label="温知数据服务首页">
     <span class="brand-logo"><svg width="24" height="24" viewBox="0 0 32 32" fill="none"><path d="M6 7h9v17H6z" fill="#253c2c"/><path d="m19 6 8 3-6 17-8-3z" fill="#253c2c"/><path d="M9 11h3m-3 3h3" stroke="#d4eea0" stroke-width="1.5"/></svg></span>
-    <span class="brand-name">知序<small>DATA SERVICE</small></span>
+    <span class="brand-name">温知<small>DATA SERVICE</small></span>
   </a>
-  <button class="workspace" data-action="workspace"><span class="workspace-avatar"><span class="icon" data-icon="layers"></span></span><span><strong>知序数据服务</strong><small>资料录入与查询</small></span><span class="icon" data-icon="chevrons"></span></button>
+  <button class="workspace" data-action="workspace"><span class="workspace-avatar"><span class="icon" data-icon="layers"></span></span><span><strong>温知数据服务</strong><small>资料录入与查询</small></span><span class="icon" data-icon="chevrons"></span></button>
   <div class="nav-group-title">资料数据服务</div>
-  <nav class="nav-list" aria-label="两条业务主线">
+  <nav class="nav-list" aria-label="资料服务导航">
     <button class="nav-item active" data-route="library" title="数据录入"><span class="icon" data-icon="upload"></span><span class="nav-label">数据录入</span><span class="nav-count" id="nav-count">0</span></button>
-    <button class="nav-item" data-route="query" title="数据查询"><span class="icon" data-icon="search"></span><span class="nav-label">数据查询</span></button>
+    <button class="nav-item" data-route="query" title="数据管理"><span class="icon" data-icon="search"></span><span class="nav-label">数据管理</span></button>
+    <button class="nav-item" data-route="roadmaps" title="学习路线图"><span class="icon" data-icon="roadmap"></span><span class="nav-label">学习路线图</span></button>
+    <button class="nav-item" data-route="clients" title="客户端管理"><span class="icon" data-icon="monitor"></span><span class="nav-label">客户端管理</span></button>
   </nav>
   <div class="sidebar-bottom">
     <div class="storage"><div class="storage-title"><span class="icon" data-icon="cloud"></span>附件存储</div><div class="storage-info" id="storage-info">正在连接服务…</div></div>
@@ -41,6 +44,7 @@
 <section id="login-root"></section><div id="drawer-root"></div><div id="modal-root"></div><div id="context-root"></div><div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="false"></div>
 <noscript><div style="position:fixed;inset:0;z-index:999;background:#f6f8ef;display:grid;place-items:center;padding:30px">请启用 JavaScript 以使用管理工作台。</div></noscript>
 <script src="/admin/qrcodegen.js" defer></script>
+<script src="/admin/roadmaps.js" defer></script>
 <script src="/admin/app.js" defer></script>
 </body>
 </html>

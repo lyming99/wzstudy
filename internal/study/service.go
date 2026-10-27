@@ -3,18 +3,21 @@ package study
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 )
 
 type Service struct {
-	Store Store
-	Now   func() time.Time
+	Store           Store
+	Now             func() time.Time
+	recommendMu     sync.Mutex
+	recommendations map[string]recommendationSession
 }
 
 func NewService(s Store) *Service {
-	return &Service{Store: s, Now: func() time.Time { return time.Now().UTC() }}
+	return &Service{Store: s, Now: func() time.Time { return time.Now().UTC() }, recommendations: map[string]recommendationSession{}}
 }
 func (s *Service) Sources(ctx context.Context) (out []Source, err error) {
 	err = s.Store.View(ctx, func(tx Tx) error { var e error; out, e = tx.Sources(); return e })
@@ -193,18 +196,17 @@ func (s *Service) ingest(tx Tx, source Source, inputs []Content) (out IngestResu
 		} else {
 			out.Updated++
 		}
-		old.Status = "pending"
-		audit(&old, "客户端或订阅内容已入库", now)
+		audit(&old, "推送内容已入库", now)
 		old.Draft = content
 		old.ContentHash = digest(content)
 		old.Revision++
 		old.UpdatedAt = now
-		if source.AutoPublish {
-			if e = s.publish(tx, &old, true); e != nil {
-				return out, e
-			}
-			out.Published++
+		// Pushed content is public immediately: there is no review gate between a
+		// successful ingest and the client query API.
+		if e = s.publishWithLabel(tx, &old, true, "推送内容已发布"); e != nil {
+			return out, e
 		}
+		out.Published++
 		if e = tx.SaveItem(old); e != nil {
 			return out, e
 		}
@@ -219,7 +221,14 @@ func (s *Service) ingest(tx Tx, source Source, inputs []Content) (out IngestResu
 }
 
 func (s *Service) publish(tx Tx, v *Item, publish bool) error {
+	return s.publishWithLabel(tx, v, publish, "审核通过并发布")
+}
+
+// publishWithLabel records the publication event with a caller-supplied audit
+// label so automatic publication is not described as a manual approval.
+func (s *Service) publishWithLabel(tx Tx, v *Item, publish bool, label string) error {
 	now := s.Now()
+	wasPublished := v.Published != nil
 	var live *PublicItem
 	op := "delete"
 	if publish {
@@ -233,14 +242,26 @@ func (s *Service) publish(tx Tx, v *Item, publish bool) error {
 	}
 	if publish {
 		v.Status = "published"
-		audit(v, "审核通过并发布", now)
+		audit(v, label, now)
 	} else {
 		v.Status = "draft"
 		audit(v, "资料已下架", now)
 	}
 	v.Published = live
-	_, err := tx.Append(Change{Operation: op, ItemID: v.ID, SourceID: v.SourceID, Revision: v.Revision, Item: live, CreatedAt: now})
-	return err
+	if _, err := tx.Append(Change{Operation: op, ItemID: v.ID, SourceID: v.SourceID, Revision: v.Revision, Item: live, CreatedAt: now}); err != nil {
+		return err
+	}
+	if wasPublished != publish {
+		// New items cannot already be referenced by a catalogue. Avoid scanning
+		// all collections during ordinary ingestion of new items.
+		if _, err := tx.Item(v.ID); errors.Is(err, ErrNotFound) {
+			return nil
+		} else if err != nil {
+			return err
+		}
+		return refreshCatalogReferences(tx, v.ID, now.UTC())
+	}
+	return nil
 }
 
 func (s *Service) Publication(ctx context.Context, id string, rev int64, publish bool) (out Item, err error) {

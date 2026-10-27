@@ -124,13 +124,16 @@ func TestRepositoryContract(t *testing.T) {
 					t.Fatal(e)
 				}
 			})
-			t.Run("approval-isolation-and-tombstones", func(t *testing.T) {
+			t.Run("ingest-publishes-and-tombstones", func(t *testing.T) {
 				s := fixture(t, kind)
 				v, key := newSource(t, s, "review", false)
 				ctx := context.Background()
 				item := ingestOne(t, s, v, key, "id", "draft one")
-				if item.Published != nil || len(page(t, s, 0, 100).Changes) != 0 {
-					t.Fatal("draft was published")
+				if item.Published == nil || item.Published.Title != "draft one" || ReviewState(item) != "published" {
+					t.Fatal("pushed material did not become public immediately")
+				}
+				if len(page(t, s, 0, 100).Changes) != 1 {
+					t.Fatal("pushed material did not reach client sync")
 				}
 				item, e := s.Publication(ctx, item.ID, item.Revision, true)
 				if e != nil {
@@ -145,8 +148,8 @@ func TestRepositoryContract(t *testing.T) {
 					t.Fatal("duplicate approval emitted revision")
 				}
 				item = ingestOne(t, s, v, key, "id", "draft two")
-				if item.Published.Title != "draft one" || len(page(t, s, 0, 100).Changes) != 1 {
-					t.Fatal("draft changed live snapshot")
+				if item.Published.Title != "draft two" || len(page(t, s, 0, 100).Changes) != 2 {
+					t.Fatal("re-push did not refresh the live snapshot")
 				}
 				if _, e = s.Publication(ctx, item.ID, before, true); !errors.Is(e, ErrConflict) {
 					t.Fatal(e)

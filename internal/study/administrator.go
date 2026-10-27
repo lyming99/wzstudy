@@ -88,7 +88,7 @@ func (s *Service) EnsureAdministrator(ctx context.Context, in AdministratorSetti
 	}
 	name := strings.TrimSpace(in.DisplayName)
 	if name == "" {
-		name = "知序管理员"
+		name = "温知管理员"
 	}
 	if len(name) > 120 || !utf8.ValidString(name) || strings.ContainsAny(name, "\r\n\x00") {
 		return out, false, ErrInvalid

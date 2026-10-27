@@ -61,7 +61,7 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 		if name == "" {
 			name = "index.html"
 		}
-		if name != "index.html" && name != "app.js" && name != "app.css" && name != "qrcodegen.js" {
+		if name != "index.html" && name != "app.js" && name != "app.css" && name != "qrcodegen.js" && name != "roadmaps.js" && name != "roadmaps.css" {
 			http.NotFound(w, r)
 			return
 		}
@@ -72,9 +72,9 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 		}
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 		typ := "text/html; charset=utf-8"
-		if name == "app.js" || name == "qrcodegen.js" {
+		if name == "app.js" || name == "qrcodegen.js" || name == "roadmaps.js" {
 			typ = "text/javascript; charset=utf-8"
-		} else if name == "app.css" {
+		} else if name == "app.css" || name == "roadmaps.css" {
 			typ = "text/css; charset=utf-8"
 		}
 		w.Header().Set("Content-Type", typ)
@@ -112,26 +112,63 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 			r.Get("/sources", s.publicSources)
 			r.Get("/items", s.publicItems)
 			r.Get("/items/{id}", s.publicItem)
+			r.Get("/items/{id}/learning-stats", s.learningItemStats)
+			r.Get("/catalog/collections", s.publicCatalogCollections)
+			r.Get("/catalog/collections/{id}", s.publicCatalogCollection)
 		})
 		r.With(s.requirePermission(study.PermissionSync)).Get("/changes", s.changes)
+		r.With(s.requirePermission(study.PermissionSync)).Get("/catalog/collections/changes", s.catalogChanges)
 		r.Post("/auth/login", s.login)
 		r.With(s.require(true)).Get("/auth/session", s.session)
 		r.With(s.require(true)).Post("/auth/logout", s.logout)
 		r.Get("/client/connection", s.clientConnection)
 		r.Post("/client/feedback", s.reportFeedback)
+		r.Post("/client/feedback/import-legacy", s.importLegacyFeedback)
 		r.Get("/client/feedback", s.clientFeedback)
 		r.Get("/client/feedback/events", s.clientFeedbackEvents)
+		r.Get("/client/recommendations", s.clientRecommendations)
+		r.Get("/client/learning/capabilities", s.learningCapabilities)
+		r.Get("/client/learning", s.clientLearning)
+		r.Post("/client/learning/events", s.reportLearning)
+		r.Post("/client/learning/import-legacy-records", s.importLegacyRecords)
+		r.Post("/client/learning/import-legacy-reviews", s.importLegacyReviews)
+		r.Post("/client/learning/drafts/commands", s.learningDraftCommand)
+		r.Post("/client/learning/drafts/import-legacy", s.importLegacyLearningDraft)
+		r.Get("/client/learning/items/{item_id}/draft", s.learningDraft)
+		r.Get("/client/learning/events", s.clientLearningEvents)
+		r.Get("/client/learning/items/{item_id}/records", s.clientLearningRecords)
+		r.Get("/client/learning/items/{item_id}/records/{record_id}", s.clientLearningRecord)
+		r.Get("/client/learning/items/{item_id}/stats", s.clientLearningItemStats)
+		r.Get("/client/learning/collections", s.personalCollections)
+		r.Get("/client/learning/collections/{collection_id}", s.personalCollection)
+		r.Post("/client/learning/collections/commands", s.personalCollectionCommand)
+		r.Post("/client/learning/collections/import-legacy", s.importLegacyPersonalCollection)
 		r.Get("/ingest/{id}/status", s.ingestStatus)
 		r.Post("/ingest/{id}/files", s.upload)
 		r.Post("/ingest/{id}", s.ingest)
 		r.Route("/admin", func(r chi.Router) {
 			r.Use(s.require(true))
 			r.Get("/workspace", s.workspace)
+			r.Get("/roadmaps", s.learningRoadmaps)
+			r.Post("/roadmaps", s.saveLearningRoadmap)
+			r.Get("/roadmaps/{id}", s.learningRoadmap)
+			r.Put("/roadmaps/{id}", s.saveLearningRoadmap)
+			r.Post("/roadmaps/{id}/delete", s.deleteLearningRoadmap)
+			r.Get("/catalog/collections", s.adminCatalogCollections)
+			r.Post("/catalog/collections", s.saveCatalogCollection)
+			r.Get("/catalog/collections/{id}", s.adminCatalogCollection)
+			r.Put("/catalog/collections/{id}", s.saveCatalogCollection)
+			r.Post("/catalog/collections/{id}/publish", s.publishCatalogCollection)
+			r.Post("/catalog/collections/{id}/unpublish", s.unpublishCatalogCollection)
+			r.Post("/catalog/collections/{id}/delete", s.deleteCatalogCollection)
 			r.Get("/clients", s.clients)
 			r.Post("/clients", s.createClient)
 			r.Get("/clients/{id}", s.client)
 			r.Get("/clients/{id}/feedback", s.adminClientFeedback)
 			r.Get("/clients/{id}/feedback/events", s.adminClientFeedbackEvents)
+			r.Get("/clients/{id}/learning", s.adminClientLearning)
+			r.Get("/clients/{id}/learning/events", s.adminClientLearningEvents)
+			r.Get("/clients/{id}/learning/items/{item_id}/records", s.adminClientLearningRecords)
 			r.Get("/clients/{id}/items", s.adminClientItems)
 			r.Put("/clients/{id}", s.updateClient)
 			r.Post("/clients/{id}/key", s.rotateClientKey)

@@ -1,6 +1,6 @@
 # 数据录入与数据查询：管理 API
 
-基础路径 `/api/v1`，管理页面 `/admin/`，机器契约 `/openapi.json`。系统仅关注两条链路：录入来源提交资料，查询客户端获取已发布资料。推荐排序和学习计划由客户端处理；学习反馈可由客户端授权上报，服务端持久保存供去重。
+基础路径 `/api/v1`，管理页面 `/admin/`，机器契约 `/openapi.json`。录入来源提交资料，查询客户端获取已发布资料；服务端提供规则推荐，并在显式授权后按客户端身份保存和查询学习反馈、复习、记录及进度。
 
 ## 认证与安全边界
 
@@ -73,6 +73,42 @@ POST /admin/clients/{id}/key
 - PUT 包含 slug/name/description/enabled/permissions 和最新 revision；slug 不可改。
 - 轮换使用最新 revision，返回新的 client 与一次性 access_key。停用、轮换只影响该查询身份，不影响录入端。
 - 启用不代表设备在线；系统不维护学习进度或在线状态。
+
+## 数据源合集与章节
+
+管理员 API（与历史已退役的 `/admin/collections` 分开）：
+
+```text
+GET  /admin/catalog/collections?limit=20&offset=0
+POST /admin/catalog/collections
+GET  /admin/catalog/collections/{id}
+PUT  /admin/catalog/collections/{id}
+POST /admin/catalog/collections/{id}/publish
+POST /admin/catalog/collections/{id}/unpublish
+POST /admin/catalog/collections/{id}/delete
+```
+
+创建时 revision 为 0；更新、发布、下架、删除必须带最新 revision。保存请求示例：
+
+```json
+{"revision":0,"title":"入门合集","summary":"课程简介","chapters":[{"id":"","title":"第一章","item_id":"<已存在的内容 UUID>"}]}
+```
+
+章节按数组顺序排列，每章关联一个内容；新增章节可传空 id，由服务端生成稳定 UUID。一个合集最多 100 章，同一内容和章节 id 在同一合集中不可重复。草稿可以引用已存在但尚未发布的内容；发布时所有章节必须已公开。编辑只修改草稿，已发布快照保持不变，直到再次发布。删除合集不删除内容；内容下架时自动生成独立的合集变更，公开查询不再暴露该章节。历史 `collection` 记录不会被此接口改写。
+
+## 学习路线图（思维导图）
+
+管理端左侧“学习路线图”（`/admin/#roadmaps`）是独立编排模块。支持新建、名称/简介搜索、分页、编辑、删除；画布支持添加子节点/同级节点、拖动分支或选择上级、同级排序、折叠、缩放平移、撤销重做、节点说明和关联资料。显式保存到服务端，未保存离开会提示，版本冲突不会静默覆盖。
+
+```text
+GET  /admin/roadmaps?q=<关键词>&limit=20&offset=0
+POST /admin/roadmaps
+GET  /admin/roadmaps/{id}
+PUT  /admin/roadmaps/{id}
+POST /admin/roadmaps/{id}/delete
+```
+
+仅管理员可读写，不开放给查询客户端，不修改个人学习进度或现有公开资料游标。节点使用唯一 UUID 和 parent_id 表示树，数组顺序决定同级顺序，唯一根节点标题与路线图名称一致。最多 300 节点、12 层、每节点 20 份资料引用；保存/删除携带当前 revision，409 时保留本地草稿。删除只移除路线图或关联，不删除资料。字段、使用步骤、键盘操作与部署注意事项见 `LEARNING_ROADMAPS.md`，完整契约见 `/openapi.json`。
 
 ## 工作空间与资料维护
 

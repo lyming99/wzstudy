@@ -110,46 +110,44 @@ func TestAuthAndStrictDecoding(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 }
-func TestApprovalFlowAndPermissionIsolation(t *testing.T) {
+func TestPushedContentIsPublicImmediately(t *testing.T) {
 	_, h := app()
 	source, key := create(t, h, false)
-	item := ingest(t, h, source.ID, key, "草稿")
+	item := ingest(t, h, source.ID, key, "推送内容")
+	if item.Status != "published" || item.Published == nil || item.Published.Title != "推送内容" {
+		t.Fatalf("pushed content was not published: %+v", item)
+	}
 	if w := request(t, h, "GET", "/api/v1/admin/sources", key, nil); w.Code != 401 {
 		t.Fatal("source key became admin")
 	}
-	if w := request(t, h, "GET", "/api/v1/items/"+item.ID, readKey, nil); w.Code != 404 {
-		t.Fatal("draft became visible")
+	var live study.PublicItem
+	data(t, request(t, h, "GET", "/api/v1/items/"+item.ID, readKey, nil), &live)
+	if live.Title != "推送内容" {
+		t.Fatalf("client could not query pushed content: %+v", live)
 	}
 	if w := request(t, h, "POST", "/api/v1/ingest/"+source.ID, adminKey, map[string]any{"items": []study.Content{{ExternalID: "admin", Title: "no"}}}); w.Code != 401 {
 		t.Fatal("admin key accepted as source key")
 	}
-	var published study.Item
-	data(t, request(t, h, "POST", "/api/v1/admin/items/"+item.ID+"/publish", adminKey, map[string]int64{"revision": item.Revision}), &published)
-	var live study.PublicItem
+	updated := ingest(t, h, source.ID, key, "更新内容")
 	data(t, request(t, h, "GET", "/api/v1/items/"+item.ID, readKey, nil), &live)
-	if live.Title != "草稿" {
-		t.Fatal(live)
+	if live.Title != "更新内容" {
+		t.Fatalf("live snapshot did not follow the pushed update: %+v", live)
 	}
-	updated := ingest(t, h, source.ID, key, "新草稿")
-	data(t, request(t, h, "GET", "/api/v1/items/"+item.ID, readKey, nil), &live)
-	if live.Title != "草稿" {
-		t.Fatal("live snapshot changed before approval")
-	}
-	if w := request(t, h, "POST", "/api/v1/admin/items/"+item.ID+"/publish", adminKey, map[string]int64{"revision": item.Revision}); w.Code != 409 {
-		t.Fatal(w.Code)
-	}
-	data(t, request(t, h, "POST", "/api/v1/admin/items/"+item.ID+"/publish", adminKey, map[string]int64{"revision": updated.Revision}), &published)
 	var list struct {
 		Items []study.PublicItem `json:"items"`
 	}
-	data(t, request(t, h, "GET", "/api/v1/items?tag=Go&q="+"%E6%96%B0"+"&category="+"%E7%BC%96%E7%A8%8B", readKey, nil), &list)
-	if len(list.Items) != 1 || list.Items[0].Title != "新草稿" {
+	data(t, request(t, h, "GET", "/api/v1/items?tag=Go&category="+"%E7%BC%96%E7%A8%8B", readKey, nil), &list)
+	if len(list.Items) != 1 || list.Items[0].Title != "更新内容" {
 		t.Fatal(list)
 	}
-	data(t, request(t, h, "POST", "/api/v1/admin/items/"+item.ID+"/unpublish", adminKey, map[string]int64{"revision": published.Revision}), &published)
+	var published study.Item
+	data(t, request(t, h, "POST", "/api/v1/admin/items/"+item.ID+"/unpublish", adminKey, map[string]int64{"revision": updated.Revision}), &published)
+	if w := request(t, h, "GET", "/api/v1/items/"+item.ID, readKey, nil); w.Code != 404 {
+		t.Fatal("unpublished content stayed queryable")
+	}
 	var changes study.ChangePage
 	data(t, request(t, h, "GET", "/api/v1/changes?after=0", readKey, nil), &changes)
-	if len(changes.Changes) != 3 || changes.Changes[2].Operation != "delete" {
+	if len(changes.Changes) != 3 || changes.Changes[0].Operation != "upsert" || changes.Changes[2].Operation != "delete" {
 		t.Fatal(changes)
 	}
 	w := request(t, h, "GET", "/api/v1/admin/sources/"+source.ID, adminKey, nil)

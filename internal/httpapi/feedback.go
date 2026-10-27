@@ -31,6 +31,32 @@ func (s *Server) reportFeedback(w http.ResponseWriter, r *http.Request) {
 	success(w, 200, out)
 }
 
+// Import is opt-in and fills only absent personal actions. It accepts no
+// caller-supplied Client identity; authentication is authoritative.
+func (s *Server) importLegacyFeedback(w http.ResponseWriter, r *http.Request) {
+	if len(r.URL.Query()) != 0 {
+		s.fail(w, study.ErrInvalid)
+		return
+	}
+	key := bearer(r)
+	if _, e := s.service.ClientForKey(r.Context(), key, study.PermissionFeedback); e != nil {
+		s.fail(w, e)
+		return
+	}
+	var in struct {
+		Events []study.FeedbackInput `json:"events"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	out, e := s.service.ImportLegacyFeedback(r.Context(), key, in.Events)
+	if e != nil {
+		s.fail(w, e)
+		return
+	}
+	success(w, 200, out)
+}
+
 func feedbackPageArgs(r *http.Request) (ids []string, limit, offset int, err error) {
 	q := r.URL.Query()
 	if q.Has("client_id") {

@@ -13,7 +13,7 @@ import (
 
 // Exercise parsing and worker ingestion without a public network request or
 // relaxing the production fetcher's private-address protections.
-func TestRSSIntakeDefaultsToReviewAndDeduplicates(t *testing.T) {
+func TestRSSIntakePublishesImmediatelyAndDeduplicates(t *testing.T) {
 	ctx := context.Background()
 	service := study.NewService(study.NewMemoryStore())
 	source, _, err := service.CreateSource(ctx, study.SourceInput{
@@ -32,20 +32,20 @@ func TestRSSIntakeDefaultsToReviewAndDeduplicates(t *testing.T) {
 	})}}
 	worker := Worker{Service: service, Fetcher: fetcher, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	first, err := worker.Once(ctx, source.ID, true)
-	if err != nil || first.Created != 1 || first.Published != 0 || len(first.Items) != 1 {
+	if err != nil || first.Created != 1 || first.Published != 1 || len(first.Items) != 1 {
 		t.Fatalf("first RSS intake: %+v, %v", first, err)
 	}
 	item, err := service.Item(ctx, first.Items[0].ID)
-	if err != nil || item.Status != "pending" || item.Published != nil || item.SourceID != source.ID || item.Draft.Category != "学习方法" || item.Draft.URL != "https://example.org/lesson" {
-		t.Fatalf("RSS review/source metadata: %+v, %v", item, err)
+	if err != nil || item.Status != "published" || item.Published == nil || item.SourceID != source.ID || item.Draft.Category != "学习方法" || item.Draft.URL != "https://example.org/lesson" {
+		t.Fatalf("RSS published/source metadata: %+v, %v", item, err)
 	}
 	second, err := worker.Once(ctx, source.ID, true)
 	if err != nil || second.Created != 0 || second.Unchanged != 1 || second.Published != 0 || len(second.Items) != 1 || second.Items[0].ID != item.ID {
-		t.Fatalf("RSS replay must reuse the same pending material: %+v, %v", second, err)
+		t.Fatalf("RSS replay must reuse the same material: %+v, %v", second, err)
 	}
 	changes, err := service.Changes(ctx, 0, 100, nil)
-	if err != nil || changes.HighWatermark != 0 || len(changes.Changes) != 0 {
-		t.Fatalf("unreviewed RSS content leaked into public sync: %+v, %v", changes, err)
+	if err != nil || changes.HighWatermark != 1 || len(changes.Changes) != 1 {
+		t.Fatalf("collected content missing from public sync: %+v, %v", changes, err)
 	}
 	updated, err := service.Source(ctx, source.ID)
 	if err != nil || updated.LastSuccessAt == nil || updated.PollIntervalSeconds != 600 || updated.AutoPublish {

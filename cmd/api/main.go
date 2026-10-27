@@ -79,6 +79,13 @@ func run() error {
 	_ = os.Unsetenv("SYSTEM_ADMIN_PASSWORD")
 	_ = os.Unsetenv("BOOTSTRAP_ADMIN_PASSWORD")
 	logger.Info("system administrator ready", "created", created)
+	// Pushed content is public immediately; release material that an earlier
+	// review gate left pending so clients can query it after this upgrade.
+	if published, backfillErr := service.PublishPendingIngested(ctx); backfillErr != nil {
+		logger.Error("publishing previously pending pushed content failed")
+	} else if published > 0 {
+		logger.Info("published previously pending pushed content", "count", published)
+	}
 	worker := &feed.Worker{Service: service, Fetcher: feed.NewFetcher(), Logger: logger}
 	workerDone := make(chan struct{})
 	if cfg.PollEnabled {

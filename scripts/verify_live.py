@@ -222,7 +222,7 @@ try:
             check('文章创建、XSS 安全文本预览、审核发布与修改前后公开快照隔离')
 
             for title, category, status in [('设计更好的日常：关于习惯的科学', '个人成长', 'draft'), ('信息过载时代，做一名清醒的读者', '认知思维', 'pending'), ('英语学习笔记：每天十五分钟', '语言学习', 'pending')]:
-                request('/admin/items', 'POST', {'status': status, 'content': {'kind': 'article', 'title': title, 'summary': '把零散的信息，变成可以实践与复用的知识。', 'content': '从有意识的输入开始，用自己的语言表达，并在日常中检验它。', 'format': 'text', 'category': category, 'author': '知序管理员', 'tags': [category]}})
+                request('/admin/items', 'POST', {'status': status, 'content': {'kind': 'article', 'title': title, 'summary': '把零散的信息，变成可以实践与复用的知识。', 'content': '从有意识的输入开始，用自己的语言表达，并在日常中检验它。', 'format': 'text', 'category': category, 'author': '温知管理员', 'tags': [category]}})
             client_ingested = request('/ingest/' + client['id'], 'POST', {'items': [{'external_id': 'desktop-note-001', 'kind': 'article', 'title': '来自桌面端的学习笔记', 'content': '通过来源专属密钥上传，不借用管理员权限。', 'category': '学习方法', 'author': '桌面学习端', 'tags': ['知识管理']}]}, key=source_key)
             check('管理员入库与客户端 JSON 接入使用真实且隔离的认证接口')
 
@@ -432,13 +432,13 @@ try:
             check('来源密钥真实轮换、旧密钥即时失效和权限延续')
 
             page.locator('.user-button').click()
-            page.locator('#settings-name').fill('知序管理员')
+            page.locator('#settings-name').fill('温知管理员')
             page.locator('#setting-compact').click()
             page.locator('button[form="settings-form"]').click()
-            expect(page.locator('#profile-name')).to_have_text('知序管理员')
+            expect(page.locator('#profile-name')).to_have_text('温知管理员')
             assert page.locator('body').get_attribute('class').find('compact-table') >= 0
             page.reload()
-            expect(page.locator('#profile-name')).to_have_text('知序管理员')
+            expect(page.locator('#profile-name')).to_have_text('温知管理员')
             page.locator('.user-button').click()
             page.locator('#setting-compact').click()
             page.locator('button[form="settings-form"]').click()
@@ -490,7 +490,7 @@ try:
             page.goto(BASE + '/admin/?restart=1#library')
             login(page)
             expect(page.locator('#nav-count')).to_have_text('8')
-            expect(page.locator('#profile-name')).to_have_text('知序管理员')
+            expect(page.locator('#profile-name')).to_have_text('温知管理员')
             restarted = request('/admin/workspace')
             assert 'plans' not in restarted
             assert 'collections' not in restarted and len(restarted['clients']) == 1
