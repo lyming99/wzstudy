@@ -14,7 +14,7 @@ func TestLearningRoadmapAdminAPI(t *testing.T) {
 	in := study.RoadmapInput{Title: "Go 学习路线", Summary: "循序渐进", Nodes: []study.RoadmapNode{{ID: root, Title: "Go 学习路线"}, {ID: uuid.NewString(), ParentID: root, Title: "基础语法"}}}
 	_, reader := managedClient(t, h, "roadmap-reader", []string{"read", "sync", "feedback"})
 	var out study.LearningRoadmap
-	w := request(t, h, "POST", "/api/v1/admin/roadmaps", adminKey, in)
+	w := request(t, h, "POST", "/api/v1/workspace/roadmaps", workspaceKey, in)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}
@@ -22,13 +22,13 @@ func TestLearningRoadmapAdminAPI(t *testing.T) {
 	if out.Revision != 1 || len(out.Nodes) != 2 {
 		t.Fatalf("bad roadmap: %+v", out)
 	}
-	base := "/api/v1/admin/roadmaps/" + out.ID
+	base := "/api/v1/workspace/roadmaps/" + out.ID
 	for _, key := range []string{"", readKey, reader} {
 		for _, req := range []struct {
 			method, path string
 			body         any
 		}{
-			{"GET", "/api/v1/admin/roadmaps", nil}, {"POST", "/api/v1/admin/roadmaps", in},
+			{"GET", "/api/v1/workspace/roadmaps", nil}, {"POST", "/api/v1/workspace/roadmaps", in},
 			{"GET", base, nil}, {"PUT", base, in}, {"POST", base + "/delete", map[string]int64{"revision": out.Revision}},
 		} {
 			if w := request(t, h, req.method, req.path, key, req.body); w.Code != http.StatusUnauthorized {
@@ -40,35 +40,35 @@ func TestLearningRoadmapAdminAPI(t *testing.T) {
 		t.Fatalf("unexpected public route: %d", w.Code)
 	}
 	var page study.RoadmapPage
-	data(t, request(t, h, "GET", "/api/v1/admin/roadmaps?q=Go&limit=12", adminKey, nil), &page)
+	data(t, request(t, h, "GET", "/api/v1/workspace/roadmaps?q=Go&limit=12", workspaceKey, nil), &page)
 	if page.Total != 1 || page.Items[0].NodeCount != 2 {
 		t.Fatalf("list: %+v", page)
 	}
 	in.Revision = out.Revision
 	in.Nodes[1].Note = "变量、函数与结构体"
-	data(t, request(t, h, "PUT", base, adminKey, in), &out)
+	data(t, request(t, h, "PUT", base, workspaceKey, in), &out)
 	if out.Revision != 2 || out.Nodes[1].Note != in.Nodes[1].Note {
 		t.Fatalf("edit: %+v", out)
 	}
-	if w := request(t, h, "PUT", base, adminKey, in); w.Code != http.StatusConflict {
+	if w := request(t, h, "PUT", base, workspaceKey, in); w.Code != http.StatusConflict {
 		t.Fatalf("stale update: %d", w.Code)
 	}
-	if w := request(t, h, "POST", base+"/delete", adminKey, map[string]int64{"revision": 1}); w.Code != http.StatusConflict {
+	if w := request(t, h, "POST", base+"/delete", workspaceKey, map[string]int64{"revision": 1}); w.Code != http.StatusConflict {
 		t.Fatalf("stale delete: %d", w.Code)
 	}
 	for _, path := range []string{"?limit=0", "?offset=-1", "?limit=bad", "/bad-id"} {
-		if w := request(t, h, "GET", "/api/v1/admin/roadmaps"+path, adminKey, nil); w.Code != http.StatusBadRequest {
+		if w := request(t, h, "GET", "/api/v1/workspace/roadmaps"+path, workspaceKey, nil); w.Code != http.StatusBadRequest {
 			t.Fatalf("bad input %s: %d", path, w.Code)
 		}
 	}
-	if w := request(t, h, "POST", "/api/v1/admin/roadmaps", adminKey, map[string]any{"title": "bad", "nodes": []any{}, "unknown": true}); w.Code != http.StatusBadRequest {
+	if w := request(t, h, "POST", "/api/v1/workspace/roadmaps", workspaceKey, map[string]any{"title": "bad", "nodes": []any{}, "unknown": true}); w.Code != http.StatusBadRequest {
 		t.Fatalf("unknown field: %d", w.Code)
 	}
-	data(t, request(t, h, "POST", base+"/delete", adminKey, map[string]int64{"revision": out.Revision}), new(map[string]bool))
-	if w := request(t, h, "GET", base, adminKey, nil); w.Code != http.StatusNotFound {
+	data(t, request(t, h, "POST", base+"/delete", workspaceKey, map[string]int64{"revision": out.Revision}), new(map[string]bool))
+	if w := request(t, h, "GET", base, workspaceKey, nil); w.Code != http.StatusNotFound {
 		t.Fatalf("deleted read: %d", w.Code)
 	}
-	data(t, request(t, h, "GET", "/api/v1/admin/roadmaps", adminKey, nil), &page)
+	data(t, request(t, h, "GET", "/api/v1/workspace/roadmaps", workspaceKey, nil), &page)
 	if page.Total != 0 {
 		t.Fatalf("deleted list: %+v", page)
 	}

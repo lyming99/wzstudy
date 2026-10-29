@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"net/http"
 	"testing"
 
@@ -11,16 +10,16 @@ import (
 
 func TestLearningHTTPAuthorizationAndIsolation(t *testing.T) {
 	service, h, _ := managementApp(t, 1<<20)
-	item, err := service.SaveManaged(context.Background(), "", study.ManagedInput{Status: "pending", Content: study.Content{Title: "公开资料", Kind: "article", Content: "学习正文"}}, nil)
+	item, err := service.SaveManaged(testWorkspaceContext(), "", study.ManagedInput{Status: "pending", Content: study.Content{Title: "公开资料", Kind: "article", Content: "学习正文"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err = service.Publication(context.Background(), item.ID, item.Revision, true)
+	item, err = service.Publication(testWorkspaceContext(), item.ID, item.Revision, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, key := managedClient(t, h, "learning-own", []string{"read", "feedback"})
-	_, other := managedClient(t, h, "learning-other", []string{"read", "feedback"})
+	client, key := workspaceLearner(t, h, "learning-own")
+	_, other := managedLearner(t, h, "learning-other")
 	_, reader := managedClient(t, h, "learning-read", []string{"read"})
 	_, sourceKey := create(t, h, false)
 	var capabilities struct {
@@ -32,9 +31,8 @@ func TestLearningHTTPAuthorizationAndIsolation(t *testing.T) {
 	if capabilities.ClientID != client.ID || !capabilities.Read || !capabilities.Write {
 		t.Fatalf("capabilities: %+v", capabilities)
 	}
-	data(t, request(t, h, "GET", "/api/v1/client/learning/capabilities", reader, nil), &capabilities)
-	if capabilities.Read || capabilities.Write {
-		t.Fatalf("read client gained feedback: %+v", capabilities)
+	if w := request(t, h, "GET", "/api/v1/client/learning/capabilities", reader, nil); w.Code != 401 {
+		t.Fatalf("query key became learner: %d", w.Code)
 	}
 	for _, invalid := range []string{"", adminKey, sourceKey} {
 		if w := request(t, h, "GET", "/api/v1/client/learning/capabilities", invalid, nil); w.Code != http.StatusUnauthorized {
@@ -51,7 +49,7 @@ func TestLearningHTTPAuthorizationAndIsolation(t *testing.T) {
 	for _, tc := range []struct {
 		key    string
 		status int
-	}{{"", 401}, {adminKey, 401}, {sourceKey, 401}, {reader, 403}} {
+	}{{"", 401}, {adminKey, 401}, {sourceKey, 401}, {reader, 401}} {
 		if w := request(t, h, "POST", "/api/v1/client/learning/events", tc.key, payload); w.Code != tc.status {
 			t.Fatalf("write authority: %d %s", w.Code, w.Body.String())
 		}
@@ -76,12 +74,8 @@ func TestLearningHTTPAuthorizationAndIsolation(t *testing.T) {
 	if records.Total != 1 || records.Items[0].ID != recordID {
 		t.Fatalf("records: %+v", records)
 	}
-	data(t, request(t, h, "GET", "/api/v1/admin/clients/"+client.ID+"/learning", adminKey, nil), &own)
-	if own.Total != 1 {
-		t.Fatalf("admin query: %+v", own)
-	}
-	if w := request(t, h, "GET", "/api/v1/admin/clients/"+client.ID+"/learning", key, nil); w.Code != 401 {
-		t.Fatalf("client accessed admin: %d", w.Code)
+	if w := request(t, h, "GET", "/api/v1/admin/users/"+client.ID+"/learning", adminKey, nil); w.Code != 404 {
+		t.Fatal("administrator can browse private learning", w.Code)
 	}
 	for _, path := range []string{"/api/v1/client/learning?client_id=" + client.ID, "/api/v1/client/learning/events?client_id=" + client.ID, "/api/v1/client/learning/items/" + item.ID + "/records?client_id=" + client.ID} {
 		if w := request(t, h, "GET", path, key, nil); w.Code != 400 {
@@ -97,13 +91,13 @@ func TestLearningHTTPAuthorizationAndIsolation(t *testing.T) {
 	if legacy.Total != 0 || legacy.HighWatermark != 0 {
 		t.Fatalf("v1 feedback changed: %+v", legacy)
 	}
-	for _, likeKey := range []string{key, other} {
+	for _, likeKey := range []string{key} {
 		like := map[string]any{"events": []any{map[string]any{"event_id": uuid.NewString(), "item_id": item.ID, "action": "like"}}}
 		data(t, request(t, h, "POST", "/api/v1/client/feedback", likeKey, like), new(study.FeedbackResult))
 	}
 	var stats study.LearningItemStats
 	data(t, request(t, h, "GET", "/api/v1/items/"+item.ID+"/learning-stats", reader, nil), &stats)
-	if stats.LikeCount != 2 || stats.ViewCount != 1 || stats.RecordCount != 1 {
+	if stats.LikeCount != 1 || stats.ViewCount != 1 || stats.RecordCount != 1 {
 		t.Fatalf("aggregate counts: %+v", stats)
 	}
 	_, syncOnly := managedClient(t, h, "learning-sync-stats", []string{"sync"})
@@ -127,15 +121,15 @@ func TestLearningHTTPAuthorizationAndIsolation(t *testing.T) {
 	unlike := map[string]any{"events": []any{map[string]any{"event_id": uuid.NewString(), "item_id": item.ID, "action": "like", "value": false}}}
 	data(t, request(t, h, "POST", "/api/v1/client/feedback", key, unlike), new(study.FeedbackResult))
 	data(t, request(t, h, "GET", "/api/v1/items/"+item.ID+"/learning-stats", reader, nil), &stats)
-	if stats.LikeCount != 1 {
+	if stats.LikeCount != 0 {
 		t.Fatalf("cancelled like counted: %+v", stats)
 	}
-	var updated study.Client
-	data(t, request(t, h, "PUT", "/api/v1/admin/clients/"+client.ID, adminKey, policyBody(client, []string{"read"})), &updated)
-	if w := request(t, h, "POST", "/api/v1/client/learning/events", key, payload); w.Code != 403 {
+	var updated study.User
+	data(t, request(t, h, "PUT", "/api/v1/admin/users/"+client.ID, adminKey, map[string]any{"revision": client.Revision, "email": client.Email, "display_name": client.DisplayName, "enabled": false}), &updated)
+	if w := request(t, h, "POST", "/api/v1/client/learning/events", key, payload); w.Code != 401 {
 		t.Fatalf("revocation did not apply: %d", w.Code)
 	}
-	if w := request(t, h, "GET", "/api/v1/client/learning", key, nil); w.Code != 403 {
+	if w := request(t, h, "GET", "/api/v1/client/learning", key, nil); w.Code != 401 {
 		t.Fatalf("revoked identity read v2 data: %d", w.Code)
 	}
 }

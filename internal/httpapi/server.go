@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -14,8 +15,9 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+	"wzstudy/internal/accountui"
 	"wzstudy/internal/adminui"
-	"wzstudy/internal/buildinfo"
+	"wzstudy/internal/learnui"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -51,35 +53,38 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 		failure(w, 405, "method_not_allowed", "不支持该请求方法")
 	})
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		success(w, 200, map[string]any{"service": "wzstudy", "version": buildinfo.Version, "admin": "/admin/", "api": "/api/v1", "docs": "/docs", "openapi": "/openapi.json"})
+		http.Redirect(w, r, "/workspace/", http.StatusTemporaryRedirect)
 	})
-	r.Get("/admin", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/admin/", http.StatusTemporaryRedirect)
-	})
-	r.Get("/admin/*", func(w http.ResponseWriter, r *http.Request) {
-		name := strings.TrimPrefix(r.URL.Path, "/admin/")
-		if name == "" {
-			name = "index.html"
-		}
-		if name != "index.html" && name != "app.js" && name != "app.css" && name != "qrcodegen.js" && name != "roadmaps.js" && name != "roadmaps.css" {
-			http.NotFound(w, r)
-			return
-		}
-		b, e := adminui.Files.ReadFile(name)
-		if e != nil {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
-		typ := "text/html; charset=utf-8"
-		if name == "app.js" || name == "qrcodegen.js" || name == "roadmaps.js" {
-			typ = "text/javascript; charset=utf-8"
-		} else if name == "app.css" || name == "roadmaps.css" {
-			typ = "text/css; charset=utf-8"
-		}
-		w.Header().Set("Content-Type", typ)
-		_, _ = w.Write(b)
-	})
+	for prefix, files := range map[string]fs.FS{"/admin": accountui.Files, "/workspace": adminui.Files, "/learn": learnui.Files} {
+		prefix, files := prefix, files
+		r.Get(prefix, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, prefix+"/", http.StatusTemporaryRedirect)
+		})
+		r.Get(prefix+"/*", func(w http.ResponseWriter, r *http.Request) {
+			name := strings.TrimPrefix(r.URL.Path, prefix+"/")
+			if name == "" {
+				name = "index.html"
+			}
+			if strings.ContainsAny(name, "/\\") || strings.HasPrefix(name, ".") {
+				http.NotFound(w, r)
+				return
+			}
+			b, err := fs.ReadFile(files, name)
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+			typ := "text/html; charset=utf-8"
+			if strings.HasSuffix(name, ".js") {
+				typ = "text/javascript; charset=utf-8"
+			} else if strings.HasSuffix(name, ".css") {
+				typ = "text/css; charset=utf-8"
+			}
+			w.Header().Set("Content-Type", typ)
+			_, _ = w.Write(b)
+		})
+	}
 	r.Get("/docs", func(w http.ResponseWriter, r *http.Request) {
 		b, _ := docs.Files.ReadFile("API.md")
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -87,6 +92,11 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 	})
 	r.Get("/docs/management", func(w http.ResponseWriter, r *http.Request) {
 		b, _ := docs.Files.ReadFile("MANAGEMENT.md")
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write(b)
+	})
+	r.Get("/docs/user-workspaces", func(w http.ResponseWriter, r *http.Request) {
+		b, _ := docs.Files.ReadFile("USER_WORKSPACES.md")
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write(b)
 	})
@@ -119,35 +129,72 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 		r.With(s.requirePermission(study.PermissionSync)).Get("/changes", s.changes)
 		r.With(s.requirePermission(study.PermissionSync)).Get("/catalog/collections/changes", s.catalogChanges)
 		r.Post("/auth/login", s.login)
+		r.Post("/user/auth/login", s.userLogin)
+		r.With(s.requireUser).Get("/user/auth/session", s.userSession)
+		r.With(s.requireUser).Post("/user/auth/logout", s.userLogout)
+		r.With(s.requireUser).Post("/user/auth/password", s.userPassword)
 		r.With(s.require(true)).Get("/auth/session", s.session)
 		r.With(s.require(true)).Post("/auth/logout", s.logout)
 		r.Get("/client/connection", s.clientConnection)
-		r.Post("/client/feedback", s.reportFeedback)
-		r.Post("/client/feedback/import-legacy", s.importLegacyFeedback)
-		r.Get("/client/feedback", s.clientFeedback)
-		r.Get("/client/feedback/events", s.clientFeedbackEvents)
-		r.Get("/client/recommendations", s.clientRecommendations)
-		r.Get("/client/learning/capabilities", s.learningCapabilities)
-		r.Get("/client/learning", s.clientLearning)
-		r.Post("/client/learning/events", s.reportLearning)
-		r.Post("/client/learning/import-legacy-records", s.importLegacyRecords)
-		r.Post("/client/learning/import-legacy-reviews", s.importLegacyReviews)
-		r.Post("/client/learning/drafts/commands", s.learningDraftCommand)
-		r.Post("/client/learning/drafts/import-legacy", s.importLegacyLearningDraft)
-		r.Get("/client/learning/items/{item_id}/draft", s.learningDraft)
-		r.Get("/client/learning/events", s.clientLearningEvents)
-		r.Get("/client/learning/items/{item_id}/records", s.clientLearningRecords)
-		r.Get("/client/learning/items/{item_id}/records/{record_id}", s.clientLearningRecord)
-		r.Get("/client/learning/items/{item_id}/stats", s.clientLearningItemStats)
-		r.Get("/client/learning/collections", s.personalCollections)
-		r.Get("/client/learning/collections/{collection_id}", s.personalCollection)
-		r.Post("/client/learning/collections/commands", s.personalCollectionCommand)
-		r.Post("/client/learning/collections/import-legacy", s.importLegacyPersonalCollection)
-		r.Get("/ingest/{id}/status", s.ingestStatus)
-		r.Post("/ingest/{id}/files", s.upload)
-		r.Post("/ingest/{id}", s.ingest)
+		r.With(s.requireUser).Post("/client/feedback", s.reportFeedback)
+		r.With(s.requireUser).Post("/client/feedback/import-legacy", s.importLegacyFeedback)
+		r.With(s.requireUser).Get("/client/feedback", s.clientFeedback)
+		r.With(s.requireUser).Get("/client/feedback/events", s.clientFeedbackEvents)
+		r.With(s.requireUser).Get("/client/recommendations", s.clientRecommendations)
+		r.With(s.requireUser).Get("/client/learning/capabilities", s.learningCapabilities)
+		r.With(s.requireUser).Get("/client/learning", s.clientLearning)
+		r.With(s.requireUser).Post("/client/learning/events", s.reportLearning)
+		r.With(s.requireUser).Post("/client/learning/import-legacy-records", s.importLegacyRecords)
+		r.With(s.requireUser).Post("/client/learning/import-legacy-reviews", s.importLegacyReviews)
+		r.With(s.requireUser).Post("/client/learning/drafts/commands", s.learningDraftCommand)
+		r.With(s.requireUser).Post("/client/learning/drafts/import-legacy", s.importLegacyLearningDraft)
+		r.With(s.requireUser).Get("/client/learning/items/{item_id}/draft", s.learningDraft)
+		r.With(s.requireUser).Get("/client/learning/items/{item_id}/draft/history", s.learningDraftHistory)
+		r.With(s.requireUser).Get("/client/learning/drafts/events/{event_id}", s.learningDraftEvent)
+		r.With(s.requireUser).Get("/client/learning/events", s.clientLearningEvents)
+		r.With(s.requireUser).Get("/client/learning/items/{item_id}/records", s.clientLearningRecords)
+		r.With(s.requireUser).Get("/client/learning/items/{item_id}/records/{record_id}", s.clientLearningRecord)
+		r.With(s.requireQueryWorkspace).Get("/client/learning/items/{item_id}/stats", s.clientLearningItemStats)
+		r.With(s.requireUser).Get("/client/learning/collections", s.personalCollections)
+		r.With(s.requireUser).Get("/client/learning/collections/{collection_id}", s.personalCollection)
+		r.With(s.requireUser).Post("/client/learning/collections/commands", s.personalCollectionCommand)
+		r.With(s.requireUser).Post("/client/learning/collections/import-legacy", s.importLegacyPersonalCollection)
+		r.With(s.requireSourceWorkspace).Get("/ingest/{id}/status", s.ingestStatus)
+		r.With(s.requireSourceWorkspace).Post("/ingest/{id}/files", s.upload)
+		r.With(s.requireSourceWorkspace).Post("/ingest/{id}", s.ingest)
+		r.Route("/agent", func(r chi.Router) {
+			r.Use(s.requireAgent)
+			r.Get("/status", s.agentStatus)
+			r.Post("/tasks/claim", s.agentClaim)
+			r.Post("/tasks/{id}/heartbeat", s.agentHeartbeat)
+			r.Post("/tasks/{id}/events", s.agentEvents)
+			r.Post("/tasks/{id}/items", s.agentPushItems)
+			r.Post("/tasks/{id}/complete", s.agentComplete)
+			r.Post("/tasks/{id}/release", s.agentRelease)
+		})
 		r.Route("/admin", func(r chi.Router) {
 			r.Use(s.require(true))
+			r.Get("/users", s.users)
+			r.Post("/users", s.createUser)
+			r.Put("/users/{id}", s.updateUser)
+			r.Route("/agent", func(r chi.Router) {
+				r.Use(s.withAdminWorkspace)
+				r.Get("/status", s.adminAgentStatus)
+				r.Get("/agents", s.adminAgents)
+				r.Post("/agents", s.adminCreateAgent)
+				r.Get("/agents/{id}", s.adminAgent)
+				r.Put("/agents/{id}", s.adminUpdateAgent)
+				r.Post("/agents/{id}/key", s.adminRotateAgentKey)
+				r.Get("/tasks", s.adminCollectionTasks)
+				r.Post("/tasks", s.adminCreateCollectionTask)
+				r.Get("/tasks/{id}", s.adminCollectionTask)
+				r.Get("/tasks/{id}/events", s.adminCollectionTaskEvents)
+				r.Post("/tasks/{id}/cancel", s.adminCancelCollectionTask)
+				r.Post("/tasks/{id}/retry", s.adminRetryCollectionTask)
+			})
+		})
+		r.Route("/workspace", func(r chi.Router) {
+			r.Use(s.requireUser)
 			r.Get("/workspace", s.workspace)
 			r.Get("/roadmaps", s.learningRoadmaps)
 			r.Post("/roadmaps", s.saveLearningRoadmap)
@@ -214,6 +261,8 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 		failure(w, 404, "not_found", "记录不存在")
 	case errors.Is(err, study.ErrUnauthorized):
 		failure(w, 401, "unauthorized", "数据源密钥无效")
+	case errors.Is(err, study.ErrAccountEmailConflict):
+		failure(w, 409, "email_conflict", "该邮箱已被其他账号或管理员使用，请使用不同邮箱")
 	case errors.Is(err, study.ErrConflict):
 		failure(w, 409, "conflict", "版本冲突或记录已被修改，请刷新后重试")
 	case errors.Is(err, study.ErrDisabled):
@@ -222,6 +271,16 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 		failure(w, 403, "permission_denied", "当前客户端未获授此操作权限，请联系管理员")
 	case errors.Is(err, study.ErrBusy):
 		failure(w, 409, "source_busy", "该数据源正在采集或尚未到采集时间")
+	case errors.Is(err, study.ErrTaskClaimed):
+		failure(w, 409, "task_claimed", "该采集任务已被其他采集端领取")
+	case errors.Is(err, study.ErrLeaseExpired):
+		failure(w, 409, "lease_expired", "采集任务租约已过期，任务已回到待领取状态")
+	case errors.Is(err, study.ErrTaskCancelled):
+		failure(w, 409, "task_cancelled", "采集任务已被管理员取消")
+	case errors.Is(err, study.ErrQuota):
+		failure(w, 413, "item_quota_exceeded", "超过任务条目配额或事件上报上限")
+	case errors.Is(err, study.ErrDomain):
+		failure(w, 403, "domain_not_allowed", "条目链接不在任务允许的域名范围内")
 	case errors.Is(err, context.DeadlineExceeded):
 		failure(w, 504, "timeout", "处理超时，请查询当前状态后再决定是否重试")
 	default:
@@ -301,8 +360,8 @@ func (s *Server) require(admin bool) func(http.Handler) http.Handler {
 				failure(w, 401, "unauthorized", "需要有效的访问密钥")
 				return
 			}
-			if key == "" && r.Method != "GET" && r.Method != "HEAD" && r.Method != "OPTIONS" && r.Header.Get("Origin") == "" {
-				failure(w, 403, "csrf_denied", "浏览器会话写入请求必须来自受信任页面")
+			if key == "" && r.Method != "GET" && r.Method != "HEAD" && r.Method != "OPTIONS" && !s.sameOrigin(r, r.Header.Get("Origin")) {
+				failure(w, 403, "csrf_denied", "浏览器会话写入请求必须来自本站页面")
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -369,12 +428,12 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 				return
 			}
 			sw.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
-			sw.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			sw.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-WzStudy-User")
 			sw.WriteHeader(204)
 			return
 		}
 		timeout := 30 * time.Second
-		if strings.HasSuffix(r.URL.Path, "/files") || r.URL.Path == "/api/v1/admin/uploads" {
+		if strings.HasSuffix(r.URL.Path, "/files") || r.URL.Path == "/api/v1/workspace/uploads" {
 			timeout = 5 * time.Minute
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), timeout)

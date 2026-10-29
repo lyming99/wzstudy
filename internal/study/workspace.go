@@ -125,7 +125,7 @@ func studioSource(tx Tx, now time.Time) (Source, error) {
 			return v, nil
 		}
 	}
-	v := Source{ID: uuid.NewString(), Slug: "studio-workspace-" + uuid.NewString(), Name: "管理工作台", Description: "管理员上传与互联网链接入库", Kind: "manual", System: true, Enabled: true, Language: "zh-CN", PollIntervalSeconds: 900, Revision: 1, CreatedAt: now, UpdatedAt: now, NextPollAt: now}
+	v := Source{OwnerID: transactionOwner(tx), ID: uuid.NewString(), Slug: "studio-workspace-" + uuid.NewString(), Name: "个人工作台", Description: "用户本人上传与互联网链接入库", Kind: "manual", System: true, Enabled: true, Language: "zh-CN", PollIntervalSeconds: 900, Revision: 1, CreatedAt: now, UpdatedAt: now, NextPollAt: now}
 	return v, tx.SaveSource(v)
 }
 func normalizeAssets(tx Tx, c *Content, sourceID string, admin bool) error {
@@ -196,7 +196,7 @@ func (s *Service) SaveManaged(ctx context.Context, id string, in ManagedInput, a
 			if e != nil {
 				return e
 			}
-			v = Item{ID: uuid.NewString(), SourceID: source.ID, ExternalID: uuid.NewString(), CreatedAt: now}
+			v = Item{OwnerID: source.OwnerID, ID: uuid.NewString(), SourceID: source.ID, ExternalID: uuid.NewString(), CreatedAt: now}
 			in.Content.ExternalID = v.ExternalID
 		} else {
 			v, e = tx.Item(id)
@@ -396,7 +396,7 @@ func (s *Service) Workspace(ctx context.Context) (out Workspace, err error) {
 		}
 		out.Settings, e = recordAs[WorkspaceSettings](tx, "settings", "workspace")
 		if e == ErrNotFound {
-			out.Settings = WorkspaceSettings{Name: "管理员"}
+			out.Settings = WorkspaceSettings{Name: "个人工作区"}
 			e = nil
 		}
 		if e != nil {

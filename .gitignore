@@ -17,3 +17,43 @@
 *.exe
 __pycache__/
 *.pyc
+
+# 编译与构建产物（跨平台）
+*.test
+*.out
+*.dll
+*.so
+*.dylib
+*.a
+*.o
+*.pdb
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.msi
+*.pprof
+*.trace
+
+# 临时与编辑器文件
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.state/
+
+# 采集端本地配置（可能包含密钥）与运行状态
+agent.env
+agent.env.*
+!agent.env.example

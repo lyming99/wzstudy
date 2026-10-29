@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -12,16 +11,16 @@ import (
 
 func TestPersonalCollectionIsolationIdempotencyAndWithdrawal(t *testing.T) {
 	service, h, _ := managementApp(t, 1<<20)
-	item, err := service.SaveManaged(context.Background(), "", study.ManagedInput{Status: "pending", Content: study.Content{Title: "公开内容", Kind: "article", Content: "私密草稿不可泄漏"}}, nil)
+	item, err := service.SaveManaged(testWorkspaceContext(), "", study.ManagedInput{Status: "pending", Content: study.Content{Title: "公开内容", Kind: "article", Content: "私密草稿不可泄漏"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err = service.Publication(context.Background(), item.ID, item.Revision, true)
+	item, err = service.Publication(testWorkspaceContext(), item.ID, item.Revision, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, key := managedClient(t, h, "personal-owner", []string{"read", "feedback"})
-	_, other := managedClient(t, h, "personal-other", []string{"read", "feedback"})
+	client, key := workspaceLearner(t, h, "personal-owner")
+	_, other := managedLearner(t, h, "personal-other")
 	_, reader := managedClient(t, h, "personal-read", []string{"read"})
 	_, source := create(t, h, false)
 	path := "/api/v1/client/learning/collections"
@@ -32,7 +31,7 @@ func TestPersonalCollectionIsolationIdempotencyAndWithdrawal(t *testing.T) {
 	for _, tc := range []struct {
 		key    string
 		status int
-	}{{"", 401}, {adminKey, 401}, {source, 401}, {reader, 403}} {
+	}{{"", 401}, {adminKey, 401}, {source, 401}, {reader, 401}} {
 		if w := request(t, h, "POST", commands, tc.key, createBody); w.Code != tc.status {
 			t.Fatalf("write authority: %d %s", w.Code, w.Body.String())
 		}
@@ -61,7 +60,7 @@ func TestPersonalCollectionIsolationIdempotencyAndWithdrawal(t *testing.T) {
 	if w := request(t, h, "GET", path+"/"+collectionID, other, nil); w.Code != http.StatusNotFound {
 		t.Fatalf("cross-client: %d %s", w.Code, w.Body.String())
 	}
-	if w := request(t, h, "GET", path, reader, nil); w.Code != http.StatusForbidden {
+	if w := request(t, h, "GET", path, reader, nil); w.Code != http.StatusUnauthorized {
 		t.Fatalf("private read: %d", w.Code)
 	}
 	addID := uuid.NewString()
@@ -79,7 +78,7 @@ func TestPersonalCollectionIsolationIdempotencyAndWithdrawal(t *testing.T) {
 	if page.ClientID != client.ID || page.Total != 1 || len(page.Items[0].Items) != 1 || !page.Items[0].Items[0].Available {
 		t.Fatalf("list: %+v", page)
 	}
-	item, err = service.Publication(context.Background(), item.ID, item.Revision, false)
+	item, err = service.Publication(testWorkspaceContext(), item.ID, item.Revision, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,7 +1,12 @@
-# Compatibility entry point for v0.2.0 workspaces. New entry: ../start-local.ps1.
+# Compatibility entry point; PostgreSQL is mandatory for local service starts.
 [CmdletBinding()]
 param(
-    [string]$Address = '0.0.0.0:8091',
+    [ValidateRange(1, 65535)][int]$DatabasePort = 15432,
+    [ValidateRange(1, 65535)][int]$ApiPort = 8091,
+    [string]$AdministratorEmail = 'admin@wzstudy.local',
+    [ValidateRange(10, 600)][int]$StartupTimeoutSeconds = 120,
+    [string]$Address = '',
+    [switch]$Lan,
     [string]$DataDirectory = '',
     [string]$ProfileDirectory = '',
     [switch]$InitializeAdmin,
@@ -10,9 +15,8 @@ param(
     [switch]$Check
 )
 $ErrorActionPreference = 'Stop'
-# Preserve the old meaning of relative -DataDirectory arguments.
 if ($PSBoundParameters.ContainsKey('DataDirectory') -and -not [string]::IsNullOrWhiteSpace($DataDirectory) -and -not [IO.Path]::IsPathRooted($DataDirectory)) {
     $PSBoundParameters['DataDirectory'] = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $DataDirectory))
 }
 if (-not $Check) { Write-Warning 'Compatibility launcher: prefer start-local.ps1 in the project root.' }
-& (Join-Path (Split-Path $PSScriptRoot -Parent) 'scripts\start-local.ps1') @PSBoundParameters
+& (Join-Path (Split-Path $PSScriptRoot -Parent) 'start-local.ps1') @PSBoundParameters

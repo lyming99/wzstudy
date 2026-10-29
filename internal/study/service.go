@@ -12,12 +12,16 @@ import (
 type Service struct {
 	Store           Store
 	Now             func() time.Time
+	AgentPolicy     AgentPolicy
 	recommendMu     sync.Mutex
 	recommendations map[string]recommendationSession
 }
 
 func NewService(s Store) *Service {
-	return &Service{Store: s, Now: func() time.Time { return time.Now().UTC() }, recommendations: map[string]recommendationSession{}}
+	if _, ok := s.(*workspaceStore); !ok {
+		s = &workspaceStore{Store: s}
+	}
+	return &Service{Store: s, Now: func() time.Time { return time.Now().UTC() }, AgentPolicy: DefaultAgentPolicy(), recommendations: map[string]recommendationSession{}}
 }
 func (s *Service) Sources(ctx context.Context) (out []Source, err error) {
 	err = s.Store.View(ctx, func(tx Tx) error { var e error; out, e = tx.Sources(); return e })
@@ -49,7 +53,7 @@ func (s *Service) CreateSource(ctx context.Context, in SourceInput) (out Source,
 		in.Integration = "collector"
 	}
 	now := s.Now()
-	out = Source{ID: uuid.NewString(), Slug: in.Slug, Name: in.Name, Description: in.Description, Kind: in.Kind, Integration: in.Integration, FeedURL: in.FeedURL, Category: in.Category, Language: in.Language, Enabled: enabled, AutoPublish: in.AutoPublish, Permissions: in.Permissions, PollIntervalSeconds: in.PollIntervalSeconds, Revision: 1, CreatedAt: now, UpdatedAt: now, NextPollAt: now, KeyHash: HashKey(key)}
+	out = Source{OwnerID: WorkspaceUserID(ctx), ID: uuid.NewString(), Slug: in.Slug, Name: in.Name, Description: in.Description, Kind: in.Kind, Integration: in.Integration, FeedURL: in.FeedURL, Category: in.Category, Language: in.Language, Enabled: enabled, AutoPublish: in.AutoPublish, Permissions: in.Permissions, PollIntervalSeconds: in.PollIntervalSeconds, Revision: 1, CreatedAt: now, UpdatedAt: now, NextPollAt: now, KeyHash: HashKey(key)}
 	err = s.Store.Update(ctx, func(tx Tx) error { return tx.SaveSource(out) })
 	if err != nil {
 		key = ""
@@ -154,7 +158,7 @@ func (s *Service) Ingest(ctx context.Context, id, key string, inputs []Content) 
 	return
 }
 
-func (s *Service) ingest(tx Tx, source Source, inputs []Content) (out IngestResult, err error) {
+func (s *Service) ingest(tx Tx, source Source, inputs []Content, intake ...string) (out IngestResult, err error) {
 	if len(inputs) < 1 || len(inputs) > 100 {
 		return out, ErrInvalid
 	}
@@ -191,7 +195,7 @@ func (s *Service) ingest(tx Tx, source Source, inputs []Content) (out IngestResu
 		}
 		now := s.Now()
 		if errors.Is(e, ErrNotFound) {
-			old = Item{ID: uuid.NewString(), SourceID: source.ID, ExternalID: content.ExternalID, CreatedAt: now}
+			old = Item{OwnerID: source.OwnerID, ID: uuid.NewString(), SourceID: source.ID, ExternalID: content.ExternalID, CreatedAt: now}
 			out.Created++
 		} else {
 			out.Updated++
@@ -212,7 +216,7 @@ func (s *Service) ingest(tx Tx, source Source, inputs []Content) (out IngestResu
 		}
 		out.Items = append(out.Items, old)
 	}
-	receipt, e := s.recordIntake(tx, source, out)
+	receipt, e := s.recordIntake(tx, source, out, intake...)
 	if e != nil {
 		return out, e
 	}

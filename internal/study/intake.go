@@ -17,6 +17,7 @@ type IntakeItem struct {
 type IntakeReceipt struct {
 	ID          string       `json:"id"`
 	SourceID    string       `json:"source_id"`
+	TaskID      string       `json:"task_id,omitempty"`
 	Integration string       `json:"integration"`
 	Created     int          `json:"created"`
 	Updated     int          `json:"updated"`
@@ -46,6 +47,9 @@ func (s *Service) recordIntake(tx Tx, source Source, result IngestResult, overri
 		integration = override[0]
 	}
 	out = IntakeReceipt{ID: uuid.NewString(), SourceID: source.ID, Integration: integration, Created: result.Created, Updated: result.Updated, Unchanged: result.Unchanged, Published: result.Published, Items: []IntakeItem{}, ReceivedAt: s.Now()}
+	if len(override) > 1 {
+		out.TaskID = override[1]
+	}
 	for _, item := range result.Items {
 		out.Items = append(out.Items, IntakeItem{ID: item.ID, Revision: item.Revision, Status: ReviewState(item)})
 	}

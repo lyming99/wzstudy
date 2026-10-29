@@ -12,6 +12,7 @@ import (
 
 // Client is a query identity, never an ingestion source or material owner.
 type Client struct {
+	OwnerID        string    `json:"owner_id,omitempty"`
 	ID             string    `json:"id"`
 	Slug           string    `json:"slug"`
 	Name           string    `json:"name"`
@@ -141,7 +142,7 @@ func (s *Service) CreateClient(ctx context.Context, in ClientInput) (out Client,
 	}
 	enabled := in.Enabled == nil || *in.Enabled
 	now := s.Now()
-	out = Client{ID: uuid.NewString(), Slug: in.Slug, Name: in.Name, Description: in.Description, Enabled: enabled, Permissions: slices.Clone(permissions), Revision: 1, CreatedAt: now, UpdatedAt: now}
+	out = Client{OwnerID: WorkspaceUserID(ctx), ID: uuid.NewString(), Slug: in.Slug, Name: in.Name, Description: in.Description, Enabled: enabled, Permissions: slices.Clone(permissions), Revision: 1, CreatedAt: now, UpdatedAt: now}
 	err = s.Store.Update(ctx, func(tx Tx) error { return saveClient(tx, out, HashKey(key)) })
 	if err != nil {
 		key = ""
@@ -208,6 +209,18 @@ func (s *Service) RotateClientKey(ctx context.Context, id string, revision int64
 // Only independent clients may query. Legacy sources require an explicit,
 // transactional migration; never fall back to source credentials here.
 func clientAccess(tx Tx, key string, permissions ...string) (Client, error) {
+	if strings.HasPrefix(key, "wzus_") {
+		user, err := userLearningPrincipal(tx, key)
+		if err != nil {
+			return Client{}, err
+		}
+		for _, permission := range permissions {
+			if user.Allows(permission) {
+				return user, nil
+			}
+		}
+		return Client{}, ErrForbidden
+	}
 	if key == "" {
 		return Client{}, ErrUnauthorized
 	}

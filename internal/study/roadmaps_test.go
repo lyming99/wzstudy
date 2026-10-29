@@ -2,6 +2,7 @@ package study
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -229,5 +230,52 @@ func TestRoadmapConcurrentRevisionAndDanglingLinks(t *testing.T) {
 	replacement.Nodes[2].ItemIDs = []string{item.ID}
 	if _, err = s.SaveLearningRoadmap(ctx, out.ID, RoadmapInput{Revision: replacement.Revision, Title: replacement.Title, Nodes: replacement.Nodes}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("new deleted link accepted: %v", err)
+	}
+}
+
+func TestRoadmapValidLimitsAndCanonicalUUIDs(t *testing.T) {
+	s := NewService(NewMemoryStore())
+	ctx := t.Context()
+	in := roadmapFixture()
+	for len(in.Nodes) < RoadmapMaxNodes {
+		in.Nodes = append(in.Nodes, RoadmapNode{ID: uuid.NewString(), ParentID: in.Nodes[0].ID, Title: "知识节点"})
+	}
+	in.Nodes[1].Note = strings.Repeat("学", 4000)
+	in.Summary = strings.Repeat("学", 2000)
+	// Normalize UUID spelling before duplicate and parent checks.
+	root := strings.ToUpper(in.Nodes[0].ID)
+	in.Nodes[0].ID = root
+	for i := range in.Nodes {
+		if in.Nodes[i].ParentID == strings.ToLower(root) {
+			in.Nodes[i].ParentID = root
+		}
+	}
+	out, err := s.SaveLearningRoadmap(ctx, "", in)
+	if err != nil || len(out.Nodes) != RoadmapMaxNodes || out.Nodes[0].ID != strings.ToLower(root) {
+		t.Fatalf("node/text limits: %+v %v", out, err)
+	}
+	chain := roadmapFixture()
+	for len(chain.Nodes) < RoadmapMaxDepth {
+		chain.Nodes = append(chain.Nodes, RoadmapNode{ID: uuid.NewString(), ParentID: chain.Nodes[len(chain.Nodes)-1].ID, Title: "下一层"})
+	}
+	if _, err = s.SaveLearningRoadmap(ctx, "", chain); err != nil {
+		t.Fatalf("depth 12 rejected: %v", err)
+	}
+	duplicate := roadmapFixture()
+	duplicate.Nodes[2].ID = strings.ToUpper(duplicate.Nodes[1].ID)
+	if _, err = s.SaveLearningRoadmap(ctx, "", duplicate); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("equivalent UUID duplicates accepted: %v", err)
+	}
+	for i := range 13 {
+		one := roadmapFixture()
+		one.Title = fmt.Sprintf("搜索测试 %02d", i)
+		one.Nodes[0].Title = one.Title
+		if _, err = s.SaveLearningRoadmap(ctx, "", one); err != nil {
+			t.Fatal(err)
+		}
+	}
+	page, err := s.LearningRoadmaps(ctx, "搜索测试", 12, 12)
+	if err != nil || page.Total != 13 || len(page.Items) != 1 || page.Offset != 12 {
+		t.Fatalf("pagination: %+v %v", page, err)
 	}
 }

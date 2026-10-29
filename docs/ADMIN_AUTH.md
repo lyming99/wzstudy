@@ -1,33 +1,26 @@
 # 系统管理员初始化与邮箱登录 · v0.3.0
 
+> 管理员使用同一账号和会话访问自己的资料、学习功能，并额外拥有用户管理权限；不能直接访问其他用户的私人资料。入口为 `/workspace/` 与 `/learn/`，详见 `USER_WORKSPACES.md`。
+
+
 ## 与 wenzflow 对齐的规则
 
 参考工程仅作为源码参考，没有修改其代码、配置或数据。WzStudy 使用同样的启动引导语义：
 
-1. 没有系统管理员时，必须明确提供管理员邮箱和密码；没有公开默认账号或默认密码。
+1. 服务首次创建系统管理员时必须收到邮箱和密码；本机启动器可在配置均为空时生成随机密码并写入 `.env`，没有公开默认密码。
 2. 首次初始化在监听 HTTP **之前**完成，写入原有存储事务。
 3. 已有管理员时，同邮箱启动不重设密码、显示名或身份；不提供初始化变量也可正常重启。
-4. 配置了不同邮箱时拒绝启动，不替换旧管理员、不覆盖原资料。
+4. 服务收到与已有管理员不同的邮箱时拒绝启动，不替换旧管理员、不覆盖原资料；默认本机启动器会传入已配置邮箱供服务核对，但不会重设已有密码。
 5. 不提供匿名注册、初始化或提权的 HTTP 接口。客户端来源不属于可登录的普通用户。
-6. 密码使用独立随机盐的 Argon2id（64 MiB、3 次、并行度 1），持久存储中没有明文密码。
+6. 账号数据库中使用独立随机盐的 Argon2id（64 MiB、3 次、并行度 1），不保存明文密码。本机启动器将首次生成的初始密码写入受 Windows 用户 ACL 保护的 `.env`；该文件包含明文秘密，须限制访问并安全备份。
 
 ## Windows 本地初始化（推荐）
 
-在仓库根目录的本机 PowerShell 运行：
+在仓库根目录的 `.env` 中同时设置 `SYSTEM_ADMIN_EMAIL` 和 `SYSTEM_ADMIN_PASSWORD`，然后运行 `.\start-local.ps1`。该入口启动本机 Docker PostgreSQL，仅在空库首次创建管理员时使用这些配置；普通启动以 `.env` 为准，显式 `-AdministratorEmail your@email.example` 覆盖邮箱。只设置邮箱或密码时拒绝初始化（显式参数可以提供邮箱），避免意外使用默认账号。
 
-```powershell
-.\start-local.ps1 -InitializeAdmin
-```
+若邮箱和密码均未配置，默认使用 `admin@wzstudy.local` 和随机初始密码，也可通过 `-AdministratorEmail` 指定邮箱。生成的邮箱和密码写入 `.env`，不会创建 `admin-initial.json`；`.env` 含明文秘密，不要分享或提交，应限制访问并安全备份。若旧版未完成初始化的随机密码文件存在，启动器会校验并迁入；与新配置冲突时保留双方并报错。
 
-终端依次要求管理员邮箱、密码、确认密码。密码隐藏输入，不作为命令行参数，不写入本地 API 密钥文件；确认后初始化并启动服务。请在本机输入，不必向助手提供真实密码。
-
-初始化完成后，访问 `http://127.0.0.1:8091/admin/`，使用刚配置的**邮箱和密码**登录。重启时只需：
-
-```powershell
-.\start-local.ps1
-```
-
-`-InitializeAdmin` 仅用于首次创建，**不是密码重置命令**。重复使用不会修改已有密码。邮箱登录允许邮箱首尾空白及大小写差异，密码逐字节匹配，不去除首尾空白。
+访问终端显示的工作台地址，使用邮箱和密码统一登录，无需选择身份；服务端核验管理员密码并根据配置邮箱判定管理权限。旧 `/admin/` 页面继续可用。普通重启不重置已有管理员；配置的邮箱与已有管理员不一致时，服务会拒绝启动，不自动转移身份。旧文件模式的 `-InitializeAdmin` 不再适用于此入口。邮箱允许首尾空白及大小写差异，密码逐字节匹配，不去除首尾空白。
 
 ## 环境变量 / Docker / PostgreSQL
 
@@ -39,15 +32,15 @@
 | `SYSTEM_ADMIN_PASSWORD` | 首次必填，8–128 UTF-8 字节，无 NUL；建议 12 位以上随机密码 |
 | `SYSTEM_ADMIN_DISPLAY_NAME` | 可选，默认“温知管理员”，最多 120 UTF-8 字节 |
 
-兼容 `BOOTSTRAP_ADMIN_EMAIL/PASSWORD`；显示名还兼容 `SYSTEM_ADMIN_USERNAME`、`BOOTSTRAP_ADMIN_DISPLAY_NAME/USERNAME`。同一逻辑配置项（包括其兼容别名）优先使用进程环境，不会从 `.env` 覆盖非空进程值。密码原始空白保留；`.env` 最外层单/双引号可去除，不执行其中代码、变量或转义。
+兼容 `BOOTSTRAP_ADMIN_EMAIL/PASSWORD`；显示名还兼容 `SYSTEM_ADMIN_USERNAME`、`BOOTSTRAP_ADMIN_DISPLAY_NAME/USERNAME`。默认本机 Docker 启动器以 `.env` 为准；`scripts/start-dev.ps1 -Postgres` 则按逻辑配置项优先使用非空进程环境。密码原始空白保留；`.env` 最外层单/双引号可去除，不执行其中代码、变量或转义。
 
-可复制根 `.env.example`，在本机安全编辑上述字段。默认文件模式启动器只从 `.env` 取管理员引导字段，**API 密钥仍沿用 `.local/access-keys.json`**。Docker/PostgreSQL 开发模式使用根 `.env` / 进程环境中的配置。
+可复制根 `.env.example`，为默认本地 PostgreSQL 启动器或单独的 `scripts/start-dev.ps1 -Postgres` 安全编辑上述字段。Docker Compose 和手动运行也支持这些环境变量；不要把真实密码提交或分享。
 
 初始化成功后可以从环境中移除初始化密码，再重启验证；账户哈希已经持久保存。不要把带真实密码的 `.env` 提交、打包或截图公开。留在环境中的无效非空配置仍可能在配置校验阶段被拒绝。
 
-- `-NoEnvFile`：不读取根 `.env`，用于隔离验证或明确只使用进程环境。
-- `-Check`：只返回工作区与可执行路径，不读取密码、不开服务、不初始化账号。
-- `scripts/start-dev.ps1 -Postgres`：配置环境后先迁移再启动，首次创建规则相同；交互 `-InitializeAdmin` 仅用于本地文件模式。
+- `-NoEnvFile`：不读取根 `.env`；本机启动器仅允许使用已创建且归属匹配的卷，必须在进程环境提供完整数据库、API 密钥及卷身份信息，不能借此生成新库凭据。
+- `-Check`：只返回解析后的路径和端口，不读取密码、不开服务、不初始化账号。
+- `scripts/start-dev.ps1 -Postgres`：配置连接串及管理员环境后先迁移再启动。
 - Docker Compose 将 `SYSTEM_ADMIN_*` 传入 API，账户保存于 PostgreSQL；附件仍保存在独立 `api_data` 卷。
 
 ## 存储与旧资料兼容
@@ -79,6 +72,6 @@ Content-Type: application/json
 
 `python scripts/verify_admin.py` 使用随机端口、随机测试密码和独立临时目录验证真实首启、缺配置失败、密码哈希、旧密钥不能登录、重启保留、同邮箱不重设以及不同邮箱拒绝。不会读取真实 `.env`、`.local` 或真实管理员密码。
 
-`verify_live.py` 完成邮箱登录后的全业务浏览器回归；`verify_package.py --source` 验证便携版与源码入口。PostgreSQL 条件用例需专用 `TEST_DATABASE_URL`，没有实库执行时必须明确标记未验证。
+`verify_live.py` 是邮箱登录后的历史文件模式浏览器回归；`verify_package.py` 使用隔离的本机 Docker PostgreSQL 验证发行包，`--static` 仅检查包结构，不代表实库通过。PostgreSQL 条件用例需专用 `TEST_DATABASE_URL`，没有实库执行时必须明确标记未验证。
 
 本次只实现单一系统管理员，未增加开放用户注册、SMTP 验证、找回密码、密码重置或多用户/RBAC。请安全保管真实密码及工作区备份。

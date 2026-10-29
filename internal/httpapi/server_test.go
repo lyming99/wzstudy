@@ -15,11 +15,13 @@ import (
 )
 
 var adminKey = strings.Repeat("a", 40)
+var legacyReadKey = strings.Repeat("g", 40)
 var readKey = strings.Repeat("r", 40)
 
 func app() (*study.Service, http.Handler) {
 	s := study.NewService(study.NewMemoryStore())
-	cfg := config.Config{Env: "test", AdminKey: adminKey, ReadKey: readKey, CORSOrigins: []string{"https://study.example"}}
+	seedTestWorkspace(s)
+	cfg := config.Config{Env: "test", AdminKey: adminKey, ReadKey: legacyReadKey, CORSOrigins: []string{"https://study.example"}}
 	return s, New(cfg, s, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 func request(t *testing.T, h http.Handler, method, path, key string, body any) *httptest.ResponseRecorder {
@@ -60,7 +62,7 @@ func data(t *testing.T, w *httptest.ResponseRecorder, out any) {
 }
 func create(t *testing.T, h http.Handler, auto bool) (study.Source, string) {
 	t.Helper()
-	w := request(t, h, "POST", "/api/v1/admin/sources", adminKey, map[string]any{"slug": "lessons", "name": "学习资料", "auto_publish": auto})
+	w := request(t, h, "POST", "/api/v1/workspace/sources", workspaceKey, map[string]any{"slug": "lessons", "name": "学习资料", "auto_publish": auto})
 	var out struct {
 		Source study.Source `json:"source"`
 		Key    string       `json:"access_key"`
@@ -81,15 +83,15 @@ func TestAuthAndStrictDecoding(t *testing.T) {
 	for _, tc := range []struct {
 		method, path, key string
 		status            int
-	}{{"GET", "/api/v1/admin/sources", "", 401}, {"GET", "/api/v1/admin/sources", readKey, 401}, {"GET", "/api/v1/items", "", 401}, {"GET", "/api/v1/items?token=" + readKey, "", 401}, {"GET", "/api/v1/health/live", "", 200}, {"GET", "/api/v1/health/ready", "", 200}, {"GET", "/missing", "", 404}, {"PATCH", "/api/v1/items", readKey, 405}} {
+	}{{"GET", "/api/v1/workspace/sources", "", 401}, {"GET", "/api/v1/workspace/sources", readKey, 401}, {"GET", "/api/v1/items", "", 401}, {"GET", "/api/v1/items?token=" + readKey, "", 401}, {"GET", "/api/v1/health/live", "", 200}, {"GET", "/api/v1/health/ready", "", 200}, {"GET", "/missing", "", 404}, {"PATCH", "/api/v1/items", readKey, 405}} {
 		w := request(t, h, tc.method, tc.path, tc.key, nil)
 		if w.Code != tc.status {
 			t.Fatalf("%s %s: %d %s", tc.method, tc.path, w.Code, w.Body.String())
 		}
 	}
 	for _, raw := range []string{`{"slug":"a","name":"A","unknown":1}`, `{"slug":"a","name":"A"} {}`, `{broken`} {
-		r := httptest.NewRequest("POST", "/api/v1/admin/sources", strings.NewReader(raw))
-		r.Header.Set("Authorization", "Bearer "+adminKey)
+		r := httptest.NewRequest("POST", "/api/v1/workspace/sources", strings.NewReader(raw))
+		r.Header.Set("Authorization", "Bearer "+workspaceKey)
 		r.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
@@ -97,12 +99,12 @@ func TestAuthAndStrictDecoding(t *testing.T) {
 			t.Fatal(w.Code, w.Body.String())
 		}
 	}
-	w := request(t, h, "POST", "/api/v1/admin/sources", adminKey, nil)
+	w := request(t, h, "POST", "/api/v1/workspace/sources", workspaceKey, nil)
 	if w.Code != 415 {
 		t.Fatal(w.Code)
 	}
-	r := httptest.NewRequest("POST", "/api/v1/admin/sources", strings.NewReader(`{"name":"`+strings.Repeat("x", 4<<20)+`"}`))
-	r.Header.Set("Authorization", "Bearer "+adminKey)
+	r := httptest.NewRequest("POST", "/api/v1/workspace/sources", strings.NewReader(`{"name":"`+strings.Repeat("x", 4<<20)+`"}`))
+	r.Header.Set("Authorization", "Bearer "+workspaceKey)
 	r.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -117,7 +119,7 @@ func TestPushedContentIsPublicImmediately(t *testing.T) {
 	if item.Status != "published" || item.Published == nil || item.Published.Title != "推送内容" {
 		t.Fatalf("pushed content was not published: %+v", item)
 	}
-	if w := request(t, h, "GET", "/api/v1/admin/sources", key, nil); w.Code != 401 {
+	if w := request(t, h, "GET", "/api/v1/workspace/sources", key, nil); w.Code != 401 {
 		t.Fatal("source key became admin")
 	}
 	var live study.PublicItem
@@ -141,7 +143,7 @@ func TestPushedContentIsPublicImmediately(t *testing.T) {
 		t.Fatal(list)
 	}
 	var published study.Item
-	data(t, request(t, h, "POST", "/api/v1/admin/items/"+item.ID+"/unpublish", adminKey, map[string]int64{"revision": updated.Revision}), &published)
+	data(t, request(t, h, "POST", "/api/v1/workspace/items/"+item.ID+"/unpublish", workspaceKey, map[string]int64{"revision": updated.Revision}), &published)
 	if w := request(t, h, "GET", "/api/v1/items/"+item.ID, readKey, nil); w.Code != 404 {
 		t.Fatal("unpublished content stayed queryable")
 	}
@@ -150,7 +152,7 @@ func TestPushedContentIsPublicImmediately(t *testing.T) {
 	if len(changes.Changes) != 3 || changes.Changes[0].Operation != "upsert" || changes.Changes[2].Operation != "delete" {
 		t.Fatal(changes)
 	}
-	w := request(t, h, "GET", "/api/v1/admin/sources/"+source.ID, adminKey, nil)
+	w := request(t, h, "GET", "/api/v1/workspace/sources/"+source.ID, workspaceKey, nil)
 	if strings.Contains(w.Body.String(), study.HashKey(key)) || strings.Contains(w.Body.String(), key) {
 		t.Fatal("key leaked")
 	}
@@ -163,7 +165,7 @@ func TestPushedContentIsPublicImmediately(t *testing.T) {
 func TestRotateKeyAndSourceRevision(t *testing.T) {
 	_, h := app()
 	source, key := create(t, h, true)
-	w := request(t, h, "POST", "/api/v1/admin/sources/"+source.ID+"/key", adminKey, map[string]int64{"revision": source.Revision})
+	w := request(t, h, "POST", "/api/v1/workspace/sources/"+source.ID+"/key", workspaceKey, map[string]int64{"revision": source.Revision})
 	var rotated struct {
 		Source study.Source `json:"source"`
 		Key    string       `json:"access_key"`
@@ -173,7 +175,7 @@ func TestRotateKeyAndSourceRevision(t *testing.T) {
 		t.Fatal(w.Code)
 	}
 	ingest(t, h, source.ID, rotated.Key, "published")
-	w = request(t, h, "PUT", "/api/v1/admin/sources/"+source.ID, adminKey, map[string]any{"revision": rotated.Source.Revision, "slug": source.Slug, "name": "暂停", "kind": "manual", "enabled": false})
+	w = request(t, h, "PUT", "/api/v1/workspace/sources/"+source.ID, workspaceKey, map[string]any{"revision": rotated.Source.Revision, "slug": source.Slug, "name": "暂停", "kind": "manual", "enabled": false})
 	var updated study.Source
 	data(t, w, &updated)
 	w = request(t, h, "POST", "/api/v1/ingest/"+source.ID, rotated.Key, map[string]any{"items": []study.Content{{ExternalID: "x", Title: "x"}}})

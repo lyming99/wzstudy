@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"net/http"
 	"reflect"
 	"strings"
@@ -24,7 +23,7 @@ func TestIngestStatusUsesOnlyOwnIngestPermissionAndDoesNotWrite(t *testing.T) {
 			Source study.Source `json:"source"`
 			Key    string       `json:"access_key"`
 		}
-		data(t, request(t, handler, "POST", "/api/v1/admin/sources", adminKey, input), &out)
+		data(t, request(t, handler, "POST", "/api/v1/workspace/sources", workspaceKey, input), &out)
 		return out.Source, out.Key
 	}
 	collector, key := createClient("status-collector", "manual", []string{"ingest", "upload"})
@@ -32,7 +31,7 @@ func TestIngestStatusUsesOnlyOwnIngestPermissionAndDoesNotWrite(t *testing.T) {
 	other, otherKey := createClient("status-other", "manual", []string{"ingest"})
 	rss, rssKey := createClient("status-rss", "rss", nil)
 	path := "/api/v1/ingest/" + collector.ID + "/status"
-	before, err := service.Source(context.Background(), collector.ID)
+	before, err := service.Source(testWorkspaceContext(), collector.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,19 +77,19 @@ func TestIngestStatusUsesOnlyOwnIngestPermissionAndDoesNotWrite(t *testing.T) {
 	if got := request(t, handler, "GET", "/api/v1/ingest/"+other.ID+"/status", otherKey, nil); got.Code != 200 {
 		t.Fatal("ingest-only status", got.Code)
 	}
-	after, err := service.Source(context.Background(), collector.ID)
+	after, err := service.Source(testWorkspaceContext(), collector.ID)
 	if err != nil || !reflect.DeepEqual(before, after) {
 		t.Fatal("status changed source configuration or polling state", err)
 	}
-	_, total, err := service.AdminPage(context.Background(), study.Filter{Limit: 100})
+	_, total, err := service.AdminPage(testWorkspaceContext(), study.Filter{Limit: 100})
 	if err != nil || total != 0 {
 		t.Fatal("read-only status created materials", total, err)
 	}
-	changes, err := service.Changes(context.Background(), 0, 100, nil)
+	changes, err := service.Changes(testWorkspaceContext(), 0, 100, nil)
 	if err != nil || changes.HighWatermark != 0 {
 		t.Fatal("read-only status emitted synchronization events", changes, err)
 	}
-	data(t, request(t, handler, "PUT", "/api/v1/admin/sources/"+collector.ID, adminKey, map[string]any{
+	data(t, request(t, handler, "PUT", "/api/v1/workspace/sources/"+collector.ID, workspaceKey, map[string]any{
 		"slug": collector.Slug, "name": collector.Name, "kind": collector.Kind,
 		"enabled": false, "revision": collector.Revision, "permissions": collector.Permissions,
 	}), &collector)

@@ -80,7 +80,7 @@ func (t *memoryTx) Source(id string) (Source, error) {
 }
 func (t *memoryTx) SaveSource(v Source) error {
 	for _, s := range t.state.sources {
-		if s.ID != v.ID && s.Slug == v.Slug {
+		if s.ID != v.ID && s.OwnerID == v.OwnerID && s.Slug == v.Slug {
 			return ErrConflict
 		}
 	}
@@ -119,6 +119,9 @@ func (t *memoryTx) Items(f Filter) ([]Item, error) {
 	}
 	out := make([]Item, 0)
 	for _, v := range t.state.items {
+		if f.OwnerID != "" && v.OwnerID != f.OwnerID {
+			continue
+		}
 		if v.DeletedAt != nil || (f.Admin && f.Status != "" && ReviewState(v) != f.Status) {
 			continue
 		}
@@ -133,7 +136,11 @@ func (t *memoryTx) Items(f Filter) ([]Item, error) {
 			c = v.Published.Content
 		}
 		if !f.Admin && f.FeedbackClientID != "" && len(f.FeedbackExclude) > 0 {
-			state, e := feedbackStateFor(t, f.FeedbackClientID, v.ID)
+			feedbackTx := Tx(t)
+			if f.OwnerID != "" {
+				feedbackTx = &workspaceTx{Tx: t, owner: f.OwnerID}
+			}
+			state, e := feedbackStateFor(feedbackTx, f.FeedbackClientID, v.ID)
 			if e != nil {
 				return nil, e
 			}

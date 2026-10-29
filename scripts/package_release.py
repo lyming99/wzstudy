@@ -4,6 +4,7 @@ The archive is an explicit whitelist: no user data, credentials or test logs.
 from pathlib import Path
 import hashlib
 import json
+import os
 import sys
 import zipfile
 import subprocess
@@ -31,9 +32,20 @@ for line in info.splitlines():
     if len(parts)>=2 and parts[0]=='build' and '=' in parts[1]:
         key,value=parts[1].split('=',1);settings[key]=value
 assert settings.get('CGO_ENABLED')=='0' and settings.get('GOOS')=='windows' and settings.get('GOARCH')=='amd64', 'Portable target must be pure Go Windows amd64'
+# The PostgreSQL launcher needs the embedded-migrations executable even when
+# the archive has no source tree or Go installation.
+MIGRATE=ARTIFACTS/'wzstudy-migrate-windows-amd64.exe'
+build_env=dict(os.environ, GOOS='windows', GOARCH='amd64', CGO_ENABLED='0')
+subprocess.run(['go','build','-trimpath','-o',str(MIGRATE),'./cmd/migrate'],cwd=ROOT,env=build_env,check=True)
 files={
     f'dist/{EXE.name}':EXE,
+    'dist/wzstudy-migrate.exe':MIGRATE,
     'start-local.ps1':ROOT/'start-local.ps1',
+    'start-local.cmd':ROOT/'start-local.cmd',
+    'start-postgres-local.ps1':ROOT/'start-postgres-local.ps1',
+    'start-postgres-local.cmd':ROOT/'start-postgres-local.cmd',
+    '.env.example':ROOT/'.env.example',
+    'scripts/docker-compose-local-postgres.yml':ROOT/'scripts/docker-compose-local-postgres.yml',
     'README.md':ROOT/'README.md',
     'LICENSE':ROOT/'LICENSE',
     'docs/VERIFICATION_AUTH.md':ROOT/'docs/VERIFICATION_AUTH.md',
@@ -43,6 +55,8 @@ files={
     'docs/VERIFICATION.md':ROOT/'docs/VERIFICATION.md',
     'docs/VERIFICATION_MANAGEMENT.md':ROOT/'docs/VERIFICATION_MANAGEMENT.md',
     'scripts/admin-environment.ps1':ROOT/'scripts/admin-environment.ps1',
+    'scripts/local-env.ps1':ROOT/'scripts/local-env.ps1',
+    'scripts/local-postgres-state.ps1':ROOT/'scripts/local-postgres-state.ps1',
     'scripts/start-local.ps1':ROOT/'scripts/start-local.ps1',
     'scripts/local-service-lifecycle.ps1':ROOT/'scripts/local-service-lifecycle.ps1',
     'scripts/restart-local.ps1':ROOT/'scripts/restart-local.ps1',
@@ -69,7 +83,7 @@ notes=(f'# Verification / 验证说明\n\n版本 {VERSION}。\n\n'
        '- 此隔离文件模式验证不包含 PostgreSQL 实库或 Docker 容器运行验证。\n'
        '- 截图中的内容为隔离测试时真正入库的测试资料；正式首次启动为空工作空间。\n'
        '- 不包含预置账号、密钥、`.local` 数据目录或测试服务日志。\n'
-       '- 压缩包解压后在根目录运行 `start-local.ps1`；二进制无需 Go、Node、FFmpeg 或数据库安装。\n'
+       '- 压缩包解压后运行 `start-local.ps1`；需要本机 Docker Desktop 和 Compose，PostgreSQL 数据保存在独立 Docker 数据卷。包内包含 API 和迁移程序，无需 Go、Node 或 FFmpeg。\n'
        '- Windows 便携包未签名，不是安装器，也没有执行公网发布。\n')
 with zipfile.ZipFile(ARCHIVE,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=7) as archive:
     for name,path in files.items():archive.write(path,name)

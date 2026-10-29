@@ -342,7 +342,7 @@ func (s *Server) media(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, study.ErrNotFound)
 		return
 	}
-	asset, e := s.service.Asset(r.Context(), id, s.isAdmin(r))
+	asset, e := s.service.Asset(r.Context(), id, strings.HasPrefix(bearer(r), "wzus_"))
 	if e != nil {
 		s.fail(w, e)
 		return

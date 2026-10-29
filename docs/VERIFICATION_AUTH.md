@@ -15,7 +15,7 @@
 
 测试只使用随机密码、随机 API 密钥和隔离临时文件工作区；不读取真实 `.env`、`.local` 或管理员密码。初始化参考工程 wenzflow 仅做源码只读核查，没有修改其源码、配置或数据。
 
-未替用户预置公开账号或密码。实际账号需由用户在本机运行 `start-local.ps1 -InitializeAdmin` 或配置 `SYSTEM_ADMIN_*` 后创建。
+该历史验证未预置公开账号或密码。当前 `start-local.ps1` 首次启动 PostgreSQL 空库时自动生成初始密码，详见 `ADMIN_AUTH.md`；手动连接数据库则可配置 `SYSTEM_ADMIN_*`。
 
 ## 未验证
 

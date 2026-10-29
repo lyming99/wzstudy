@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -11,7 +10,7 @@ import (
 
 func TestLearningDraftHTTP(t *testing.T) {
 	service, h, _ := managementApp(t, 1<<20)
-	ctx := context.Background()
+	ctx := testWorkspaceContext()
 	item, err := service.SaveManaged(ctx, "", study.ManagedInput{Status: "pending", Content: study.Content{Title: "资料", Content: "正文"}}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -20,9 +19,9 @@ func TestLearningDraftHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, key := managedClient(t, h, "draft-a", []string{"read", "feedback"})
+	_, key := workspaceLearner(t, h, "draft-a")
 	_, reader := managedClient(t, h, "draft-reader", nil)
-	_, other := managedClient(t, h, "draft-b", []string{"read", "feedback"})
+	_, other := managedLearner(t, h, "draft-b")
 	readPath := "/api/v1/client/learning/items/" + item.ID + "/draft"
 	commandPath := "/api/v1/client/learning/drafts/commands"
 	importPath := "/api/v1/client/learning/drafts/import-legacy"
@@ -30,7 +29,7 @@ func TestLearningDraftHTTP(t *testing.T) {
 	for _, tc := range []struct {
 		key    string
 		status int
-	}{{"", 401}, {adminKey, 401}, {reader, 403}} {
+	}{{"", 401}, {adminKey, 401}, {reader, 401}} {
 		if w := request(t, h, "GET", readPath, tc.key, nil); w.Code != tc.status {
 			t.Fatal("read authority", w.Code, tc.status)
 		}
@@ -71,12 +70,37 @@ func TestLearningDraftHTTP(t *testing.T) {
 	if w := request(t, h, "POST", importPath, key, legacy); w.Code != 409 {
 		t.Fatal("overwrote draft", w.Code)
 	}
-	data(t, request(t, h, "POST", importPath, other, legacy), &ack)
+	if w := request(t, h, "POST", importPath, other, legacy); w.Code != 404 {
+		t.Fatal("foreign draft import accepted", w.Code)
+	}
+	otherLegacy := ownedPayload(t, h, other, item.ID, legacy)
+	data(t, request(t, h, "POST", importPath, other, otherLegacy), &ack)
 	if ack.Duplicate || ack.Draft.Text != "旧私人草稿" {
 		t.Fatal(ack)
 	}
-	data(t, request(t, h, "POST", importPath, other, legacy), &ack)
+	data(t, request(t, h, "POST", importPath, other, otherLegacy), &ack)
 	if !ack.Duplicate {
 		t.Fatal(ack)
+	}
+	eventPath := "/api/v1/client/learning/drafts/events/" + command["event_id"].(string)
+	var retained study.LearningDraft
+	data(t, request(t, h, "GET", eventPath, key, nil), &retained)
+	if retained.Text != "私人草稿" {
+		t.Fatal(retained)
+	}
+	if w := request(t, h, "GET", eventPath, other, nil); w.Code != 404 {
+		t.Fatal("history leaked", w.Code)
+	}
+	if w := request(t, h, "GET", eventPath+"?client_id="+uuid.NewString(), key, nil); w.Code != 400 {
+		t.Fatal("history query spoof", w.Code)
+	}
+	historyPath := readPath + "/history?limit=1&offset=0"
+	var history study.LearningDraftHistory
+	data(t, request(t, h, "GET", historyPath, key, nil), &history)
+	if history.Total != 1 || len(history.Items) != 1 || history.Items[0].Text != "私人草稿" {
+		t.Fatal(history)
+	}
+	if w := request(t, h, "GET", readPath+"/history?limit=101", key, nil); w.Code != 400 {
+		t.Fatal("history page limit", w.Code)
 	}
 }

@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -13,7 +12,7 @@ import (
 
 func TestClientFeedbackHTTPAuthorizationAndFiltering(t *testing.T) {
 	service, h, _ := managementApp(t, 1<<20)
-	ctx := context.Background()
+	ctx := testWorkspaceContext()
 	item, e := service.SaveManaged(ctx, "", study.ManagedInput{Status: "pending", Content: study.Content{Title: "public feedback candidate", Content: "published body"}}, nil)
 	if e != nil {
 		t.Fatal(e)
@@ -22,8 +21,8 @@ func TestClientFeedbackHTTPAuthorizationAndFiltering(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	client, key := managedClient(t, h, "feedback-learner", []string{"read", "sync", "feedback"})
-	_, otherKey := managedClient(t, h, "feedback-other", []string{"read", "sync", "feedback"})
+	client, key := workspaceLearner(t, h, "feedback-learner")
+	_, otherKey := managedLearner(t, h, "feedback-other")
 	_, readKey := managedClient(t, h, "feedback-reader", nil)
 	_, sourceKey := create(t, h, false)
 	event := map[string]any{"event_id": uuid.NewString(), "item_id": item.ID, "action": "recommended", "occurred_at": time.Now().UTC().Format(time.RFC3339Nano)}
@@ -31,7 +30,7 @@ func TestClientFeedbackHTTPAuthorizationAndFiltering(t *testing.T) {
 	for _, tc := range []struct {
 		key    string
 		status int
-	}{{"", 401}, {adminKey, 401}, {sourceKey, 401}, {readKey, 403}} {
+	}{{"", 401}, {adminKey, 401}, {sourceKey, 401}, {readKey, 401}} {
 		if out := request(t, h, "POST", "/api/v1/client/feedback", tc.key, body); out.Code != tc.status {
 			t.Fatal("invalid feedback authority", out.Code, tc.status)
 		}
@@ -52,7 +51,7 @@ func TestClientFeedbackHTTPAuthorizationAndFiltering(t *testing.T) {
 		t.Fatal(candidates)
 	}
 	data(t, request(t, h, "GET", "/api/v1/items?unseen=true&include_feedback=true", otherKey, nil), &candidates)
-	if len(candidates.Items) != 1 {
+	if len(candidates.Items) != 0 {
 		t.Fatal("cross-client feedback leaked", candidates)
 	}
 	var own study.FeedbackPage
@@ -70,15 +69,15 @@ func TestClientFeedbackHTTPAuthorizationAndFiltering(t *testing.T) {
 	if len(events.Events) != 1 || events.NextCursor != 1 {
 		t.Fatal(events)
 	}
-	data(t, request(t, h, "GET", "/api/v1/admin/clients/"+client.ID+"/items?exclude=recommended", adminKey, nil), &candidates)
+	data(t, request(t, h, "GET", "/api/v1/items?exclude=recommended", key, nil), &candidates)
 	if len(candidates.Items) != 0 {
 		t.Fatal(candidates)
 	}
-	data(t, request(t, h, "GET", "/api/v1/admin/clients/"+client.ID+"/feedback", adminKey, nil), &own)
+	data(t, request(t, h, "GET", "/api/v1/client/feedback", key, nil), &own)
 	if own.Total != 1 {
 		t.Fatal(own)
 	}
-	for _, path := range []string{"/api/v1/admin/clients/" + client.ID + "/feedback", "/api/v1/admin/clients/" + client.ID + "/items"} {
+	for _, path := range []string{"/api/v1/admin/users/" + client.ID + "/feedback", "/api/v1/admin/users/" + client.ID + "/items"} {
 		if out := request(t, h, "GET", path, key, nil); out.Code != 401 {
 			t.Fatal("client accessed admin preview", path, out.Code)
 		}
@@ -102,9 +101,10 @@ func TestClientFeedbackHTTPAuthorizationAndFiltering(t *testing.T) {
 
 func TestFeedbackQRPermissionsAndPrivateDraft(t *testing.T) {
 	service, h, _ := managementApp(t, 1<<20)
-	ctx := context.Background()
-	client, key := managedClient(t, h, "learner-qr", []string{"read", "feedback"})
-	out := request(t, h, "GET", "/api/v1/client/connection", key, nil)
+	ctx := testWorkspaceContext()
+	client, key := managedLearner(t, h, "learner-qr")
+	_, appKey := managedClient(t, h, "query-qr", []string{"read", "feedback"})
+	out := request(t, h, "GET", "/api/v1/client/connection", appKey, nil)
 	if out.Code != http.StatusOK || !strings.Contains(out.Body.String(), `"feedback"`) {
 		t.Fatal(out.Code)
 	}
@@ -121,13 +121,13 @@ func TestFeedbackQRPermissionsAndPrivateDraft(t *testing.T) {
 		t.Fatal(out.Code)
 	}
 	var state study.FeedbackPage
-	data(t, request(t, h, "GET", "/api/v1/admin/clients/"+client.ID+"/feedback", adminKey, nil), &state)
+	data(t, request(t, h, "GET", "/api/v1/client/feedback", key, nil), &state)
 	if state.Total != 0 || state.HighWatermark != 0 {
 		t.Fatal(state)
 	}
-	var updated study.Client
-	data(t, request(t, h, "PUT", "/api/v1/admin/clients/"+client.ID, adminKey, policyBody(client, []string{"read"})), &updated)
-	if out := request(t, h, "POST", "/api/v1/client/feedback", key, map[string]any{"events": []any{event}}); out.Code != 403 {
+	var updated study.User
+	data(t, request(t, h, "PUT", "/api/v1/admin/users/"+client.ID, adminKey, map[string]any{"revision": client.Revision, "email": client.Email, "display_name": client.DisplayName, "enabled": false}), &updated)
+	if out := request(t, h, "POST", "/api/v1/client/feedback", key, map[string]any{"events": []any{event}}); out.Code != 401 {
 		t.Fatal("revocation did not apply", out.Code)
 	}
 }

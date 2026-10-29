@@ -72,6 +72,20 @@ func (s *PostgresStore) Ping(ctx context.Context) error {
 	if !learningReady {
 		return errors.New("learning data schema migration required")
 	}
+	var usersReady bool
+	if err := s.Pool.QueryRow(ctx, `SELECT to_regclass('workspace_learning_user_email') IS NOT NULL`).Scan(&usersReady); err != nil {
+		return err
+	}
+	if !usersReady {
+		return errors.New("learning user schema migration required")
+	}
+	var workspaceReady bool
+	if err := s.Pool.QueryRow(ctx, `SELECT to_regclass('workspace_record_owner') IS NOT NULL`).Scan(&workspaceReady); err != nil {
+		return err
+	}
+	if !workspaceReady {
+		return errors.New("user workspace schema migration required")
+	}
 	return nil
 }
 func (s *PostgresStore) Close() { s.Pool.Close() }
@@ -246,6 +260,9 @@ func (t *postgresTx) Items(f Filter) ([]Item, error) {
 	}
 	args := []any{}
 	arg := func(v any) string { args = append(args, v); return fmt.Sprintf("$%d", len(args)) }
+	if f.OwnerID != "" {
+		where = append(where, "record->>'owner_id'="+arg(f.OwnerID))
+	}
 	if f.Kind != "" {
 		where = append(where, "COALESCE(NULLIF("+column+"->>'kind',''),'article')="+arg(f.Kind))
 	}

@@ -1,5 +1,5 @@
 """One-time, explicitly authorized management setup for the source-only push Skill.
-Never prints or persists the administrator credential. Never rotates an existing source.
+Never prints or persists the user login token. Never rotates an existing source.
 """
 from pathlib import Path
 import argparse
@@ -41,7 +41,7 @@ def reserve_private_file(path):
         raise
 
 
-def setup(base_url, config, admin_key_file=None, admin_key_env=None, slug='ai-collector', name='AI 资料采集'):
+def setup(base_url, config, user_token_file=None, user_token_env=None, slug='ai-collector', name='AI 资料采集'):
     base_url = endpoint(base_url)
     path = Path(config)
     if path.exists():
@@ -55,21 +55,21 @@ def setup(base_url, config, admin_key_file=None, admin_key_env=None, slug='ai-co
     created = False
     admin = None
     try:
-        if admin_key_file:
-            private = read_json(admin_key_file)
-            key = private.get('admin_api_key') if isinstance(private, dict) else None
+        if user_token_file:
+            private = read_json(user_token_file)
+            key = private.get('access_token') if isinstance(private, dict) else None
             private = None
         else:
-            key = os.environ.get(admin_key_env or '')
-        if not isinstance(key, str) or not 32 <= len(key) <= 256 or not key.isascii() or any(c.isspace() for c in key):
-            raise PushError('missing_admin_credential', 'Provide the explicit local administrator API credential source; browser password is not accepted here.')
+            key = os.environ.get(user_token_env or '')
+        if not isinstance(key, str) or not key.startswith('wzus_') or not 32 <= len(key) <= 256 or not key.isascii() or any(c.isspace() for c in key):
+            raise PushError('missing_user_session', 'Provide an explicit user access_token from /user/auth/login (session_mode=token); administrator credentials cannot create sources.')
         admin = Client(base_url, key=key)
         key = None
-        sources = admin.request('/admin/sources')
+        sources = admin.request('/workspace/sources')
         if any(source.get('slug') == slug for source in sources):
-            raise PushError('source_exists', 'Source slug already exists. It was not changed or rotated; recover its existing config or ask an administrator to rotate it explicitly.')
-        result = admin.request('/admin/sources', 'POST', encode({
-            'slug': slug, 'name': name.strip(), 'description': 'AI 采集资料的独立入库来源；默认提交审核，不自动发布。',
+            raise PushError('source_exists', 'Source slug already exists. It was not changed or rotated; recover its existing config or ask the source owner to rotate it explicitly.')
+        result = admin.request('/workspace/sources', 'POST', encode({
+            'slug': slug, 'name': name.strip(), 'description': '当前用户的 AI 资料入库来源；只进入本人工作区。',
             'kind': 'manual', 'integration': 'skill', 'feed_url': '', 'category': 'AI 采集', 'language': 'zh-CN',
             'enabled': True, 'auto_publish': False, 'poll_interval_seconds': 900,
             'permissions': ['ingest', 'upload']}))
@@ -102,13 +102,13 @@ def main():
     parser.add_argument('--base-url', default='http://127.0.0.1:8091')
     parser.add_argument('--config', required=True)
     auth = parser.add_mutually_exclusive_group(required=True)
-    auth.add_argument('--admin-key-file', help='Explicit application access-key JSON file; used once, not copied.')
-    auth.add_argument('--admin-key-env', help='Name of an environment variable holding an administrator API key.')
+    auth.add_argument('--user-token-file', help='Explicit private JSON containing the user access_token; used once, not copied.')
+    auth.add_argument('--user-token-env', help='Name of an environment variable holding a user login access token.')
     parser.add_argument('--slug', default='ai-collector')
     parser.add_argument('--name', default='AI 资料采集')
     args = parser.parse_args()
     try:
-        print(json.dumps(setup(args.base_url, args.config, args.admin_key_file, args.admin_key_env, args.slug, args.name), ensure_ascii=False, indent=2))
+        print(json.dumps(setup(args.base_url, args.config, args.user_token_file, args.user_token_env, args.slug, args.name), ensure_ascii=False, indent=2))
         return 0
     except (PushError, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         code = error.code if isinstance(error, PushError) else 'setup_failed'

@@ -5,6 +5,24 @@ import (
 	"testing"
 )
 
+func TestAgentEnabledByDefault(t *testing.T) {
+	base := map[string]string{"STORE": "memory", "ADMIN_API_KEY": strings.Repeat("a", 40), "READ_API_KEY": strings.Repeat("r", 40)}
+	load := func(m map[string]string) (Config, error) { return FromEnv(func(k string) string { return m[k] }) }
+	c, err := load(base)
+	if err != nil || !c.AgentEnabled {
+		t.Fatalf("agent module must be enabled by default: enabled=%v err=%v", c.AgentEnabled, err)
+	}
+	disabled := map[string]string{}
+	for k, v := range base {
+		disabled[k] = v
+	}
+	disabled["AGENT_ENABLED"] = "false"
+	c, err = load(disabled)
+	if err != nil || c.AgentEnabled {
+		t.Fatalf("explicit false must disable the module: enabled=%v err=%v", c.AgentEnabled, err)
+	}
+}
+
 func TestConfig(t *testing.T) {
 	base := map[string]string{"STORE": "memory", "ADMIN_API_KEY": strings.Repeat("a", 40), "READ_API_KEY": strings.Repeat("r", 40)}
 	load := func(m map[string]string) (Config, error) { return FromEnv(func(k string) string { return m[k] }) }

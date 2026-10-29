@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"sort"
 	"time"
 	"unicode/utf8"
 )
@@ -108,6 +109,92 @@ func (s *Service) ReadLearningDraft(ctx context.Context, key, itemID, parentID s
 	})
 	return
 }
+
+// LearningDraftHistory is a Client-scoped immutable event history. Current
+// draft edits and clears do not mutate prior acknowledged snapshots.
+type LearningDraftHistory struct {
+	ClientID string          `json:"client_id"`
+	ItemID   string          `json:"item_id"`
+	ParentID string          `json:"parent_id,omitempty"`
+	Items    []LearningDraft `json:"items"`
+	Total    int             `json:"total"`
+	Limit    int             `json:"limit"`
+	Offset   int             `json:"offset"`
+}
+
+func (s *Service) ReadLearningDraftEvent(ctx context.Context, key, eventID string) (out LearningDraft, err error) {
+	var ok bool
+	eventID, ok = validCatalogID(eventID)
+	if !ok {
+		return out, ErrInvalid
+	}
+	err = s.Store.View(ctx, func(tx Tx) error {
+		client, e := clientAccess(tx, key, PermissionFeedback)
+		if e != nil {
+			return e
+		}
+		event, e := recordAs[learningDraftEvent](tx, "learning_draft_event", learningKey(client.ID, eventID))
+		if e != nil {
+			return e
+		}
+		if event.Draft.ClientID != client.ID || event.Draft.LastEventID != eventID {
+			return ErrInvalid
+		}
+		out = event.Draft
+		return nil
+	})
+	return
+}
+func (s *Service) ListLearningDraftHistory(ctx context.Context, key, itemID, parentID string, limit, offset int) (out LearningDraftHistory, err error) {
+	var ok bool
+	itemID, ok = validCatalogID(itemID)
+	if !ok {
+		return out, ErrInvalid
+	}
+	if parentID != "" {
+		parentID, ok = validCatalogID(parentID)
+		if !ok {
+			return out, ErrInvalid
+		}
+	}
+	if limit < 1 || limit > 100 || offset < 0 || offset > 10000 {
+		return out, ErrInvalid
+	}
+	err = s.Store.View(ctx, func(tx Tx) error {
+		client, e := clientAccess(tx, key, PermissionFeedback)
+		if e != nil {
+			return e
+		}
+		events, e := recordsAs[learningDraftEvent](tx, "learning_draft_event")
+		if e != nil {
+			return e
+		}
+		list := []LearningDraft{}
+		for _, event := range events {
+			d := event.Draft
+			if d.ClientID == client.ID && d.ItemID == itemID && d.ParentID == parentID {
+				list = append(list, d)
+			}
+		}
+		sort.Slice(list, func(i, j int) bool {
+			if list[i].Revision != list[j].Revision {
+				return list[i].Revision > list[j].Revision
+			}
+			return list[i].LastEventID > list[j].LastEventID
+		})
+		out = LearningDraftHistory{ClientID: client.ID, ItemID: itemID, ParentID: parentID, Total: len(list), Limit: limit, Offset: offset, Items: []LearningDraft{}}
+		if offset < len(list) {
+			end := offset + limit
+			if end > len(list) {
+				end = len(list)
+			}
+			out.Items = append(out.Items, list[offset:end]...)
+		}
+		return nil
+	})
+	return
+}
+
 func (s *Service) ApplyLearningDraft(ctx context.Context, key string, input LearningDraftCommand) (LearningDraftAck, error) {
 	return s.applyLearningDraft(ctx, key, input, nil, 0)
 }

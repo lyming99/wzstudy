@@ -386,7 +386,7 @@ func (s *Service) ClientFeedback(ctx context.Context, key, adminClientID string,
 			}
 			id = client.ID
 		} else {
-			if _, e := recordAs[clientRecord](tx, "client", id); e != nil {
+			if e := personalOwnerExists(tx, id); e != nil {
 				return e
 			}
 		}
@@ -410,7 +410,7 @@ func (s *Service) FeedbackEvents(ctx context.Context, key, adminClientID string,
 			}
 			id = client.ID
 		} else {
-			if _, e := recordAs[clientRecord](tx, "client", id); e != nil {
+			if e := personalOwnerExists(tx, id); e != nil {
 				return e
 			}
 		}
@@ -465,7 +465,7 @@ func (s *Service) ClientItems(ctx context.Context, key, adminClientID string, f 
 			}
 			id = client.ID
 		} else {
-			if _, e := recordAs[clientRecord](tx, "client", id); e != nil {
+			if e := personalOwnerExists(tx, id); e != nil {
 				return e
 			}
 		}

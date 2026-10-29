@@ -3,7 +3,7 @@
   "info": {
     "title": "WzStudy 学习数据源 API",
     "version": "0.3.0",
-    "description": "学习资料数据服务。Source 负责 ingest/upload；独立 Client 具备 read/sync 及显式 feedback 权限。支持内容与合集查询、独立增量流、私人学习上报和只读推荐查询。"
+    "description": "管理员拥有本人资料与学习工作区，并额外管理用户；资料、附件、来源、客户端、合集、路线及学习数据按账号隔离。用户拥有的来源/查询 Key 仅访问其所属工作区；管理员 API Key 和旧全局 ReadKey 不具有资料访问权限。"
   },
   "servers": [
     {
@@ -11,6 +11,895 @@
     }
   ],
   "paths": {
+    "/agent/status": {
+        "get": {
+            "operationId": "get__agent_status",
+            "summary": "采集端自查身份与服务端策略",
+            "security": [
+                {
+                    "AgentBearer": []
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Success",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "$ref": "#/components/schemas/AgentStatus"
+                                    }
+                                },
+                                "required": [
+                                    "data"
+                                ],
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "default": {
+                    "description": "Error; see error.code",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Error"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "/agent/tasks/claim": {
+        "post": {
+            "operationId": "post__agent_tasks_claim",
+            "summary": "领取一个采集任务（长轮询，204 表示暂无任务）",
+            "security": [
+                {
+                    "AgentBearer": []
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Success",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "$ref": "#/components/schemas/ClaimResult"
+                                    }
+                                },
+                                "required": [
+                                    "data"
+                                ],
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "default": {
+                    "description": "Error; see error.code",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Error"
+                            }
+                        }
+                    }
+                }
+            },
+            "description": "任务在串行化写事务中连同过期租约回收一起处理，多个采集端不会重复领取同一任务。",
+            "requestBody": {
+                "required": true,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ClaimInput"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "/agent/tasks/{id}/heartbeat": {
+        "post": {
+            "operationId": "post__agent_tasks_id_heartbeat",
+            "summary": "续租并读取取消信号",
+            "security": [
+                {
+                    "AgentBearer": []
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Success",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "$ref": "#/components/schemas/HeartbeatResult"
+                                    }
+                                },
+                                "required": [
+                                    "data"
+                                ],
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "default": {
+                    "description": "Error; see error.code",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Error"
+                            }
+                        }
+                    }
+                }
+            },
+            "requestBody": {
+                "required": true,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": false
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "/agent/tasks/{id}/events": {
+        "post": {
+            "operationId": "post__agent_tasks_id_events",
+            "summary": "上报本轮进度事件（按 seq 幂等）",
+            "security": [
+                {
+                    "AgentBearer": []
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Success",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "$ref": "#/components/schemas/EventsAck"
+                                    }
+                                },
+                                "required": [
+                                    "data"
+                                ],
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "default": {
+                    "description": "Error; see error.code",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Error"
+                            }
+                        }
+                    }
+                }
+            },
+            "requestBody": {
+                "required": true,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/EventsInput"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "/agent/tasks/{id}/items": {
+        "post": {
+            "operationId": "post__agent_tasks_id_items",
+            "summary": "推送采集结果（绑定任务来源，服务端校验配额与域名）",
+            "security": [
+                {
+                    "AgentBearer": []
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Success",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "$ref": "#/components/schemas/IntakeReceipt"
+                                    }
+                                },
+                                "required": [
+                                    "data"
+                                ],
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "default": {
+                    "description": "Error; see error.code",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Error"
+                            }
+                        }
+                    }
+                }
+            },
+            "requestBody": {
+                "required": true,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ItemsInput"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "/agent/tasks/{id}/complete": {
+        "post": {
+            "operationId": "post__agent_tasks_id_complete",
+            "summary": "提交终态结果（幂等）",
+            "security": [
+                {
+                    "AgentBearer": []
+                }
+            ],
+            "responses": {
+                "204": {
+                    "description": "No Content"
+                },
+                "default": {
+                    "description": "Error; see error.code",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Error"
+                            }
+                        }
+                    }
+                }
+            },
+            "requestBody": {
+                "required": true,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/CompleteInput"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "/agent/tasks/{id}/release": {
+        "post": {
+            "operationId": "post__agent_tasks_id_release",
+            "summary": "归还任务租约（优雅退出）",
+            "security": [
+                {
+                    "AgentBearer": []
+                }
+            ],
+            "responses": {
+                "204": {
+                    "description": "No Content"
+                },
+                "default": {
+                    "description": "Error; see error.code",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Error"
+                            }
+                        }
+                    }
+                }
+            },
+            "requestBody": {
+                "required": true,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ReleaseInput"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "/admin/agent/status": {
+        "get": {
+            "operationId": "get__admin_agent_status",
+            "summary": "采集端模块状态与任务计数",
+            "security": [
+                {
+                    "UserSession": []
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Success",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "$ref": "#/components/schemas/AgentAdminStatus"
+                                    }
+                                },
+                                "required": [
+                                    "data"
+                                ],
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "default": {
+                    "description": "Error; see error.code",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Error"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "/admin/agent/agents": {
+        "get": {
+            "operationId": "get__admin_agent_agents",
+            "summary": "列出采集端身份（不含密钥）",
+            "security": [
+                {
+                    "UserSession": []
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Success",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "type": "array",
+                                        "items": {
+                                            "$ref": "#/components/schemas/Agent"
+                                        }
+                                    }
+                                },
+                                "required": [
+                                    "data"
+                                ],
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "default": {
+                    "description": "Error; see error.code",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Error"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "post": {
+            "operationId": "post__admin_agent_agents",
+            "summary": "创建采集端身份并一次性返回密钥",
+            "security": [
+                {
+                    "UserSession": []
+                }
+            ],
+            "responses": {
+                "201": {
+                    "description": "Success",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "$ref": "#/components/schemas/AgentKey"
+                                    }
+                                },
+                                "required": [
+                                    "data"
+                                ],
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "default": {
+                    "description": "Error; see error.code",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Error"
+                            }
+                        }
+                    }
+                }
+            },
+            "requestBody": {
+                "required": true,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/AgentInput"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "/admin/agent/agents/{id}": {
+        "get": {
+            "operationId": "get__admin_agent_agents_id",
+            "summary": "读取采集端身份",
+            "security": [
+                {
+                    "UserSession": []
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Success",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "$ref": "#/components/schemas/Agent"
+                                    }
+                                },
+                                "required": [
+                                    "data"
+                                ],
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "default": {
+                    "description": "Error; see error.code",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Error"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "put": {
+            "operationId": "put__admin_agent_agents_id",
+            "summary": "更新采集端身份（版本校验）",
+            "security": [
+                {
+                    "UserSession": []
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Success",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "$ref": "#/components/schemas/Agent"
+                                    }
+                                },
+                                "required": [
+                                    "data"
+                                ],
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "default": {
+                    "description": "Error; see error.code",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Error"
+                            }
+                        }
+                    }
+                }
+            },
+            "requestBody": {
+                "required": true,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/AgentUpdate"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "/admin/agent/agents/{id}/key": {
+        "post": {
+            "operationId": "post__admin_agent_agents_id_key",
+            "summary": "轮换采集端密钥",
+            "security": [
+                {
+                    "UserSession": []
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Success",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "$ref": "#/components/schemas/AgentKey"
+                                    }
+                                },
+                                "required": [
+                                    "data"
+                                ],
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "default": {
+                    "description": "Error; see error.code",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Error"
+                            }
+                        }
+                    }
+                }
+            },
+            "requestBody": {
+                "required": true,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/RevisionInput"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "/admin/agent/tasks": {
+        "get": {
+            "operationId": "get__admin_agent_tasks",
+            "summary": "分页列出采集任务",
+            "security": [
+                {
+                    "UserSession": []
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Success",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "$ref": "#/components/schemas/CollectionTaskPage"
+                                    }
+                                },
+                                "required": [
+                                    "data"
+                                ],
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "default": {
+                    "description": "Error; see error.code",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Error"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "post": {
+            "operationId": "post__admin_agent_tasks",
+            "summary": "创建采集任务（绑定来源）",
+            "security": [
+                {
+                    "UserSession": []
+                }
+            ],
+            "responses": {
+                "201": {
+                    "description": "Success",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "$ref": "#/components/schemas/CollectionTask"
+                                    }
+                                },
+                                "required": [
+                                    "data"
+                                ],
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "default": {
+                    "description": "Error; see error.code",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Error"
+                            }
+                        }
+                    }
+                }
+            },
+            "requestBody": {
+                "required": true,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/CollectionTaskInput"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "/admin/agent/tasks/{id}": {
+        "get": {
+            "operationId": "get__admin_agent_tasks_id",
+            "summary": "读取采集任务",
+            "security": [
+                {
+                    "UserSession": []
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Success",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "$ref": "#/components/schemas/CollectionTask"
+                                    }
+                                },
+                                "required": [
+                                    "data"
+                                ],
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "default": {
+                    "description": "Error; see error.code",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Error"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "/admin/agent/tasks/{id}/events": {
+        "get": {
+            "operationId": "get__admin_agent_tasks_id_events",
+            "summary": "读取任务进度事件",
+            "security": [
+                {
+                    "UserSession": []
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Success",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "type": "array",
+                                        "items": {
+                                            "$ref": "#/components/schemas/AgentEvent"
+                                        }
+                                    }
+                                },
+                                "required": [
+                                    "data"
+                                ],
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "default": {
+                    "description": "Error; see error.code",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Error"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "/admin/agent/tasks/{id}/cancel": {
+        "post": {
+            "operationId": "post__admin_agent_tasks_id_cancel",
+            "summary": "取消任务；运行中任务在下次心跳生效",
+            "security": [
+                {
+                    "UserSession": []
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Success",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "$ref": "#/components/schemas/CollectionTask"
+                                    }
+                                },
+                                "required": [
+                                    "data"
+                                ],
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "default": {
+                    "description": "Error; see error.code",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Error"
+                            }
+                        }
+                    }
+                }
+            },
+            "requestBody": {
+                "required": true,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/CancelInput"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "/admin/agent/tasks/{id}/retry": {
+        "post": {
+            "operationId": "post__admin_agent_tasks_id_retry",
+            "summary": "重置失败/取消/过期任务为待领取",
+            "security": [
+                {
+                    "UserSession": []
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Success",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "$ref": "#/components/schemas/CollectionTask"
+                                    }
+                                },
+                                "required": [
+                                    "data"
+                                ],
+                                "additionalProperties": false
+                            }
+                        }
+                    }
+                },
+                "default": {
+                    "description": "Error; see error.code",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Error"
+                            }
+                        }
+                    }
+                }
+            },
+            "requestBody": {
+                "required": true,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": false
+                        }
+                    }
+                }
+            }
+        }
+    },
     "/client/recommendations": {
       "get": {
         "operationId": "getClientRecommendations",
@@ -18,7 +907,10 @@
         "description": "Requires independent Client read permission. Snapshots expire after 10 minutes or on process restart; published visibility is rechecked on each page.",
         "security": [
           {
-            "ClientKey": []
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
           }
         ],
         "parameters": [
@@ -79,16 +971,13 @@
         "summary": "Aggregate active likes and learning counts for a published item",
         "security": [
           {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          },
+          {
             "ClientKey": []
-          },
-          {
-            "ReadKey": []
-          },
-          {
-            "AdminKey": []
-          },
-          {
-            "AdminSession": []
           }
         ],
         "parameters": [
@@ -140,7 +1029,10 @@
         "summary": "Query learning features with an independent read/sync identity",
         "security": [
           {
-            "ClientKey": []
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
           }
         ],
         "responses": {
@@ -181,7 +1073,10 @@
         "summary": "Get own learning states; requires feedback",
         "security": [
           {
-            "ClientKey": []
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
           }
         ],
         "parameters": [
@@ -272,7 +1167,10 @@
         ],
         "security": [
           {
-            "ClientKey": []
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
           }
         ],
         "x-client-permissions": [
@@ -333,37 +1231,356 @@
         }
       }
     },
+    "/client/learning/drafts/events/{event_id}": {
+      "get": {
+        "operationId": "readLearningDraftEvent",
+        "summary": "Read one immutable draft snapshot of the authenticated Client",
+        "tags": [
+          "Client learning"
+        ],
+        "security": [
+          {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          }
+        ],
+        "x-client-permissions": [
+          "feedback"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Own immutable draft snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningDraft"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Client Key required"
+          },
+          "403": {
+            "description": "Feedback permission required"
+          },
+          "404": {
+            "description": "Event not found for this Client"
+          }
+        }
+      }
+    },
+    "/client/learning/items/{item_id}/draft/history": {
+      "get": {
+        "operationId": "listLearningDraftHistory",
+        "summary": "List retained immutable private draft snapshots for one item",
+        "description": "Previous draft content remains accessible after edits and clears; snapshots are scoped to the authenticated Client and retained until the service's data-retention process removes them.",
+        "tags": [
+          "Client learning"
+        ],
+        "security": [
+          {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          }
+        ],
+        "x-client-permissions": [
+          "feedback"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Own draft history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningDraftHistory"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Client Key required"
+          },
+          "403": {
+            "description": "Feedback permission required"
+          }
+        }
+      }
+    },
     "/client/learning/items/{item_id}/draft": {
       "get": {
-        "operationId": "readLearningDraft", "summary": "Read the authenticated Client's private draft and revision",
-        "tags": ["Client learning"], "security": [{"ClientKey": []}], "x-client-permissions": ["feedback"],
-        "parameters": [
-          {"in":"path","name":"item_id","required":true,"schema":{"type":"string","format":"uuid"}},
-          {"in":"query","name":"parent_id","schema":{"type":"string","format":"uuid"}}
+        "operationId": "readLearningDraft",
+        "summary": "Read the authenticated Client's private draft and revision",
+        "tags": [
+          "Client learning"
         ],
-        "responses": {"200":{"description":"Own draft, null if never created","content":{"application/json":{"schema":{
-          "type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/LearningDraftRead"}}
-        }}}},"400":{"description":"Invalid request"},"401":{"description":"Client Key required"},"403":{"description":"Feedback permission required"}}
+        "security": [
+          {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          }
+        ],
+        "x-client-permissions": [
+          "feedback"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent_id",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Own draft, null if never created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningDraftRead"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Client Key required"
+          },
+          "403": {
+            "description": "Feedback permission required"
+          }
+        }
       }
     },
     "/client/learning/drafts/commands": {
       "post": {
-        "operationId":"applyLearningDraft", "summary":"Save or clear a private draft with optimistic revision and idempotency",
-        "description":"An empty text clears the draft but retains a revision tombstone. Identical event retries return the same acknowledgement; new writes must carry the current revision.",
-        "tags":["Client learning"],"security":[{"ClientKey":[]}],"x-client-permissions":["feedback"],
-        "requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/LearningDraftCommand"}}}},
-        "responses":{"200":{"description":"Accepted or duplicate","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/LearningDraftAck"}}}}}},
-          "400":{"description":"Invalid input"},"401":{"description":"Client Key required"},"403":{"description":"Feedback permission required"},"404":{"description":"Item or reply parent unavailable"},"409":{"description":"Stale draft revision or conflicting event"}}
+        "operationId": "applyLearningDraft",
+        "summary": "Save or clear a private draft with optimistic revision and idempotency",
+        "description": "An empty text clears the draft but retains a revision tombstone. Identical event retries return the same acknowledgement; new writes must carry the current revision.",
+        "tags": [
+          "Client learning"
+        ],
+        "security": [
+          {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          }
+        ],
+        "x-client-permissions": [
+          "feedback"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LearningDraftCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted or duplicate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningDraftAck"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Client Key required"
+          },
+          "403": {
+            "description": "Feedback permission required"
+          },
+          "404": {
+            "description": "Item or reply parent unavailable"
+          },
+          "409": {
+            "description": "Stale draft revision or conflicting event"
+          }
+        }
       }
     },
     "/client/learning/drafts/import-legacy": {
       "post": {
-        "operationId":"importLegacyDraft", "summary":"Conditionally import one explicitly confirmed historical private draft",
-        "description":"Requires no existing live or deleted draft, a matching published item revision and an accessible parent. The original timestamp is preserved. This endpoint does not delete local data.",
-        "tags":["Client learning"],"security":[{"ClientKey":[]}],"x-client-permissions":["feedback"],
-        "requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/LegacyDraftInput"}}}},
-        "responses":{"200":{"description":"Accepted or duplicate","content":{"application/json":{"schema":{"type":"object","required":["data"],"properties":{"data":{"$ref":"#/components/schemas/LearningDraftAck"}}}}}},
-          "400":{"description":"Invalid input"},"401":{"description":"Client Key required"},"403":{"description":"Feedback permission required"},"404":{"description":"Item or reply parent unavailable"},"409":{"description":"Existing draft, stale item or conflicting event"}}
+        "operationId": "importLegacyDraft",
+        "summary": "Conditionally import one explicitly confirmed historical private draft",
+        "description": "Requires no existing live or deleted draft, a matching published item revision and an accessible parent. The original timestamp is preserved. This endpoint does not delete local data.",
+        "tags": [
+          "Client learning"
+        ],
+        "security": [
+          {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          }
+        ],
+        "x-client-permissions": [
+          "feedback"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LegacyDraftInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted or duplicate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearningDraftAck"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Client Key required"
+          },
+          "403": {
+            "description": "Feedback permission required"
+          },
+          "404": {
+            "description": "Item or reply parent unavailable"
+          },
+          "409": {
+            "description": "Existing draft, stale item or conflicting event"
+          }
+        }
       }
     },
     "/client/learning/import-legacy-reviews": {
@@ -375,7 +1592,10 @@
         ],
         "security": [
           {
-            "ClientKey": []
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
           }
         ],
         "x-client-permissions": [
@@ -477,7 +1697,10 @@
         ],
         "security": [
           {
-            "ClientKey": []
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
           }
         ],
         "x-client-permissions": [
@@ -602,7 +1825,10 @@
         "summary": "Read own independent learning event cursor; requires feedback",
         "security": [
           {
-            "ClientKey": []
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
           }
         ],
         "parameters": [
@@ -662,7 +1888,10 @@
         "summary": "Atomically report personal learning events; requires feedback",
         "security": [
           {
-            "ClientKey": []
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
           }
         ],
         "requestBody": {
@@ -713,7 +1942,10 @@
         "summary": "List the authenticated Client's personal collections; requires feedback permission",
         "security": [
           {
-            "ClientKey": []
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
           }
         ],
         "parameters": [
@@ -776,7 +2008,10 @@
         "summary": "Get one own collection, including unavailable-member placeholders",
         "security": [
           {
-            "ClientKey": []
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
           }
         ],
         "parameters": [
@@ -832,7 +2067,10 @@
         ],
         "security": [
           {
-            "ClientKey": []
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
           }
         ],
         "x-client-permissions": [
@@ -934,7 +2172,10 @@
         "description": "Uses event_id scoped to the authenticated Client. Retry uncertain requests with the identical event_id and body. Commands never modify administrator catalogues.",
         "security": [
           {
-            "ClientKey": []
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
           }
         ],
         "requestBody": {
@@ -984,6 +2225,12 @@
         "operationId": "getClientLearningItemStats",
         "summary": "Get aggregate counts for a published item using an independent read or sync client",
         "security": [
+          {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          },
           {
             "ClientKey": []
           }
@@ -1037,7 +2284,10 @@
         "summary": "Get own private records for an item",
         "security": [
           {
-            "ClientKey": []
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
           }
         ],
         "parameters": [
@@ -1103,16 +2353,16 @@
         }
       }
     },
-    "/admin/clients/{id}/learning": {
+    "/workspace/clients/{id}/learning": {
       "get": {
         "operationId": "adminGetClientLearning",
         "summary": "Get one client learning states",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "parameters": [
@@ -1201,19 +2451,20 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/clients/{id}/learning/events": {
+    "/workspace/clients/{id}/learning/events": {
       "get": {
         "operationId": "adminGetClientLearningEvents",
         "summary": "Get one client learning event history",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "parameters": [
@@ -1275,19 +2526,20 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/clients/{id}/learning/items/{item_id}/records": {
+    "/workspace/clients/{id}/learning/items/{item_id}/records": {
       "get": {
         "operationId": "adminGetClientLearningRecords",
         "summary": "Get one client private records for an item",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "parameters": [
@@ -1359,7 +2611,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
     "/catalog/collections": {
@@ -1368,16 +2621,13 @@
         "summary": "List published collection summaries; requires read",
         "security": [
           {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          },
+          {
             "ClientKey": []
-          },
-          {
-            "ReadKey": []
-          },
-          {
-            "AdminKey": []
-          },
-          {
-            "AdminSession": []
           }
         ],
         "parameters": [
@@ -1440,16 +2690,13 @@
         "summary": "Get a published collection and currently visible chapters",
         "security": [
           {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          },
+          {
             "ClientKey": []
-          },
-          {
-            "ReadKey": []
-          },
-          {
-            "AdminKey": []
-          },
-          {
-            "AdminSession": []
           }
         ],
         "parameters": [
@@ -1501,16 +2748,13 @@
         "summary": "Independent catalogue change cursor; requires sync",
         "security": [
           {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          },
+          {
             "ClientKey": []
-          },
-          {
-            "ReadKey": []
-          },
-          {
-            "AdminKey": []
-          },
-          {
-            "AdminSession": []
           }
         ],
         "parameters": [
@@ -1566,16 +2810,16 @@
         }
       }
     },
-    "/admin/catalog/collections": {
+    "/workspace/catalog/collections": {
       "get": {
         "operationId": "adminListCatalog",
         "summary": "List collection drafts and published snapshots",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "parameters": [
@@ -1629,17 +2873,18 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       },
       "post": {
         "operationId": "adminCreateCatalog",
         "summary": "Create a collection draft",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "requestBody": {
@@ -1681,19 +2926,20 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/catalog/collections/{id}": {
+    "/workspace/catalog/collections/{id}": {
       "get": {
         "operationId": "adminGetCatalog",
         "summary": "Get a collection draft and published snapshot",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "parameters": [
@@ -1736,17 +2982,18 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       },
       "put": {
         "operationId": "adminUpdateCatalog",
         "summary": "Update collection draft with revision check",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "parameters": [
@@ -1799,19 +3046,20 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/catalog/collections/{id}/publish": {
+    "/workspace/catalog/collections/{id}/publish": {
       "post": {
         "operationId": "adminPublishCatalog",
         "summary": "Publish a collection of currently published items",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "parameters": [
@@ -1864,19 +3112,20 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/catalog/collections/{id}/unpublish": {
+    "/workspace/catalog/collections/{id}/unpublish": {
       "post": {
         "operationId": "adminUnpublishCatalog",
         "summary": "Withdraw a collection",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "parameters": [
@@ -1929,19 +3178,20 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/catalog/collections/{id}/delete": {
+    "/workspace/catalog/collections/{id}/delete": {
       "post": {
         "operationId": "adminDeleteCatalog",
         "summary": "Delete a collection, not its items",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "parameters": [
@@ -1994,7 +3244,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
     "/health/live": {
@@ -2087,16 +3338,13 @@
         "summary": "Published source metadata",
         "security": [
           {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          },
+          {
             "ClientKey": []
-          },
-          {
-            "ReadKey": []
-          },
-          {
-            "AdminKey": []
-          },
-          {
-            "AdminSession": []
           }
         ],
         "responses": {
@@ -2154,16 +3402,13 @@
         "summary": "Browse published snapshots",
         "security": [
           {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          },
+          {
             "ClientKey": []
-          },
-          {
-            "ReadKey": []
-          },
-          {
-            "AdminKey": []
-          },
-          {
-            "AdminSession": []
           }
         ],
         "responses": {
@@ -2324,16 +3569,13 @@
         "summary": "Read a published snapshot",
         "security": [
           {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          },
+          {
             "ClientKey": []
-          },
-          {
-            "ReadKey": []
-          },
-          {
-            "AdminKey": []
-          },
-          {
-            "AdminSession": []
           }
         ],
         "responses": {
@@ -2399,16 +3641,13 @@
         "summary": "Replay durable commit-ordered changes",
         "security": [
           {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          },
+          {
             "ClientKey": []
-          },
-          {
-            "ReadKey": []
-          },
-          {
-            "AdminKey": []
-          },
-          {
-            "AdminSession": []
           }
         ],
         "responses": {
@@ -2580,16 +3819,16 @@
         "description": " 只允许使用对应客户端自身 Key；在业务事务内验证启用状态和权限。"
       }
     },
-    "/admin/sources": {
+    "/workspace/sources": {
       "get": {
-        "operationId": "get__admin_sources",
+        "operationId": "get__workspace_sources",
         "summary": "List all source configurations",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -2624,17 +3863,18 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       },
       "post": {
-        "operationId": "post__admin_sources",
+        "operationId": "post__workspace_sources",
         "summary": "Create source and one-time key",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -2676,19 +3916,20 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/sources/{id}": {
+    "/workspace/sources/{id}": {
       "get": {
-        "operationId": "get__admin_sources_id",
+        "operationId": "get__workspace_sources_id",
         "summary": "Source configuration and poll status",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -2731,17 +3972,18 @@
               "format": "uuid"
             }
           }
-        ]
+        ],
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       },
       "put": {
-        "operationId": "put__admin_sources_id",
+        "operationId": "put__workspace_sources_id",
         "summary": "Replace mutable source fields; slug/kind are immutable",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -2794,19 +4036,20 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/sources/{id}/key": {
+    "/workspace/sources/{id}/key": {
       "post": {
-        "operationId": "post__admin_sources_id_key",
+        "operationId": "post__workspace_sources_id_key",
         "summary": "Rotate source key; old key is invalid immediately",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -2859,19 +4102,20 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/sources/{id}/refresh": {
+    "/workspace/sources/{id}/refresh": {
       "post": {
-        "operationId": "post__admin_sources_id_refresh",
+        "operationId": "post__workspace_sources_id_refresh",
         "summary": "Synchronously fetch RSS/Atom; lease-protected",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -2914,19 +4158,20 @@
               "format": "uuid"
             }
           }
-        ]
+        ],
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/items": {
+    "/workspace/items": {
       "get": {
-        "operationId": "get__admin_items",
+        "operationId": "get__workspace_items",
         "summary": "Browse drafts and public snapshots",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -3052,17 +4297,18 @@
               ]
             }
           }
-        ]
+        ],
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       },
       "post": {
-        "operationId": "post__admin_items",
+        "operationId": "post__workspace_items",
         "summary": "创建资料草稿或待审核内容",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -3104,19 +4350,20 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/items/{id}": {
+    "/workspace/items/{id}": {
       "get": {
-        "operationId": "get__admin_items_id",
+        "operationId": "get__workspace_items_id",
         "summary": "Read draft and public snapshot",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -3159,17 +4406,18 @@
               "format": "uuid"
             }
           }
-        ]
+        ],
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       },
       "put": {
-        "operationId": "put__admin_items_id",
+        "operationId": "put__workspace_items_id",
         "summary": "编辑资料但不覆盖已审核公开快照",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -3222,19 +4470,20 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/items/{id}/publish": {
+    "/workspace/items/{id}/publish": {
       "post": {
-        "operationId": "post__admin_items_id_publish",
+        "operationId": "post__workspace_items_id_publish",
         "summary": "Publish with optimistic revision",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -3287,19 +4536,20 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/items/{id}/unpublish": {
+    "/workspace/items/{id}/unpublish": {
       "post": {
-        "operationId": "post__admin_items_id_unpublish",
+        "operationId": "post__workspace_items_id_unpublish",
         "summary": "Unpublish with optimistic revision",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -3352,13 +4602,14 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
     "/auth/login": {
       "post": {
         "operationId": "post__auth_login",
-        "summary": "使用管理员邮箱和密码建立浏览器会话",
+        "summary": "使用邮箱和密码统一建立浏览器会话",
         "security": [],
         "responses": {
           "200": {
@@ -3369,7 +4620,12 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "object"
+                      "type": "object",
+                      "properties": {
+                        "authenticated": { "type": "boolean" },
+                        "role": { "type": "string", "enum": ["admin", "user"] }
+                      },
+                      "required": ["authenticated", "role"]
                     }
                   },
                   "required": [
@@ -3403,7 +4659,7 @@
             }
           }
         },
-        "description": "Only a startup-configured system administrator can sign in. No HTTP registration or bootstrap endpoint. 4096-byte JSON body limit; 10 attempts/minute per socket IP; at most two concurrent password hashes."
+        "description": "Unified browser login for the configured system administrator and enabled users. Response data.role is admin or user; the server verifies the corresponding credentials and issues the appropriate session cookie. Existing same-email accounts are never automatically merged or promoted. No public registration. 4096-byte JSON body limit; 10 attempts/minute per socket IP; at most two concurrent password hashes."
       }
     },
     "/auth/session": {
@@ -3500,16 +4756,13 @@
         "summary": "读取获准访问的媒体，支持 HTTP Range；私有草稿只对管理员开放",
         "security": [
           {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          },
+          {
             "ClientKey": []
-          },
-          {
-            "ReadKey": []
-          },
-          {
-            "AdminKey": []
-          },
-          {
-            "AdminSession": []
           }
         ],
         "responses": {
@@ -3596,16 +4849,16 @@
         "description": " 受管客户端 Key 需要 read 权限，仅返回已发布内容；不获得管理权限。"
       }
     },
-    "/admin/workspace": {
+    "/workspace/workspace": {
       "get": {
-        "operationId": "get__admin_workspace",
+        "operationId": "get__workspace_workspace",
         "summary": "工作空间统计、来源、合集、计划、设置及最近资料",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -3637,19 +4890,20 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/settings": {
+    "/workspace/settings": {
       "put": {
-        "operationId": "put__admin_settings",
+        "operationId": "put__workspace_settings",
         "summary": "按修订号保存空间设置",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -3691,19 +4945,20 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/items/{id}/submit": {
+    "/workspace/items/{id}/submit": {
       "post": {
-        "operationId": "post__admin_items_id_submit",
+        "operationId": "post__workspace_items_id_submit",
         "summary": "将草稿提交审核",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -3756,19 +5011,20 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/items/{id}/delete": {
+    "/workspace/items/{id}/delete": {
       "post": {
-        "operationId": "post__admin_items_id_delete",
+        "operationId": "post__workspace_items_id_delete",
         "summary": "软删除并写入公开内容删除事件，保留附件备份",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -3821,19 +5077,20 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/uploads": {
+    "/workspace/uploads": {
       "post": {
-        "operationId": "post__admin_uploads",
+        "operationId": "post__workspace_uploads",
         "summary": "multipart 文件落盘与资料入库（同一存储事务登记资产和资料）",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -3899,7 +5156,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
     "/ingest/{id}/status": {
@@ -4086,16 +5344,16 @@
         "description": " 只允许使用对应客户端自身 Key；在业务事务内验证启用状态和权限。"
       }
     },
-    "/admin/clients": {
+    "/workspace/clients": {
       "get": {
-        "operationId": "get__admin_clients",
+        "operationId": "get__workspace_clients",
         "summary": "列出查询客户端，不返回 Key 或哈希",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -4131,17 +5389,18 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       },
       "post": {
-        "operationId": "post__admin_clients",
+        "operationId": "post__workspace_clients",
         "summary": "创建查询客户端并一次性返回 Key",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -4184,19 +5443,20 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/clients/{id}": {
+    "/workspace/clients/{id}": {
       "get": {
-        "operationId": "get__admin_clients_id",
+        "operationId": "get__workspace_clients_id",
         "summary": "读取查询客户端配置",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -4240,17 +5500,18 @@
               "format": "uuid"
             }
           }
-        ]
+        ],
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       },
       "put": {
-        "operationId": "put__admin_clients_id",
+        "operationId": "put__workspace_clients_id",
         "summary": "按 revision 更新查询客户端",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -4304,19 +5565,20 @@
               "format": "uuid"
             }
           }
-        ]
+        ],
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/clients/{id}/key": {
+    "/workspace/clients/{id}/key": {
       "post": {
-        "operationId": "post__admin_clients_id_key",
+        "operationId": "post__workspace_clients_id_key",
         "summary": "轮换查询 Key，旧 Key 立即失效",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -4370,19 +5632,20 @@
               "format": "uuid"
             }
           }
-        ]
+        ],
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/identity-migration": {
+    "/workspace/identity-migration": {
       "get": {
-        "operationId": "get__admin_identity-migration",
+        "operationId": "get__workspace_identity-migration",
         "summary": "只读预检旧来源的查询/混合身份",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -4415,17 +5678,18 @@
               }
             }
           }
-        }
+        },
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       },
       "post": {
-        "operationId": "post__admin_identity-migration",
+        "operationId": "post__workspace_identity-migration",
         "summary": "原子迁移旧身份，混合 Key 必须明确归属",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -4469,19 +5733,19 @@
             }
           }
         },
-        "description": "所有混合身份必须提供当前 revision 和 keep_key。未选择或修订冲突返回409；整批回滚。新 Key 仅本次返回，旧 Key 不复制给两个角色。资料、附件、external_id 和内容游标不变。"
+        "description": "所有混合身份必须提供当前 revision 和 keep_key。未选择或修订冲突返回409；整批回滚。新 Key 仅本次返回，旧 Key 不复制给两个角色。资料、附件、external_id 和内容游标不变。\nOnly the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/intakes": {
+    "/workspace/intakes": {
       "get": {
-        "operationId": "get__admin_intakes",
+        "operationId": "get__workspace_intakes",
         "summary": "分页读取已提交的入库回执，不包含正文或密钥",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -4547,7 +5811,8 @@
               "default": 0
             }
           }
-        ]
+        ],
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
     "/client/connection": {
@@ -4624,7 +5889,10 @@
         ],
         "security": [
           {
-            "ClientKey": []
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
           }
         ],
         "responses": {
@@ -4705,7 +5973,10 @@
         ],
         "security": [
           {
-            "ClientKey": []
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
           }
         ],
         "responses": {
@@ -4779,7 +6050,10 @@
         ],
         "security": [
           {
-            "ClientKey": []
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
           }
         ],
         "x-client-permissions": [
@@ -4892,7 +6166,10 @@
         ],
         "security": [
           {
-            "ClientKey": []
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
           }
         ],
         "responses": {
@@ -4959,7 +6236,7 @@
         ]
       }
     },
-    "/admin/clients/{id}/feedback": {
+    "/workspace/clients/{id}/feedback": {
       "get": {
         "summary": "Read own feedback state and counters",
         "tags": [
@@ -4967,10 +6244,10 @@
         ],
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -5046,10 +6323,12 @@
             },
             "description": ""
           }
-        ]
+        ],
+        "operationId": "get/workspace/clients/{id}/feedback",
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/clients/{id}/feedback/events": {
+    "/workspace/clients/{id}/feedback/events": {
       "get": {
         "summary": "Read own independent feedback event cursor",
         "tags": [
@@ -5057,10 +6336,10 @@
         ],
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -5128,10 +6407,12 @@
             },
             "description": ""
           }
-        ]
+        ],
+        "operationId": "get/workspace/clients/{id}/feedback/events",
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/clients/{id}/items": {
+    "/workspace/clients/{id}/items": {
       "get": {
         "summary": "Preview public candidates using the selected client feedback (no mutation)",
         "tags": [
@@ -5139,10 +6420,10 @@
         ],
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "responses": {
@@ -5292,19 +6573,21 @@
             },
             "description": "Include state for returned items; requires independent Client read Key."
           }
-        ]
+        ],
+        "operationId": "get/workspace/clients/{id}/items",
+        "description": "Only the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/roadmaps": {
+    "/workspace/roadmaps": {
       "get": {
         "operationId": "adminListRoadmaps",
         "summary": "查询学习路线图摘要",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "parameters": [
@@ -5368,17 +6651,17 @@
             }
           }
         },
-        "description": "仅管理员。路线图独立于公开资料、合集和个人学习进度；保存和删除使用 revision 检查，冲突返回 409。"
+        "description": "仅管理员。路线图独立于公开资料、合集和个人学习进度；保存和删除使用 revision 检查，冲突返回 409。\nOnly the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       },
       "post": {
         "operationId": "adminCreateRoadmap",
         "summary": "创建学习路线图",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "requestBody": {
@@ -5421,19 +6704,19 @@
             }
           }
         },
-        "description": "仅管理员。路线图独立于公开资料、合集和个人学习进度；保存和删除使用 revision 检查，冲突返回 409。"
+        "description": "仅管理员。路线图独立于公开资料、合集和个人学习进度；保存和删除使用 revision 检查，冲突返回 409。\nOnly the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/roadmaps/{id}": {
+    "/workspace/roadmaps/{id}": {
       "get": {
         "operationId": "adminGetRoadmap",
         "summary": "读取学习路线思维导图",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "parameters": [
@@ -5477,17 +6760,17 @@
             }
           }
         },
-        "description": "仅管理员。路线图独立于公开资料、合集和个人学习进度；保存和删除使用 revision 检查，冲突返回 409。"
+        "description": "仅管理员。路线图独立于公开资料、合集和个人学习进度；保存和删除使用 revision 检查，冲突返回 409。\nOnly the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       },
       "put": {
         "operationId": "adminUpdateRoadmap",
         "summary": "按最新版本整体保存学习路线图",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "parameters": [
@@ -5541,19 +6824,19 @@
             }
           }
         },
-        "description": "仅管理员。路线图独立于公开资料、合集和个人学习进度；保存和删除使用 revision 检查，冲突返回 409。"
+        "description": "仅管理员。路线图独立于公开资料、合集和个人学习进度；保存和删除使用 revision 检查，冲突返回 409。\nOnly the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
       }
     },
-    "/admin/roadmaps/{id}/delete": {
+    "/workspace/roadmaps/{id}/delete": {
       "post": {
         "operationId": "adminDeleteRoadmap",
         "summary": "删除路线图，不删除关联资料",
         "security": [
           {
-            "AdminKey": []
+            "UserBearer": []
           },
           {
-            "AdminSession": []
+            "UserSession": []
           }
         ],
         "parameters": [
@@ -5607,21 +6890,379 @@
             }
           }
         },
-        "description": "仅管理员。路线图独立于公开资料、合集和个人学习进度；保存和删除使用 revision 检查，冲突返回 409。"
+        "description": "仅管理员。路线图独立于公开资料、合集和个人学习进度；保存和删除使用 revision 检查，冲突返回 409。\nOnly the authenticated user owns this workspace. An administrator's personal session accesses only their own workspace; an administrator API key does not grant workspace access."
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "operationId": "get_admin_users",
+        "summary": "List user accounts only",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success; data envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/User"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "invalid_request / unauthorized / user_login_required / identity_changed / conflict / login_rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_admin_users",
+        "summary": "Create a non-administrator user",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success; data envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "invalid_request / unauthorized / user_login_required / identity_changed / conflict / login_rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{id}": {
+      "put": {
+        "operationId": "put_admin_users_id",
+        "summary": "Update user, disable or reset password; invalidate sessions",
+        "security": [
+          {
+            "AdminKey": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success; data envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "invalid_request / unauthorized / user_login_required / identity_changed / conflict / login_rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserUpdate"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/user/auth/login": {
+      "post": {
+        "operationId": "post_user_auth_login",
+        "summary": "User email/password login",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success; data envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "invalid_request / unauthorized / user_login_required / identity_changed / conflict / login_rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserLogin"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user/auth/session": {
+      "get": {
+        "operationId": "get_user_auth_session",
+        "summary": "Current learner identity",
+        "security": [
+          {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success; data envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "invalid_request / unauthorized / user_login_required / identity_changed / conflict / login_rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user/auth/logout": {
+      "post": {
+        "operationId": "post_user_auth_logout",
+        "summary": "Revoke the current user session",
+        "security": [
+          {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success; data envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "invalid_request / unauthorized / user_login_required / identity_changed / conflict / login_rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user/auth/password": {
+      "post": {
+        "operationId": "post_user_auth_password",
+        "summary": "Change own password and revoke all user sessions",
+        "security": [
+          {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success; data envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "invalid_request / unauthorized / user_login_required / identity_changed / conflict / login_rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPasswordChange"
+              }
+            }
+          }
+        }
       }
     }
   },
   "components": {
     "securitySchemes": {
+      "AgentBearer": {
+            "type": "http",
+            "scheme": "bearer",
+            "description": "采集端专属密钥（wzag_...）。仅可领取任务、上报进度和写入任务绑定的来源，不能查询资料库。"
+      },
       "AdminKey": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Administrator API automation credential. Cannot be used as a browser login password."
+        "description": "System account management only. No content, ingestion, media or learning-data privileges."
       },
       "ReadKey": {
         "type": "http",
         "scheme": "bearer",
-        "description": "旧版全局 READ_API_KEY 兼容凭据；新接入使用独立 ClientKey。"
+        "description": "Legacy global key; no implicit workspace. Not accepted for business-data access."
       },
       "SourceKey": {
         "type": "http",
@@ -5637,10 +7278,702 @@
       "ClientKey": {
         "type": "http",
         "scheme": "bearer",
-        "description": "独立查询客户端 Key（新建为 wzck_），只允许 read/sync，不可入库、上传或访问管理接口。"
+        "description": "User-owned application key. Read/sync only within its owner workspace; cannot act as a learner."
+      },
+      "UserBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Learning user session from /user/auth/login with session_mode=token (wzus_). Own workspace only; not an administrator key."
+      },
+      "UserSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "wzstudy_user",
+        "description": "HttpOnly, SameSite=Strict, 8 hour user session. Cookie writes require this server origin."
       }
     },
     "schemas": {
+      "Agent": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                  "id": {
+                        "type": "string",
+                        "format": "uuid"
+                  },
+                  "slug": {
+                        "type": "string"
+                  },
+                  "name": {
+                        "type": "string"
+                  },
+                  "description": {
+                        "type": "string"
+                  },
+                  "enabled": {
+                        "type": "boolean"
+                  },
+                  "permissions": {
+                        "type": "array",
+                        "items": {
+                              "type": "string",
+                              "enum": [
+                                    "task.claim",
+                                    "ingest"
+                              ]
+                        }
+                  },
+                  "revision": {
+                        "type": "integer",
+                        "minimum": 1
+                  },
+                  "last_seen_at": {
+                        "type": "string",
+                        "format": "date-time"
+                  },
+                  "version": {
+                        "type": "string"
+                  },
+                  "hostname": {
+                        "type": "string"
+                  },
+                  "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                  },
+                  "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                  }
+            },
+            "required": [
+                  "id",
+                  "slug",
+                  "name",
+                  "description",
+                  "enabled",
+                  "permissions",
+                  "revision",
+                  "created_at",
+                  "updated_at"
+            ]
+      },
+      "AgentInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                  "slug": {
+                        "type": "string"
+                  },
+                  "name": {
+                        "type": "string"
+                  },
+                  "description": {
+                        "type": "string"
+                  },
+                  "enabled": {
+                        "type": "boolean"
+                  },
+                  "permissions": {
+                        "type": "array",
+                        "items": {
+                              "type": "string",
+                              "enum": [
+                                    "task.claim",
+                                    "ingest"
+                              ]
+                        }
+                  }
+            },
+            "required": [
+                  "slug",
+                  "name",
+                  "description"
+            ]
+      },
+      "AgentUpdate": {
+            "allOf": [
+                  {
+                        "$ref": "#/components/schemas/AgentInput"
+                  },
+                  {
+                        "type": "object",
+                        "properties": {
+                              "revision": {
+                                    "type": "integer",
+                                    "minimum": 1
+                              }
+                        },
+                        "required": [
+                              "revision"
+                        ]
+                  }
+            ]
+      },
+      "AgentKey": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                  "agent": {
+                        "$ref": "#/components/schemas/Agent"
+                  },
+                  "access_key": {
+                        "type": "string",
+                        "writeOnly": true
+                  }
+            },
+            "required": [
+                  "agent",
+                  "access_key"
+            ]
+      },
+      "AgentStatus": {
+            "type": "object",
+            "properties": {
+                  "agent": {
+                        "$ref": "#/components/schemas/Agent"
+                  },
+                  "server_time": {
+                        "type": "string",
+                        "format": "date-time"
+                  },
+                  "lease_seconds": {
+                        "type": "integer"
+                  }
+            }
+      },
+      "AgentAdminStatus": {
+            "type": "object",
+            "properties": {
+                  "enabled": {
+                        "type": "boolean"
+                  },
+                  "lease_seconds": {
+                        "type": "integer"
+                  },
+                  "tasks": {
+                        "type": "object",
+                        "additionalProperties": {
+                              "type": "integer"
+                        }
+                  },
+                  "agents": {
+                        "type": "array",
+                        "items": {
+                              "$ref": "#/components/schemas/Agent"
+                        }
+                  }
+            }
+      },
+      "TaskConstraints": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                  "max_items": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                  },
+                  "language": {
+                        "type": "string",
+                        "maxLength": 35
+                  },
+                  "category": {
+                        "type": "string",
+                        "maxLength": 200
+                  },
+                  "tags": {
+                        "type": "array",
+                        "items": {
+                              "type": "string"
+                        },
+                        "maxItems": 20
+                  },
+                  "allow_domains": {
+                        "type": "array",
+                        "items": {
+                              "type": "string"
+                        },
+                        "maxItems": 20
+                  }
+            }
+      },
+      "TaskBudget": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                  "max_rounds": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 32
+                  },
+                  "max_tool_calls": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 128
+                  },
+                  "timeout_seconds": {
+                        "type": "integer",
+                        "minimum": 30
+                  }
+            }
+      },
+      "TaskStats": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                  "items_created": {
+                        "type": "integer"
+                  },
+                  "items_updated": {
+                        "type": "integer"
+                  },
+                  "items_unchanged": {
+                        "type": "integer"
+                  },
+                  "rounds": {
+                        "type": "integer"
+                  },
+                  "tool_calls": {
+                        "type": "integer"
+                  },
+                  "duration_ms": {
+                        "type": "integer",
+                        "format": "int64"
+                  }
+            }
+      },
+      "TaskError": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                  "code": {
+                        "type": "string"
+                  },
+                  "message": {
+                        "type": "string"
+                  }
+            }
+      },
+      "CollectionTask": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                  "id": {
+                        "type": "string",
+                        "format": "uuid"
+                  },
+                  "source_id": {
+                        "type": "string",
+                        "format": "uuid"
+                  },
+                  "title": {
+                        "type": "string"
+                  },
+                  "goal": {
+                        "type": "string"
+                  },
+                  "constraints": {
+                        "$ref": "#/components/schemas/TaskConstraints"
+                  },
+                  "budget": {
+                        "$ref": "#/components/schemas/TaskBudget"
+                  },
+                  "status": {
+                        "type": "string",
+                        "enum": [
+                              "pending",
+                              "claimed",
+                              "running",
+                              "succeeded",
+                              "failed",
+                              "cancelled",
+                              "expired"
+                        ]
+                  },
+                  "priority": {
+                        "type": "integer"
+                  },
+                  "attempts": {
+                        "type": "integer"
+                  },
+                  "max_attempts": {
+                        "type": "integer"
+                  },
+                  "agent_id": {
+                        "type": "string"
+                  },
+                  "assigned_agent_id": {
+                        "type": "string"
+                  },
+                  "lease_expires_at": {
+                        "type": "string",
+                        "format": "date-time"
+                  },
+                  "deadline": {
+                        "type": "string",
+                        "format": "date-time"
+                  },
+                  "cancel_requested": {
+                        "type": "boolean"
+                  },
+                  "cancel_reason": {
+                        "type": "string"
+                  },
+                  "stats": {
+                        "$ref": "#/components/schemas/TaskStats"
+                  },
+                  "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                  },
+                  "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                  },
+                  "finished_at": {
+                        "type": "string",
+                        "format": "date-time"
+                  }
+            },
+            "required": [
+                  "id",
+                  "source_id",
+                  "title",
+                  "goal",
+                  "constraints",
+                  "budget",
+                  "status",
+                  "attempts",
+                  "max_attempts",
+                  "created_at",
+                  "updated_at"
+            ]
+      },
+      "CollectionTaskInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                  "source_id": {
+                        "type": "string",
+                        "format": "uuid"
+                  },
+                  "title": {
+                        "type": "string",
+                        "maxLength": 200
+                  },
+                  "goal": {
+                        "type": "string",
+                        "maxLength": 4000
+                  },
+                  "constraints": {
+                        "$ref": "#/components/schemas/TaskConstraints"
+                  },
+                  "budget": {
+                        "$ref": "#/components/schemas/TaskBudget"
+                  },
+                  "priority": {
+                        "type": "integer",
+                        "minimum": -10,
+                        "maximum": 10
+                  },
+                  "max_attempts": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10
+                  },
+                  "assigned_agent_id": {
+                        "type": "string",
+                        "format": "uuid"
+                  }
+            },
+            "required": [
+                  "source_id",
+                  "goal"
+            ]
+      },
+      "CollectionTaskPage": {
+            "type": "object",
+            "properties": {
+                  "tasks": {
+                        "type": "array",
+                        "items": {
+                              "$ref": "#/components/schemas/CollectionTask"
+                        }
+                  },
+                  "total": {
+                        "type": "integer"
+                  },
+                  "limit": {
+                        "type": "integer"
+                  },
+                  "offset": {
+                        "type": "integer"
+                  }
+            },
+            "required": [
+                  "tasks",
+                  "total",
+                  "limit",
+                  "offset"
+            ]
+      },
+      "ClaimInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                  "capacity": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4
+                  },
+                  "wait_seconds": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 25
+                  },
+                  "version": {
+                        "type": "string",
+                        "maxLength": 64
+                  },
+                  "hostname": {
+                        "type": "string",
+                        "maxLength": 200
+                  }
+            }
+      },
+      "ClaimResult": {
+            "type": "object",
+            "properties": {
+                  "task": {
+                        "$ref": "#/components/schemas/CollectionTask"
+                  }
+            },
+            "required": [
+                  "task"
+            ]
+      },
+      "HeartbeatResult": {
+            "type": "object",
+            "properties": {
+                  "lease_expires_at": {
+                        "type": "string",
+                        "format": "date-time"
+                  },
+                  "cancel_requested": {
+                        "type": "boolean"
+                  },
+                  "cancel_reason": {
+                        "type": "string"
+                  },
+                  "status": {
+                        "type": "string"
+                  }
+            },
+            "required": [
+                  "cancel_requested",
+                  "status"
+            ]
+      },
+      "AgentEventInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                  "seq": {
+                        "type": "integer",
+                        "minimum": 1
+                  },
+                  "kind": {
+                        "type": "string",
+                        "enum": [
+                              "round_start",
+                              "assistant",
+                              "tool_call",
+                              "tool_result",
+                              "notice",
+                              "finish"
+                        ]
+                  },
+                  "text": {
+                        "type": "string"
+                  },
+                  "tool": {
+                        "type": "string"
+                  },
+                  "summary": {
+                        "type": "string"
+                  },
+                  "at": {
+                        "type": "string",
+                        "format": "date-time"
+                  }
+            },
+            "required": [
+                  "seq",
+                  "kind"
+            ]
+      },
+      "EventsInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                  "attempt": {
+                        "type": "integer",
+                        "minimum": 1
+                  },
+                  "events": {
+                        "type": "array",
+                        "maxItems": 200,
+                        "items": {
+                              "$ref": "#/components/schemas/AgentEventInput"
+                        }
+                  }
+            },
+            "required": [
+                  "attempt",
+                  "events"
+            ]
+      },
+      "EventsAck": {
+            "type": "object",
+            "properties": {
+                  "accepted": {
+                        "type": "integer"
+                  },
+                  "highest_seq": {
+                        "type": "integer"
+                  }
+            },
+            "required": [
+                  "accepted",
+                  "highest_seq"
+            ]
+      },
+      "AgentEvent": {
+            "type": "object",
+            "properties": {
+                  "task_id": {
+                        "type": "string",
+                        "format": "uuid"
+                  },
+                  "attempt": {
+                        "type": "integer"
+                  },
+                  "seq": {
+                        "type": "integer"
+                  },
+                  "kind": {
+                        "type": "string"
+                  },
+                  "text": {
+                        "type": "string"
+                  },
+                  "tool": {
+                        "type": "string"
+                  },
+                  "summary": {
+                        "type": "string"
+                  },
+                  "at": {
+                        "type": "string",
+                        "format": "date-time"
+                  }
+            }
+      },
+      "ItemsInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                  "attempt": {
+                        "type": "integer",
+                        "minimum": 1
+                  },
+                  "items": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 20,
+                        "items": {
+                              "$ref": "#/components/schemas/Content"
+                        }
+                  }
+            },
+            "required": [
+                  "attempt",
+                  "items"
+            ]
+      },
+      "CompleteInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                  "attempt": {
+                        "type": "integer",
+                        "minimum": 1
+                  },
+                  "status": {
+                        "type": "string",
+                        "enum": [
+                              "succeeded",
+                              "failed",
+                              "cancelled"
+                        ]
+                  },
+                  "summary": {
+                        "type": "string",
+                        "maxLength": 8000
+                  },
+                  "stats": {
+                        "$ref": "#/components/schemas/TaskStats"
+                  },
+                  "error": {
+                        "$ref": "#/components/schemas/TaskError"
+                  }
+            },
+            "required": [
+                  "attempt",
+                  "status"
+            ]
+      },
+      "ReleaseInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                  "attempt": {
+                        "type": "integer",
+                        "minimum": 1
+                  },
+                  "reason": {
+                        "type": "string",
+                        "maxLength": 500
+                  }
+            },
+            "required": [
+                  "attempt"
+            ]
+      },
+      "CancelInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                  "reason": {
+                        "type": "string",
+                        "maxLength": 500
+                  }
+            }
+      },
+      "RevisionInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                  "revision": {
+                        "type": "integer",
+                        "minimum": 1
+                  }
+            },
+            "required": [
+                  "revision"
+            ]
+      },
       "RecommendationPage": {
         "type": "object",
         "properties": {
@@ -5738,7 +8071,8 @@
           },
           "client_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Historical field name. With user authentication this is the current user ID, not an application Client ID; never accepted as an ownership selector."
           },
           "title": {
             "type": "string"
@@ -5806,7 +8140,8 @@
           },
           "client_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Historical field name. With user authentication this is the current user ID, not an application Client ID; never accepted as an ownership selector."
           },
           "title": {
             "type": "string"
@@ -5856,7 +8191,8 @@
         "properties": {
           "client_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Historical field name. With user authentication this is the current user ID, not an application Client ID; never accepted as an ownership selector."
           },
           "items": {
             "type": "array",
@@ -5914,11 +8250,13 @@
             "const": "wzstudy.learning"
           },
           "version": {
-            "const": 1
+            "type": "integer",
+            "const": 2
           },
           "client_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Historical field name. With user authentication this is the current user ID, not an application Client ID; never accepted as an ownership selector."
           },
           "read": {
             "type": "boolean"
@@ -5934,6 +8272,14 @@
           },
           "max_events": {
             "type": "integer"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "identity": {
+            "type": "string",
+            "const": "user"
           }
         },
         "required": [
@@ -6025,6 +8371,11 @@
             "type": "integer",
             "minimum": 0
           },
+          "draft_revision": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Optional for record_create: atomically clear a matching private draft."
+          },
           "record_id": {
             "type": "string",
             "format": "uuid"
@@ -6065,33 +8416,225 @@
         "description": "Action-specific fields are validated by the service; retries must reuse the same event ID and payload."
       },
       "LearningDraft": {
-        "type":"object", "required":["client_id","item_id","text","revision","updated_at","last_event_id","deleted"],
-        "properties":{"client_id":{"type":"string","format":"uuid"},"item_id":{"type":"string","format":"uuid"},
-          "parent_id":{"type":"string","format":"uuid"},"text":{"type":"string","maxLength":300},
-          "position":{"$ref":"#/components/schemas/LearningPosition"},"revision":{"type":"integer","minimum":1},
-          "updated_at":{"type":"string","format":"date-time"},"last_event_id":{"type":"string","format":"uuid"},"deleted":{"type":"boolean"}}
+        "type": "object",
+        "required": [
+          "client_id",
+          "item_id",
+          "text",
+          "revision",
+          "updated_at",
+          "last_event_id",
+          "deleted"
+        ],
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Historical field name. With user authentication this is the current user ID, not an application Client ID; never accepted as an ownership selector."
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parent_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "position": {
+            "$ref": "#/components/schemas/LearningPosition"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deleted": {
+            "type": "boolean"
+          }
+        }
+      },
+      "LearningDraftHistory": {
+        "type": "object",
+        "required": [
+          "client_id",
+          "item_id",
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Historical field name. With user authentication this is the current user ID, not an application Client ID; never accepted as an ownership selector."
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parent_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LearningDraft"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
       },
       "LearningDraftRead": {
-        "type":"object","required":["client_id","item_id","draft"],
-        "properties":{"client_id":{"type":"string","format":"uuid"},"item_id":{"type":"string","format":"uuid"},
-          "parent_id":{"type":"string","format":"uuid"},"draft":{"nullable":true,"allOf":[{"$ref":"#/components/schemas/LearningDraft"}]}}
+        "type": "object",
+        "required": [
+          "client_id",
+          "item_id",
+          "draft"
+        ],
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Historical field name. With user authentication this is the current user ID, not an application Client ID; never accepted as an ownership selector."
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parent_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "draft": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LearningDraft"
+              }
+            ]
+          }
+        }
       },
       "LearningDraftAck": {
-        "type":"object","required":["event_id","duplicate","draft"],
-        "properties":{"event_id":{"type":"string","format":"uuid"},"duplicate":{"type":"boolean"},"draft":{"$ref":"#/components/schemas/LearningDraft"}}
+        "type": "object",
+        "required": [
+          "event_id",
+          "duplicate",
+          "draft"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "duplicate": {
+            "type": "boolean"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/LearningDraft"
+          }
+        }
       },
       "LearningDraftCommand": {
-        "type":"object","additionalProperties":false,"required":["event_id","item_id","text","expected_revision"],
-        "properties":{"event_id":{"type":"string","format":"uuid"},"item_id":{"type":"string","format":"uuid"},
-          "parent_id":{"type":"string","format":"uuid"},"text":{"type":"string","maxLength":300},
-          "position":{"$ref":"#/components/schemas/LearningPosition"},"expected_revision":{"type":"integer","minimum":0}}
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_id",
+          "item_id",
+          "text",
+          "expected_revision"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parent_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "position": {
+            "$ref": "#/components/schemas/LearningPosition"
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
       },
       "LegacyDraftInput": {
-        "type":"object","additionalProperties":false,"required":["event_id","item_id","text","item_revision","updated_at"],
-        "properties":{"event_id":{"type":"string","format":"uuid"},"item_id":{"type":"string","format":"uuid"},
-          "parent_id":{"type":"string","format":"uuid"},"text":{"type":"string","minLength":1,"maxLength":300},
-          "position":{"$ref":"#/components/schemas/LearningPosition"},"item_revision":{"type":"integer","minimum":1},
-          "updated_at":{"type":"string","format":"date-time"}}
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_id",
+          "item_id",
+          "text",
+          "item_revision",
+          "updated_at"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parent_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "position": {
+            "$ref": "#/components/schemas/LearningPosition"
+          },
+          "item_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       },
       "LearningProgress": {
         "type": "object",
@@ -6123,7 +8666,8 @@
         "properties": {
           "client_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Historical field name. With user authentication this is the current user ID, not an application Client ID; never accepted as an ownership selector."
           },
           "item_id": {
             "type": "string",
@@ -6194,7 +8738,8 @@
           },
           "client_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Historical field name. With user authentication this is the current user ID, not an application Client ID; never accepted as an ownership selector."
           },
           "item_id": {
             "type": "string",
@@ -6299,6 +8844,11 @@
             "type": "integer",
             "minimum": 0
           },
+          "draft_revision": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Optional for record_create: atomically clear a matching private draft."
+          },
           "record_id": {
             "type": "string",
             "format": "uuid"
@@ -6332,7 +8882,8 @@
           },
           "client_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Historical field name. With user authentication this is the current user ID, not an application Client ID; never accepted as an ownership selector."
           },
           "sequence": {
             "type": "integer"
@@ -6406,7 +8957,8 @@
         "properties": {
           "client_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Historical field name. With user authentication this is the current user ID, not an application Client ID; never accepted as an ownership selector."
           },
           "items": {
             "type": "array",
@@ -6877,7 +9429,7 @@
           "integration": {
             "type": "string",
             "enum": [
-              "",
+              "", "agent",
               "collector",
               "skill",
               "mcp",
@@ -6963,7 +9515,7 @@
           "integration": {
             "type": "string",
             "enum": [
-              "",
+              "", "agent",
               "collector",
               "skill",
               "mcp",
@@ -7082,7 +9634,7 @@
           "integration": {
             "type": "string",
             "enum": [
-              "",
+              "", "agent",
               "collector",
               "skill",
               "mcp",
@@ -7094,6 +9646,12 @@
             "type": "string",
             "format": "uuid",
             "readOnly": true
+          },
+          "owner_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true,
+            "description": "Server-assigned workspace owner. Never accepted in input."
           }
         },
         "required": [
@@ -7324,6 +9882,12 @@
             "items": {
               "$ref": "#/components/schemas/AuditEvent"
             }
+          },
+          "owner_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true,
+            "description": "Server-assigned workspace owner. Never accepted in input."
           }
         },
         "required": [
@@ -8012,6 +10576,12 @@
           "legacy_source_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "owner_id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true,
+            "description": "Server-assigned workspace owner. Never accepted in input."
           }
         },
         "required": [
@@ -8478,7 +11048,8 @@
           },
           "client_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Historical field name. With user authentication this is the current user ID, not an application Client ID; never accepted as an ownership selector."
           },
           "sequence": {
             "type": "integer",
@@ -8551,7 +11122,8 @@
         "properties": {
           "client_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Historical field name. With user authentication this is the current user ID, not an application Client ID; never accepted as an ownership selector."
           },
           "item_id": {
             "type": "string",
@@ -8633,7 +11205,8 @@
         "properties": {
           "client_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Historical field name. With user authentication this is the current user ID, not an application Client ID; never accepted as an ownership selector."
           },
           "items": {
             "type": "array",
@@ -8733,7 +11306,8 @@
           },
           "client_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Historical field name. With user authentication this is the current user ID, not an application Client ID; never accepted as an ownership selector."
           }
         },
         "required": [
@@ -8966,6 +11540,147 @@
         "required": [
           "deleted"
         ]
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "display_name",
+          "enabled",
+          "revision",
+          "created_at",
+          "updated_at"
+        ],
+        "additionalProperties": false
+      },
+      "UserInput": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "display_name": {
+            "type": "string",
+            "description": "1-120 UTF-8 bytes"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "password": {
+            "type": "string",
+            "writeOnly": true,
+            "description": "8-128 UTF-8 bytes; required on create, omit on update to keep current password"
+          }
+        },
+        "required": [
+          "email",
+          "display_name"
+        ],
+        "additionalProperties": false
+      },
+      "UserUpdate": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "display_name": {
+            "type": "string",
+            "description": "1-120 UTF-8 bytes"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "password": {
+            "type": "string",
+            "writeOnly": true,
+            "description": "8-128 UTF-8 bytes; required on create, omit on update to keep current password"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "email",
+          "display_name",
+          "revision"
+        ],
+        "additionalProperties": false
+      },
+      "UserLogin": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "session_mode": {
+            "type": "string",
+            "enum": [
+              "browser",
+              "token"
+            ],
+            "default": "browser"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "additionalProperties": false
+      },
+      "UserPasswordChange": {
+        "type": "object",
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "password": {
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "current_password",
+          "password"
+        ],
+        "additionalProperties": false
       }
     }
   }

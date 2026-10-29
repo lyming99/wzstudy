@@ -59,7 +59,7 @@ func (s *Server) importLegacyFeedback(w http.ResponseWriter, r *http.Request) {
 
 func feedbackPageArgs(r *http.Request) (ids []string, limit, offset int, err error) {
 	q := r.URL.Query()
-	if q.Has("client_id") {
+	if q.Has("client_id") || q.Has("user_id") {
 		return nil, 0, 0, study.ErrInvalid
 	}
 	limit, err = parseInt(q.Get("limit"), 20)
@@ -111,7 +111,7 @@ func (s *Server) adminClientFeedbackEvents(w http.ResponseWriter, r *http.Reques
 }
 func (s *Server) feedbackEvents(w http.ResponseWriter, r *http.Request, id string) {
 	q := r.URL.Query()
-	if q.Has("client_id") {
+	if q.Has("client_id") || q.Has("user_id") {
 		s.fail(w, study.ErrInvalid)
 		return
 	}
@@ -140,7 +140,7 @@ func (s *Server) feedbackEvents(w http.ResponseWriter, r *http.Request, id strin
 func feedbackQueryArgs(r *http.Request) (exclude []string, since *time.Time, include, used bool, err error) {
 	q := r.URL.Query()
 	exclude = []string{}
-	if q.Has("client_id") {
+	if q.Has("client_id") || q.Has("user_id") {
 		err = study.ErrInvalid
 		return
 	}
@@ -197,6 +197,13 @@ func containsString(values []string, value string) bool {
 	return false
 }
 func (s *Server) clientCandidateItems(w http.ResponseWriter, r *http.Request, id string) {
+	if id == "" {
+		r = userCredentialRequest(r)
+		if _, err := s.service.UserForSession(r.Context(), bearer(r)); err != nil {
+			failure(w, 401, "user_login_required", "个性化查询需要学习用户登录")
+			return
+		}
+	}
 	f, e := filter(r, false)
 	if e != nil {
 		s.fail(w, e)

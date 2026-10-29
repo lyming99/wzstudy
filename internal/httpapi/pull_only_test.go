@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -13,12 +12,12 @@ func TestRetiredPushRoutesAndUIAreRemoved(t *testing.T) {
 	_, h, _ := managementApp(t, 1<<20)
 	client, key := managedClient(t, h, "learning-client", []string{"read", "sync"})
 	for _, tc := range []struct{ method, path string }{
-		{http.MethodPost, "/api/v1/admin/plans"},
-		{http.MethodPost, "/api/v1/admin/plans/old-plan/action"},
+		{http.MethodPost, "/api/v1/workspace/plans"},
+		{http.MethodPost, "/api/v1/workspace/plans/old-plan/action"},
 		{http.MethodGet, "/api/v1/clients/" + client.ID + "/inbox"},
 		{http.MethodGet, "/api/v1/stream"},
 	} {
-		if out := request(t, h, tc.method, tc.path, adminKey, map[string]any{}); out.Code != http.StatusNotFound {
+		if out := request(t, h, tc.method, tc.path, workspaceKey, map[string]any{}); out.Code != http.StatusNotFound {
 			t.Fatalf("retired endpoint remains available: %s %s: %d", tc.method, tc.path, out.Code)
 		}
 	}
@@ -27,11 +26,11 @@ func TestRetiredPushRoutesAndUIAreRemoved(t *testing.T) {
 			t.Fatalf("client can still reach %s: %d", path, out.Code)
 		}
 	}
-	workspace := request(t, h, http.MethodGet, "/api/v1/admin/workspace", adminKey, nil)
+	workspace := request(t, h, http.MethodGet, "/api/v1/workspace/workspace", workspaceKey, nil)
 	if workspace.Code != http.StatusOK || strings.Contains(workspace.Body.String(), `"plans"`) {
 		t.Fatal("workspace still depends on push plans", workspace.Body.String())
 	}
-	for _, path := range []string{"/admin/", "/admin/app.js"} {
+	for _, path := range []string{"/workspace/", "/workspace/app.js"} {
 		out := request(t, h, http.MethodGet, path, "", nil)
 		if out.Code != http.StatusOK {
 			t.Fatal(path, out.Code)
@@ -43,7 +42,7 @@ func TestRetiredPushRoutesAndUIAreRemoved(t *testing.T) {
 		}
 	}
 	for _, permissions := range [][]string{{"inbox"}, {"read", "inbox"}} {
-		if out := request(t, h, http.MethodPost, "/api/v1/admin/sources", adminKey, map[string]any{"slug": "retired", "name": "retired", "kind": "manual", "permissions": permissions}); out.Code != http.StatusBadRequest {
+		if out := request(t, h, http.MethodPost, "/api/v1/workspace/sources", workspaceKey, map[string]any{"slug": "retired", "name": "retired", "kind": "manual", "permissions": permissions}); out.Code != http.StatusBadRequest {
 			t.Fatal("retired permission accepted", out.Code)
 		}
 	}
@@ -52,7 +51,7 @@ func TestRetiredPushRoutesAndUIAreRemoved(t *testing.T) {
 func TestClientQueriesAndPollingUseOnlyPublishedSnapshots(t *testing.T) {
 	s, h, _ := managementApp(t, 1<<20)
 	_, key := managedClient(t, h, "learning-client", []string{"read", "sync"})
-	ctx := context.Background()
+	ctx := testWorkspaceContext()
 	item, err := s.SaveManaged(ctx, "", study.ManagedInput{Status: "pending", Content: study.Content{Kind: "article", Title: "Learning Go", Content: "approved lesson", Category: "编程", Tags: []string{"Go"}}}, nil)
 	if err != nil {
 		t.Fatal(err)

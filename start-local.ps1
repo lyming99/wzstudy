@@ -1,6 +1,11 @@
 [CmdletBinding()]
 param(
-    [string]$Address = '0.0.0.0:8091',
+    [ValidateRange(1, 65535)][int]$DatabasePort = 15432,
+    [ValidateRange(1, 65535)][int]$ApiPort = 8091,
+    [string]$AdministratorEmail = 'admin@wzstudy.local',
+    [ValidateRange(10, 600)][int]$StartupTimeoutSeconds = 120,
+    [string]$Address = '',
+    [switch]$Lan,
     [string]$DataDirectory = '',
     [string]$ProfileDirectory = '',
     [switch]$InitializeAdmin,
@@ -9,4 +14,5 @@ param(
     [switch]$Check
 )
 $ErrorActionPreference = 'Stop'
-& (Join-Path $PSScriptRoot 'scripts\start-local.ps1') @PSBoundParameters
+# All ordinary local starts use the same PostgreSQL-backed implementation.
+& (Join-Path $PSScriptRoot 'start-postgres-local.ps1') @PSBoundParameters

@@ -1,0 +1,31 @@
+/* Only a verified administrator session activates this view. The server also
+   independently authorizes every /admin/users request. */
+body:not(.role-admin) .admin-only { display: none !important; }
+body.identity-check .sidebar, body.identity-check .shell,
+body.identity-check #modal-root, body.identity-check #drawer-root,
+body.identity-check #context-root { visibility: hidden !important; }
+
+.admin-profile { display: flex; align-items: center; gap: 9px; padding-left: 17px; border-left: 1px solid #e6ebe7; }
+.admin-profile .avatar { width: 32px; height: 32px; background: #ebeee4; font-size: 10px; }
+.admin-profile strong { display: block; font-size: 10px; line-height: 1.4; font-weight: 550; }
+.admin-profile small { display: block; font-size: 8px; color: #a0a99f; line-height: 1.5; }
+.admin-users-panel { overflow: hidden; }
+.admin-users-panel-header { padding: 19px 22px; border-bottom: 1px solid var(--line); }
+.admin-users-panel-header h2 { font-size: 15px; }
+.admin-user-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 17px 22px; border-bottom: 1px solid var(--line); }
+.admin-user-row:last-child { border-bottom: 0; }
+.admin-user-details { min-width: 0; overflow-wrap: anywhere; }
+.admin-user-details strong { display: block; font-size: 13px; }
+.admin-user-details p { color: var(--muted); font-size: 11px; }
+.admin-user-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.admin-user-form-panel { margin-bottom: 20px; padding: 22px; }
+.admin-user-form-panel[hidden] { display: none; }
+.admin-user-form-panel h2 { margin-bottom: 16px; font-size: 15px; }
+.admin-user-form-panel .field { max-width: 520px; margin-bottom: 14px; }
+.admin-user-form-panel .form-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.admin-users-boundary { margin: 18px 0; }
+
+@media (max-width: 700px) {
+  .admin-user-row { align-items: flex-start; flex-direction: column; }
+  .admin-user-actions { width: 100%; }
+}

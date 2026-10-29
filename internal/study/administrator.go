@@ -3,6 +3,7 @@ package study
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -12,8 +13,9 @@ import (
 )
 
 var (
-	ErrAdminInitialization = errors.New("SYSTEM_ADMIN_EMAIL and SYSTEM_ADMIN_PASSWORD are required to initialize the first administrator; configure them locally or run start-local.ps1 -InitializeAdmin")
-	ErrAdminEmailMismatch  = errors.New("configured system administrator email does not match the stored administrator; existing account and password will not be replaced")
+	ErrAdminInitialization  = errors.New("SYSTEM_ADMIN_EMAIL and SYSTEM_ADMIN_PASSWORD are required to initialize the first administrator; configure them locally or use the PostgreSQL local launcher")
+	ErrAdminEmailMismatch   = errors.New("configured system administrator email does not match the stored administrator; existing account and password will not be replaced")
+	ErrAccountEmailConflict = fmt.Errorf("account email is already in use, including by the configured administrator: %w", ErrConflict)
 )
 
 // Administrator is the safe public identity. Password hashes never appear here.
@@ -32,9 +34,29 @@ type AdministratorSettings struct {
 
 // administratorRecord is used only inside private storage transactions.
 type administratorRecord struct {
-	Version      int           `json:"version"`
-	Profile      Administrator `json:"profile"`
-	PasswordHash string        `json:"password_hash"`
+	Version           int           `json:"version"`
+	Profile           Administrator `json:"profile"`
+	PasswordHash      string        `json:"password_hash"`
+	CredentialVersion int64         `json:"credential_version,omitempty"`
+	UpdatedAt         time.Time     `json:"updated_at,omitempty"`
+}
+
+// Old administrator records predate session credential versions. A missing
+// value represents version one and does not require rewriting existing data.
+func administratorCredentialVersion(v administratorRecord) int64 {
+	if v.CredentialVersion < 1 {
+		return 1
+	}
+	return v.CredentialVersion
+}
+
+func administratorUser(v administratorRecord) User {
+	updated := v.UpdatedAt
+	if updated.IsZero() {
+		updated = v.Profile.CreatedAt
+	}
+	return User{ID: v.Profile.ID, Email: v.Profile.Email, DisplayName: v.Profile.DisplayName,
+		Enabled: true, Revision: administratorCredentialVersion(v), CreatedAt: v.Profile.CreatedAt, UpdatedAt: updated}
 }
 
 const administratorKind = "system_administrator"
@@ -97,7 +119,8 @@ func (s *Service) EnsureAdministrator(ctx context.Context, in AdministratorSetti
 	if e != nil {
 		return out, false, e
 	}
-	next := administratorRecord{Version: 1, Profile: Administrator{ID: uuid.NewString(), Email: email, DisplayName: name, CreatedAt: s.Now().UTC()}, PasswordHash: hash}
+	now := s.Now().UTC()
+	next := administratorRecord{Version: 1, Profile: Administrator{ID: uuid.NewString(), Email: email, DisplayName: name, CreatedAt: now}, PasswordHash: hash, CredentialVersion: 1, UpdatedAt: now}
 	err = s.Store.Update(ctx, func(tx Tx) error {
 		old, e := readAdministrator(tx)
 		if e == nil {
@@ -109,6 +132,17 @@ func (s *Service) EnsureAdministrator(ctx context.Context, in AdministratorSetti
 		}
 		if !errors.Is(e, ErrNotFound) {
 			return e
+		}
+		// A shared login email must not identify two independently passworded
+		// accounts. Existing legacy conflicts are preserved, never auto-merged.
+		users, e := recordsAs[userRecord](tx, "learning_user")
+		if e != nil {
+			return e
+		}
+		for _, user := range users {
+			if user.Profile.Email == email {
+				return ErrAccountEmailConflict
+			}
 		}
 		if e = recordSave(tx, administratorKind, administratorID, next); e != nil {
 			return e

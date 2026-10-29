@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -11,7 +10,7 @@ import (
 
 func TestLegacyReviewImportHTTP(t *testing.T) {
 	service, h, _ := managementApp(t, 1<<20)
-	ctx := context.Background()
+	ctx := testWorkspaceContext()
 	item, err := service.SaveManaged(ctx, "", study.ManagedInput{Status: "pending", Content: study.Content{Title: "资料", Content: "正文"}}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -20,16 +19,16 @@ func TestLegacyReviewImportHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, key := managedClient(t, h, "migration-review", []string{"read", "feedback"})
+	_, key := workspaceLearner(t, h, "migration-review")
 	_, readKey := managedClient(t, h, "migration-review-read", nil)
-	_, other := managedClient(t, h, "migration-review-other", []string{"read", "feedback"})
+	_, other := managedLearner(t, h, "migration-review-other")
 	path := "/api/v1/client/learning/import-legacy-reviews"
 	entry := map[string]any{"event_id": uuid.NewString(), "item_id": item.ID, "item_revision": item.Published.Revision, "occurred_at": time.Now().UTC().Add(-time.Hour).Format(time.RFC3339Nano)}
 	body := map[string]any{"reviews": []any{entry}}
 	for _, tc := range []struct {
 		key  string
 		code int
-	}{{"", 401}, {adminKey, 401}, {readKey, 403}} {
+	}{{"", 401}, {adminKey, 401}, {readKey, 401}} {
 		if w := request(t, h, "POST", path, tc.key, body); w.Code != tc.code {
 			t.Fatal("authority", w.Code, tc.code)
 		}
@@ -49,7 +48,7 @@ func TestLegacyReviewImportHTTP(t *testing.T) {
 	if ack.Duplicates != 1 {
 		t.Fatal(ack)
 	}
-	data(t, request(t, h, "POST", path, other, body), &ack)
+	data(t, request(t, h, "POST", path, other, ownedPayload(t, h, other, item.ID, body)), &ack)
 	if ack.Accepted != 1 {
 		t.Fatal("client isolation", ack)
 	}

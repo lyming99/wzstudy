@@ -2,10 +2,10 @@
 
 ## 入口与边界
 
-在管理端左侧选择 **学习路线图**（`/admin/#roadmaps`）。这是独立于“数据管理 / 合集管理”的管理员编排模块，不是客户端私人学习进度。
+在管理端左侧选择 **学习路线图**（`/workspace/#roadmaps`）。这是独立于“数据管理 / 合集管理”的当前用户编排模块，不是客户端私人学习进度。
 
 - 路线图、节点说明、节点顺序、分支折叠状态和资料引用保存在服务端。
-- 仅管理员会话或管理 API Key 可以读写；录入端、只读 Key、查询客户端 Key 均不能访问。
+- 仅当前用户会话或管理 API Key 可以读写；录入端、只读 Key、查询客户端 Key 均不能访问。
 - 当前版本不提供客户端公开查询、发布、学习进度同步或路线图自动推荐；不会改变既有资料/合集公开游标。
 - 删除路线图、删除节点或移除关联，只改变路线图，不删除资料库内容。
 - 无第三方 CDN、外部脚本或新增前端运行依赖。
@@ -60,11 +60,11 @@
 基础路径 `/api/v1`，认证、Origin/CSRF 规则及错误封装与其他管理接口相同。
 
 ```text
-GET  /admin/roadmaps?q=<名称或简介关键词>&limit=20&offset=0
-POST /admin/roadmaps
-GET  /admin/roadmaps/{id}
-PUT  /admin/roadmaps/{id}
-POST /admin/roadmaps/{id}/delete
+GET  /workspace/roadmaps?q=<名称或简介关键词>&limit=20&offset=0
+POST /workspace/roadmaps
+GET  /workspace/roadmaps/{id}
+PUT  /workspace/roadmaps/{id}
+POST /workspace/roadmaps/{id}/delete
 ```
 
 创建请求（新建 `revision=0`；更新提交当前 revision）：

@@ -1,15 +1,15 @@
 package httpapi
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"net"
 	"net/http"
 	"strings"
 	"time"
 
+	"wzstudy/internal/auth"
 	"wzstudy/internal/buildinfo"
 	"wzstudy/internal/study"
 )
@@ -42,11 +42,54 @@ func (s *Server) sessionValid(r *http.Request) bool {
 }
 
 func (s *Server) isAdmin(r *http.Request) bool {
-	if key := bearer(r); key != "" {
-		// API credentials remain supported; they are NOT a browser-login password.
-		return study.EqualKey(study.HashKey(s.cfg.AdminKey), key)
+	var token string
+	if r.Header.Get("Authorization") != "" {
+		token = bearer(r)
+		// Explicit API credentials retain precedence over all browser cookies.
+		if study.EqualKey(study.HashKey(s.cfg.AdminKey), token) {
+			return true
+		}
+	} else if cookie, err := r.Cookie(userSessionCookie); err == nil {
+		if len(cookie.Value) > 100 {
+			return false
+		}
+		token = cookie.Value
+	} else {
+		// Only legacy in-memory administrator sessions can use the old cookie;
+		// the new login never issues one and a restart invalidates them.
+		return s.sessionValid(r)
 	}
-	return s.sessionValid(r)
+	if !strings.HasPrefix(token, "wzus_") {
+		return false
+	}
+	administrator, err := s.service.AdministratorForUserSession(r.Context(), token)
+	if err != nil {
+		return false
+	}
+	if expected := r.Header.Get("X-WzStudy-User"); expected != "" && expected != administrator.ID {
+		return false
+	}
+	if s.cfg.SystemAdminEmail != "" {
+		configured, err := auth.NormalizeEmail(s.cfg.SystemAdminEmail)
+		if err != nil || configured != administrator.Email {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) revokeAdminCookie(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(sessionCookie)
+	if err != nil {
+		return
+	}
+	if len(cookie.Value) <= 100 {
+		sum := sha256.Sum256([]byte(cookie.Value))
+		s.authMu.Lock()
+		delete(s.sessions, hex.EncodeToString(sum[:]))
+		s.authMu.Unlock()
+	}
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", HttpOnly: true, Secure: s.cfg.Env == "production" || r.TLS != nil, SameSite: http.SameSiteStrictMode, MaxAge: -1})
 }
 
 // Deliberately ignore forwarded IP headers unless a future trusted-proxy
@@ -105,49 +148,25 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if !decodeLimit(w, r, &in, 4096) {
 		return
 	}
-	administrator, err := s.service.AuthenticateAdministrator(r.Context(), in.Email, in.Password)
+	s.issueUserLogin(w, r, in.Email, in.Password, "", true)
 	in.Password = ""
-	if err == study.ErrUnauthorized {
-		failure(w, 401, "unauthorized", "邮箱或密码不正确")
-		return
-	}
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	bytes := make([]byte, 32)
-	if _, err = rand.Read(bytes); err != nil {
-		s.fail(w, err)
-		return
-	}
-	token := base64.RawURLEncoding.EncodeToString(bytes)
-	sum := sha256.Sum256([]byte(token))
-	s.authMu.Lock()
-	now := time.Now()
-	for id, expiry := range s.sessions {
-		if now.After(expiry) {
-			delete(s.sessions, id)
-		}
-	}
-	if len(s.sessions) >= 1024 {
-		s.authMu.Unlock()
-		failure(w, 429, "session_limit", "会话数量已达上限，请稍后重试")
-		return
-	}
-	s.sessions[hex.EncodeToString(sum[:])] = now.Add(8 * time.Hour)
-	s.authMu.Unlock()
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: token, Path: "/", HttpOnly: true, Secure: s.cfg.Env == "production" || r.TLS != nil, SameSite: http.SameSiteStrictMode, MaxAge: 8 * 3600})
-	success(w, 200, map[string]any{"authenticated": true, "version": buildinfo.Version, "max_upload_bytes": s.cfg.MaxUploadBytes, "administrator": administrator})
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
-	if cookie, err := r.Cookie(sessionCookie); err == nil {
-		sum := sha256.Sum256([]byte(cookie.Value))
-		s.authMu.Lock()
-		delete(s.sessions, hex.EncodeToString(sum[:]))
-		s.authMu.Unlock()
+	credentialRequest := userCredentialRequest(r)
+	token := bearer(credentialRequest)
+	if strings.HasPrefix(token, "wzus_") {
+		if err := s.service.LogoutUser(r.Context(), token); err != nil && !errors.Is(err, study.ErrUnauthorized) && !errors.Is(err, study.ErrNotFound) {
+			s.fail(w, err)
+			return
+		}
+		if r.Header.Get("Authorization") == "" {
+			s.clearUserCookie(w, r)
+		}
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", HttpOnly: true, Secure: s.cfg.Env == "production" || r.TLS != nil, SameSite: http.SameSiteStrictMode, MaxAge: -1})
+	if r.Header.Get("Authorization") == "" {
+		s.revokeAdminCookie(w, r)
+	}
 	success(w, 200, map[string]bool{"authenticated": false})
 }
 
@@ -161,5 +180,5 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(bearer(r)) != "" {
 		method = "api_key"
 	}
-	success(w, 200, map[string]any{"authenticated": true, "version": buildinfo.Version, "max_upload_bytes": s.cfg.MaxUploadBytes, "store": s.cfg.Store, "administrator": administrator, "authentication_method": method})
+	success(w, 200, map[string]any{"authenticated": true, "role": "admin", "version": buildinfo.Version, "max_upload_bytes": s.cfg.MaxUploadBytes, "store": s.cfg.Store, "administrator": administrator, "authentication_method": method})
 }

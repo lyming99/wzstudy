@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"net/http"
 	"testing"
 
@@ -10,15 +9,15 @@ import (
 
 func TestRecommendationHTTPReadOnlyAndIdentity(t *testing.T) {
 	service, h, _ := managementApp(t, 1<<20)
-	item, err := service.SaveManaged(context.Background(), "", study.ManagedInput{Status: "pending", Content: study.Content{Title: "学习内容"}}, nil)
+	item, err := service.SaveManaged(testWorkspaceContext(), "", study.ManagedInput{Status: "pending", Content: study.Content{Title: "学习内容"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = service.Publication(context.Background(), item.ID, item.Revision, true); err != nil {
+	if _, err = service.Publication(testWorkspaceContext(), item.ID, item.Revision, true); err != nil {
 		t.Fatal(err)
 	}
-	_, reader := managedClient(t, h, "recommend-reader", []string{"read"})
-	_, other := managedClient(t, h, "recommend-other", []string{"read"})
+	_, reader := workspaceLearner(t, h, "recommend-reader")
+	_, other := managedLearner(t, h, "recommend-other")
 	_, source := create(t, h, false)
 	for _, invalid := range []string{"", adminKey, readKey, source} {
 		if w := request(t, h, "GET", "/api/v1/client/recommendations", invalid, nil); w.Code != http.StatusUnauthorized {

@@ -26,7 +26,8 @@ function Read-AdministratorEnvironment {
             $Parts = $Line -split '=',2
             if ($Parts.Length -ne 2) { continue }
             $Name = $Parts[0].Trim()
-            if ($Allowed -notcontains $Name -or $FileValues.ContainsKey($Name)) { continue }
+            if ($Allowed -notcontains $Name) { continue }
+            if ($FileValues.ContainsKey($Name)) { throw "$Name appears more than once in .env. Remove the duplicate before starting." }
             $Value = $Parts[1]
             if ($Value.Length -ge 2 -and (($Value.StartsWith('"') -and $Value.EndsWith('"')) -or ($Value.StartsWith("'") -and $Value.EndsWith("'")))) {
                 $Value = $Value.Substring(1,$Value.Length-2)

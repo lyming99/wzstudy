@@ -6,7 +6,7 @@
 
 ## 建立录入端
 
-在“录入端管理”创建来源，选择接入方式 collector/skill/mcp；该字段只标记来源，不改变权限。外部接入的 kind 仍为 manual，RSS 则为 rss。
+在“录入端管理”创建来源，选择接入方式 collector/skill/mcp/agent；该字段只标记来源，不改变权限。外部接入的 kind 仍为 manual，RSS 则为 rss。
 
 - 新 Key 前缀 wzsk_，仅创建/轮换时显示一次，服务端只存哈希。
 - 默认权限 ingest + upload，支持只授予 ingest 或显式撤销全部；不能授予 read/sync。

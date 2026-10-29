@@ -42,10 +42,10 @@ func TestEmailLoginRejectsKeyAndDoesNotRevealAccount(t *testing.T) {
 	if strings.Contains(session.Body.String(), "password_hash") || strings.Contains(session.Body.String(), "argon2id") {
 		t.Fatal("session exposes hash")
 	}
-	if out := request(t, h, "GET", "/api/v1/admin/workspace", adminKey, nil); out.Code != 200 {
+	if out := request(t, h, "GET", "/api/v1/admin/users", adminKey, nil); out.Code != 200 {
 		t.Fatal("admin API automation key lost compatibility", out.Code)
 	}
-	if out := request(t, h, "GET", "/api/v1/admin/workspace", readKey, nil); out.Code != 401 {
+	if out := request(t, h, "GET", "/api/v1/admin/users", readKey, nil); out.Code != 401 {
 		t.Fatal("read key became administrator")
 	}
 	for _, path := range []string{"/api/v1/auth/register", "/api/v1/auth/setup", "/api/v1/auth/initialize"} {

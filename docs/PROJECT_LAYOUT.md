@@ -15,27 +15,21 @@
 | `dist` | 已验证发行二进制、ZIP、校验清单 | 否 |
 | `.artifacts` | 测试专用二进制、临时目录、日志、截图、报告 | 否 |
 | `.local` | 本地管理/只读密钥、工作区快照、附件 | 否，严禁打包或公开 |
+| `agent` | 独立采集端项目（agent loop + function calling），通过 Agent Protocol 与服务端通信 | 是 |
 
 ## 启动路径
 
-- 根 `start-local.ps1` 仅委托 `scripts/start-local.ps1`。
-- `scripts/start-dev.ps1` 默认也走同一文件持久化工作区。易失模式必须显式写 `-Memory`；PostgreSQL 必须显式写 `-Postgres`。
-- `internal/start-local.ps1` 只保留旧命令兼容，不构建第二份程序、不生成第二套默认密钥。
-- 路径计算基于脚本位置，不受调用者当前目录影响。新入口相对参数按仓库根目录解析；旧入口相对 `-DataDirectory` 按原 `internal` 目录解析。
-- `-Check` 输出解析后的路径与存在状态，不读取密钥正文、不写文件、不构建、不启动服务。
-- 从源码构建的 `bin/wzstudy-dev.exe` 与发行包分离，避免开发启动破坏发行校验清单。
+- 根 `start-local.ps1` 委托 `start-postgres-local.ps1`，只启动 PostgreSQL；`scripts/start-local.ps1` 和 `internal/start-local.ps1` 委托根入口。
+- `scripts/start-dev.ps1` 默认走同一本机 PostgreSQL；显式 `-Postgres` 连接自行配置的数据库，`-Memory` 的服务启动已禁用。
+- 路径计算基于脚本位置，不受调用者当前目录影响。`.env` 的 `DATA_DIR` 与新入口相对参数按仓库根目录解析；旧入口相对 `-DataDirectory` 按原 `internal` 目录解析。
+- `-Check` 输出解析后的路径与端口，不读取密钥正文、不写文件、不构建、不启动服务。
+- 从源码构建使用 `.local/postgres-local` 中的临时目录，不覆盖发行二进制；无源码的发行包需包含 API 和迁移程序。
 
 ## 工作区保护
 
 本次整理前未发现本项目活动进程；`.local` 通过同盘目录移动归位，原凭据文件的 SHA-256、ACL 和工作区文件数均校验一致。迁移记录仅包含验证布尔值和数量，保存在 `.artifacts/structure-migration.json`，不含密钥正文。
 
-对于尚未整理的旧副本：
-
-1. 仅有旧 `internal/.local` 工作区时，启动器沿用旧位置，不自动移动数据。
-2. 根和旧位置都存在工作区时拒绝猜测，要求明确 `-ProfileDirectory`。
-3. 已有 `workspace.json` 或上传目录但缺少对应密钥文件时，拒绝自动生成新密钥。
-4. 绝不能让两个文件存储进程共享一个 `workspace.json`；端口检查不等于跨进程数据锁。不同端口实例必须显式使用不同工作区。
-5. 需要迁移其他有数据的工作区时，先停止使用它的进程，再整体备份数据和原密钥，校验后再切换；不能在线剪切目录。
+新的本地入口不再打开文件工作区，也不会自动把旧 `internal/.local` 或根 `.local/data` 的账号和资料迁入 PostgreSQL；原数据和密钥保留不动。需要迁移时应先停止旧进程，完整备份原数据及密钥，并单独制定、验证迁移方案。PostgreSQL 数据卷、附件目录和连接凭据需要成套备份。
 
 ## Docker
 
@@ -47,10 +41,10 @@ API 默认数据目录为 `/var/lib/wzstudy`，镜像构建阶段创建该目录
 
 ## 验证与发行
 
-所有正式工具在 `scripts` 中定位仓库根目录，所有输出写根 `.artifacts` 或 `dist`。发行 ZIP 通过显式文件白名单构建，根入口和 `scripts/start-local.ps1` 一并打包，绝不递归打包 `.local`。便携版无 Go 源码时直接运行内嵌管理资源的可执行文件。
+所有正式工具在 `scripts` 中定位仓库根目录，所有输出写根 `.artifacts` 或 `dist`。发行 ZIP 通过显式白名单打包 PostgreSQL 启动器、Compose 配置、API 和迁移程序，绝不打包 `.local`。便携版无须 Go 源码，但仍需可用的本机 Docker PostgreSQL。
 
-`verify_structure.py` 使用临时夹具验证入口与兼容策略，不读取真实密钥；`verify_live.py` 使用隔离随机端口、随机密钥和文件工作区；`verify_package.py` 只启动/停止自己解压生成的服务进程。
+`verify_structure.py` 使用临时夹具验证入口与兼容策略，不读取真实密钥；`verify_live.py` 是历史文件模式隔离回归。`verify_package.py --static` 只检查包及启动器预检；不加 `--static` 时使用独立临时项目与本机 Docker 进行实库验证，并仅清理经标签确认属于该夹具的资源。
 
 ## 管理员认证更新（v0.3.0）
 
-密码算法位于 `internal/auth`，只读版本信息位于 `internal/buildinfo`；管理员单例使用现有私有工作区记录。根入口支持 `-InitializeAdmin` 本机隐藏输入，普通重启直接沿用已存密码哈希。完整说明见 `ADMIN_AUTH.md`。
+密码算法位于 `internal/auth`，只读版本信息位于 `internal/buildinfo`；管理员单例使用现有私有工作区记录。根入口为空 PostgreSQL 库生成受保护的初始密码，普通重启直接沿用已存密码哈希。完整说明见 `ADMIN_AUTH.md`。

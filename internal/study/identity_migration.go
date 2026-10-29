@@ -129,7 +129,7 @@ func (s *Service) MigrateIdentities(ctx context.Context, choices []IdentityMigra
 			}
 			now := s.Now()
 			clientID := uuid.NewString()
-			client := Client{ID: clientID, Slug: "migrated-" + strings.ReplaceAll(clientID, "-", ""), Name: source.Name, Description: source.Description, Enabled: source.Enabled, Permissions: slices.Clone(entry.Query), Revision: 1, CreatedAt: now, UpdatedAt: now, LegacySourceID: source.ID}
+			client := Client{OwnerID: source.OwnerID, ID: clientID, Slug: "migrated-" + strings.ReplaceAll(clientID, "-", ""), Name: source.Name, Description: source.Description, Enabled: source.Enabled, Permissions: slices.Clone(entry.Query), Revision: 1, CreatedAt: now, UpdatedAt: now, LegacySourceID: source.ID}
 			clientHash := source.KeyHash
 			if entry.RequiresKeyChoice {
 				key, e := NewKey()

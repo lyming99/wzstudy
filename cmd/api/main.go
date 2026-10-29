@@ -69,23 +69,32 @@ func run() error {
 		return fmt.Errorf("database schema is not ready; run cmd/migrate first")
 	}
 	service := study.NewService(store)
+	service.AgentPolicy = study.AgentPolicy{
+		LeaseSeconds:          cfg.AgentLeaseSeconds,
+		HeartbeatGraceSeconds: cfg.AgentHeartbeatGrace,
+		DefaultMaxItems:       cfg.AgentTaskDefaultItems,
+		MaxItems:              cfg.AgentTaskMaxItems,
+		MaxTimeoutSeconds:     cfg.AgentTaskMaxTimeout,
+		EventMaxBytes:         cfg.AgentEventMaxBytes,
+		EventTotalBytes:       cfg.AgentEventTotalBytes,
+	}
 	bootstrapCtx, bootstrapDone := context.WithTimeout(ctx, 30*time.Second)
-	_, created, bootstrapErr := service.EnsureAdministrator(bootstrapCtx, study.AdministratorSettings{Email: cfg.SystemAdminEmail, Password: cfg.SystemAdminPassword, DisplayName: cfg.SystemAdminDisplayName})
+	administrator, created, bootstrapErr := service.EnsureAdministrator(bootstrapCtx, study.AdministratorSettings{Email: cfg.SystemAdminEmail, Password: cfg.SystemAdminPassword, DisplayName: cfg.SystemAdminDisplayName})
 	bootstrapDone()
 	if bootstrapErr != nil {
 		return bootstrapErr
+	}
+	// Legacy installations may omit the setting after initialization. The
+	// stored identity originated from that setting and remains the safe fallback.
+	if cfg.SystemAdminEmail == "" {
+		cfg.SystemAdminEmail = administrator.Email
 	}
 	cfg.SystemAdminPassword = ""
 	_ = os.Unsetenv("SYSTEM_ADMIN_PASSWORD")
 	_ = os.Unsetenv("BOOTSTRAP_ADMIN_PASSWORD")
 	logger.Info("system administrator ready", "created", created)
-	// Pushed content is public immediately; release material that an earlier
-	// review gate left pending so clients can query it after this upgrade.
-	if published, backfillErr := service.PublishPendingIngested(ctx); backfillErr != nil {
-		logger.Error("publishing previously pending pushed content failed")
-	} else if published > 0 {
-		logger.Info("published previously pending pushed content", "count", published)
-	}
+	// Legacy unowned records remain archived. Startup never assigns ownership
+	// or publishes user content through an unscoped system transaction.
 	worker := &feed.Worker{Service: service, Fetcher: feed.NewFetcher(), Logger: logger}
 	workerDone := make(chan struct{})
 	if cfg.PollEnabled {

@@ -64,10 +64,10 @@ func (w *Worker) poll(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		if !v.Enabled || v.Kind != "rss" || v.NextPollAt.After(time.Now().UTC()) {
+		if !v.Enabled || v.OwnerID == "" || v.Kind != "rss" || v.NextPollAt.After(time.Now().UTC()) {
 			continue
 		}
-		if _, err = w.Once(ctx, v.ID, false); err != nil && err != study.ErrBusy && err != study.ErrConflict {
+		if _, err = w.Once(study.WithWorkspace(ctx, v.OwnerID), v.ID, false); err != nil && err != study.ErrBusy && err != study.ErrConflict {
 			w.Logger.Warn("feed poll failed", "source_id", v.ID)
 		}
 	}

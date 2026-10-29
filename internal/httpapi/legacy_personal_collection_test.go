@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -11,7 +10,7 @@ import (
 
 func TestLegacyPersonalCollectionHTTP(t *testing.T) {
 	service, h, _ := managementApp(t, 1<<20)
-	ctx := context.Background()
+	ctx := testWorkspaceContext()
 	item, err := service.SaveManaged(ctx, "", study.ManagedInput{Status: "pending", Content: study.Content{Title: "资料", Content: "正文"}}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -20,16 +19,16 @@ func TestLegacyPersonalCollectionHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, key := managedClient(t, h, "legacy-collection", []string{"read", "feedback"})
+	_, key := workspaceLearner(t, h, "legacy-collection")
 	_, readKey := managedClient(t, h, "legacy-collection-read", nil)
-	_, other := managedClient(t, h, "legacy-collection-other", []string{"read", "feedback"})
+	_, other := managedLearner(t, h, "legacy-collection-other")
 	path := "/api/v1/client/learning/collections/import-legacy"
 	date := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339Nano)
 	input := map[string]any{"event_id": uuid.NewString(), "collection_id": uuid.NewString(), "title": "旧合集", "items": []string{item.ID}, "created_at": date, "updated_at": date}
 	for _, tc := range []struct {
 		key  string
 		code int
-	}{{"", 401}, {adminKey, 401}, {readKey, 403}} {
+	}{{"", 401}, {adminKey, 401}, {readKey, 401}} {
 		if w := request(t, h, "POST", path, tc.key, input); w.Code != tc.code {
 			t.Fatal("authority", w.Code, tc.code)
 		}
@@ -54,7 +53,7 @@ func TestLegacyPersonalCollectionHTTP(t *testing.T) {
 	if !ack.Duplicate {
 		t.Fatal(ack)
 	}
-	data(t, request(t, h, "POST", path, other, input), &ack)
+	data(t, request(t, h, "POST", path, other, ownedPayload(t, h, other, item.ID, input)), &ack)
 	if ack.Duplicate {
 		t.Fatal("client isolation", ack)
 	}

@@ -28,6 +28,7 @@ var (
 )
 
 type Source struct {
+	OwnerID             string     `json:"owner_id,omitempty"`
 	System              bool       `json:"system,omitempty"`
 	ID                  string     `json:"id"`
 	Slug                string     `json:"slug"`
@@ -98,6 +99,7 @@ type PublicItem struct {
 }
 
 type Item struct {
+	OwnerID     string       `json:"owner_id,omitempty"`
 	Status      string       `json:"status,omitempty"`
 	DeletedAt   *time.Time   `json:"deleted_at,omitempty"`
 	History     []AuditEvent `json:"history,omitempty"`
@@ -130,6 +132,7 @@ type ChangePage struct {
 }
 
 type Filter struct {
+	OwnerID          string
 	FeedbackClientID string
 	FeedbackExclude  []string
 	FeedbackSince    *time.Time
@@ -242,7 +245,7 @@ func normalizeSource(in SourceInput) (SourceInput, error) {
 			return in, ErrInvalid
 		}
 		in.Integration = "rss"
-	} else if in.Integration != "" && in.Integration != "collector" && in.Integration != "skill" && in.Integration != "mcp" {
+	} else if in.Integration != "" && in.Integration != "collector" && in.Integration != "skill" && in.Integration != "mcp" && in.Integration != "agent" {
 		return in, ErrInvalid
 	}
 	permissions, err := normalizePermissions(in.Permissions)

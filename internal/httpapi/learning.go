@@ -22,9 +22,9 @@ func (s *Server) learningCapabilities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	success(w, 200, map[string]any{
-		"type": "wzstudy.learning", "version": 1, "client_id": client.ID,
+		"type": "wzstudy.learning", "version": 2, "client_id": client.ID, "user_id": client.ID, "identity": "user",
 		"read": client.Allows(study.PermissionFeedback), "write": client.Allows(study.PermissionFeedback),
-		"features":   []string{"view", "review", "review_plan", "records", "progress", "duration", "personal_collections", "legacy_feedback_import", "legacy_record_import", "legacy_review_import", "legacy_personal_collection_import", "drafts", "legacy_draft_import"},
+		"features":   []string{"view", "review", "review_plan", "records", "progress", "duration", "personal_collections", "legacy_feedback_import", "legacy_record_import", "legacy_review_import", "legacy_personal_collection_import", "drafts", "legacy_draft_import", "draft_history"},
 		"max_events": 100,
 	})
 }

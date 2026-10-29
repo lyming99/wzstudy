@@ -1,0 +1,23 @@
+# Isolated local development database. The launcher creates and verifies the
+# external volume before invoking Compose, and supplies the values in memory.
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${WZSTUDY_LOCAL_PG_DATABASE:?Run start-postgres-local.ps1}
+      POSTGRES_USER: ${WZSTUDY_LOCAL_PG_USER:?Run start-postgres-local.ps1}
+      POSTGRES_PASSWORD: ${WZSTUDY_LOCAL_PG_PASSWORD:?Run start-postgres-local.ps1}
+    ports:
+      - "127.0.0.1:${WZSTUDY_LOCAL_PG_PORT:?Run start-postgres-local.ps1}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+volumes:
+  postgres_data:
+    external: true
+    name: ${WZSTUDY_LOCAL_PG_VOLUME:?Run start-postgres-local.ps1}

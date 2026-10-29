@@ -1,26 +1,25 @@
 # WzStudy HTTP API v1
 
-实现版本 **v0.3.0**。真实管理页面为 `/admin/`，完整管理/上传/客户端查询补充文档为 `/docs/management`（对应 `MANAGEMENT.md`）。所有新旧业务路由均列入 `/openapi.json`。
+当前权限模型：所有账号共用 `/workspace/` 登录入口并拥有自己的资料和学习工作区；管理员使用本人工作区，同时额外拥有用户管理权限。资料与学习数据按账号隔离，管理员不能直接访问其他用户的私人资料。`/admin/` 保留为账号管理兼容入口，学习页为 `/learn/`。用户工作区说明见 `USER_WORKSPACES.md`（服务端 `/docs/user-workspaces`），完整路由见 `/openapi.json`。
 
 基地址：`http://127.0.0.1:8091/api/v1`（生产必须通过 HTTPS 代理）。
 
 成功：`{"data": ...}`。错误：`{"error":{"code":"conflict","message":"..."}}`。请求 ID 在 `X-Request-ID`；JSON 请求必须带 `Content-Type: application/json`。未知字段、拼接 JSON、无效 UTF-8 内容、超限和空正文均会拒绝，不接受批次内重复 external_id。
 
-## 1. 凭据与权限
+## 1. 凭据、所有者与权限
 
-`Authorization: Bearer <key>`：
+- 浏览器账号统一使用 `POST /auth/login` 提交邮箱和密码；响应 `data.role` 为 `admin` 或 `user`，均设置 `wzstudy_user` Cookie，并返回本人用户身份。服务端核验管理员邮箱和对应密码后授予额外管理能力，不接受客户端指定角色；`ADMIN_API_KEY` 本身不具有资料读写、附件或学习数据权限。
+- `/user/auth/login` 兼容管理员和普通用户；原生应用可指定 `session_mode=token` 获得 `wzus_...` 会话令牌，管理员的用户令牌也可访问管理接口。工作台与学习端使用同一个个人账号。
+- `/workspace/*` 资料管理只接受用户会话；`/client/learning*`、`/client/feedback*` 和个性化推荐同样必须用户登录。
+- `wzsk_...` 为用户创建的独立录入来源 Key，只能在所属工作区提交本来源资料与授权文件。
+- `wzck_...` 为用户创建的查询客户端 Key，只读所属用户工作区的已发布资料并按授权同步；不能代替用户进行学习。旧 `feedback` 权限记录为历史兼容保留，不再使应用 Key 成为学习身份。
+- 旧 `READ_API_KEY` 不再隐式读取全局资料。没有所有者的旧来源/客户端 Key 也不会获得任何用户的工作区。
 
-- `ADMIN_API_KEY`：管理/审核/读取的自动化 API 凭据，不是浏览器登录密码，也不能代替数据源密钥接入。
-- 管理页面使用系统管理员邮箱与密码，见 `ADMIN_AUTH.md`；登录提交 `email/password`，建立 HttpOnly 会话。
-- `READ_API_KEY`：旧版全局只读兼容凭据，读取已发布内容、changes，不可读取草稿或管理；新客户端无需分发它。
-- `wzsk_...`：录入端 Source 的独立 Key，只允许自己的 ingest/upload，不能查询资料。
-- `wzck_...`：查询客户端 Client 的独立 Key，允许 read/sync，以及显式授予的 feedback；不能资料入库、上传或管理。旧 Key 显式迁移后可保留原前缀，授权依据独立身份记录。
-
-客户端 Key 和权限由管理员配置并持久保存，无需为每个录入端或查询端修改环境变量。写入在同一事务内复查 Key、启用状态和权限；轮换后旧 Key 无法晚提交。后续查询和增量拉取立即按最新权限校验。管理员 API 凭据/旧版全局只读凭据仍由启动配置维护。不要将任何 Key 放入 URL 或日志。
+资料“发布”表示可以被本人及本人查询客户端读取，不是公开给其他用户。所有者由服务端认证决定，筛选参数不授予跨用户权限。请勿将密码、会话令牌或 Key 放进 URL、日志或浏览器持久存储。密码重置、停用及用户改密撤销所有旧用户会话；退出只撤销当前会话。Cookie 写请求必须来自本站 Origin。
 
 ## 公开合集与章节
 
-合集是管理员编排的内容目录，不是个人收藏。查询接口：
+合集是用户本人编排的内容目录，不是个人收藏。查询接口：
 
 ```text
 GET /catalog/collections?limit=20&offset=0
@@ -28,17 +27,17 @@ GET /catalog/collections/{id}
 GET /catalog/collections/changes?after=0&limit=20
 ```
 
-列表、详情需要 read；独立变更流需要 sync（兼容全局只读 Key）。列表返回摘要，详情按章节顺序返回可见内容 ID；章节关联的内容下架后不再返回该章节。变更流只含已公开合集，使用自己的 cursor/high_watermark，不改变 `/changes` 的资料游标。旧版或下架合集的历史快照作为删除变更返回，不泄露旧快照。每页最多 20 个变更。
+列表、详情需要 read；独立变更流需要 sync。列表返回摘要，详情按章节顺序返回可见内容 ID；章节关联的内容下架后不再返回该章节。变更流只含已公开合集，使用自己的 cursor/high_watermark，不改变 `/changes` 的资料游标。旧版或下架合集的历史快照作为删除变更返回，不泄露旧快照。每页最多 20 个变更。
 
-管理员使用 `/admin/catalog/collections` 创建、编辑、发布、下架和删除合集。编辑草稿不会更改公开快照；发布时所有章节必须引用当前已发布内容。详细字段见 `/openapi.json` 和管理文档。新增功能需要数据库迁移 `000005_catalog_collections.sql`，不会覆盖历史 `collection` 记录。
+用户使用 `/workspace/catalog/collections` 创建、编辑、发布、下架和删除合集。编辑草稿不会更改公开快照；发布时所有章节必须引用当前已发布内容。详细字段见 `/openapi.json` 和管理文档。新增功能需要数据库迁移 `000005_catalog_collections.sql`，不会覆盖历史 `collection` 记录。
 
-## 管理员学习路线图
+## 用户学习路线图
 
-管理端新增独立“学习路线图”入口（`/admin/#roadmaps`），以思维导图编辑节点、层级、顺序、说明、折叠状态和资料引用。API 为 `/admin/roadmaps`（GET/POST）、`/admin/roadmaps/{id}`（GET/PUT）与 `/admin/roadmaps/{id}/delete`（POST）。仅管理员可读写；创建 revision=0，更新和删除检查最新 revision；最多 300 节点、12 层。该模块不发布到客户端，不写个人学习进度，不改变公开资料/合集游标。完整使用与请求示例见 `LEARNING_ROADMAPS.md`、管理文档及 `/openapi.json`。
+管理端新增独立“学习路线图”入口（`/workspace/#roadmaps`），以思维导图编辑节点、层级、顺序、说明、折叠状态和资料引用。API 为 `/workspace/roadmaps`（GET/POST）、`/workspace/roadmaps/{id}`（GET/PUT）与 `/workspace/roadmaps/{id}/delete`（POST）。仅资料所有者本人可读写；创建 revision=0，更新和删除检查最新 revision；最多 300 节点、12 层。该模块不发布到客户端，不写个人学习进度，不改变公开资料/合集游标。完整使用与请求示例见 `LEARNING_ROADMAPS.md`、管理文档及 `/openapi.json`。
 
-## 私人学习数据 v1
+## 私人学习数据（用户身份 v2）
 
-`GET /client/learning/capabilities` 需要独立查询客户端 Key（read 或 sync），返回 `type=wzstudy.learning`、`version=1`、客户端 ID、功能列表和当前读写能力。它不会接受管理员、录入端或旧全局 Key 作为学习者身份。学习数据的读写都需要该查询客户端启用 `feedback`；状态以 Client ID + 资料 ID 隔离，共享 Key 的设备共享同一身份。
+`GET /client/learning/capabilities` 需要用户会话，返回 `type=wzstudy.learning`、`version=2`、`identity=user`、`user_id` 和能力列表。管理员可使用本人用户会话学习；管理员 API Key、查询客户端、录入端和旧全局 Key 均不能代替学习者。学习与录入都按稳定用户 ID 隔离；同账号跨设备共享本人数据，不同用户既不共享资料也不共享学习空间。历史响应字段 `client_id` 在用户认证下等于当前用户 ID，只作兼容，不接受它指定归属。
 
 ```text
 POST /client/learning/events
@@ -50,7 +49,7 @@ GET  /items/{id}/learning-stats
 GET  /client/learning/items/{item_id}/stats
 ```
 
-上报格式 `{"events":[...]}`，每批 1–100 条，在同一事务中复查权限并原子提交。每条必须有非零 UUID `event_id`、原始 WzStudy `item_id` 和 `action`；重试必须保持事件 ID 和全部字段不变。同客户端相同 ID/内容返回 duplicate，不同内容返回冲突。下架内容不接受新学习事件，已提交事件可以幂等重试；本人删除自己的旧记录仍可执行。事件和游标与原 `/client/feedback`、公开 `/changes` 相互独立。
+上报格式 `{"events":[...]}`，每批 1–100 条，在同一事务中复查权限并原子提交。每条必须有非零 UUID `event_id`、原始 WzStudy `item_id` 和 `action`；重试必须保持事件 ID 和全部字段不变。同用户相同 ID/内容返回 duplicate，不同内容返回冲突。下架内容不接受新学习事件，已提交事件可以幂等重试；本人删除自己的旧记录仍可执行。事件和游标与原 `/client/feedback`、公开 `/changes` 相互独立。
 
 | action | 字段与语义 |
 |---|---|
@@ -58,19 +57,19 @@ GET  /client/learning/items/{item_id}/stats
 | `review_plan` | `value=true/false` 设置或取消复习计划 |
 | `review` | 完成一次复习，增加次数并清除待复习状态 |
 | `progress` | `position`、`mode` 和 `expected_revision`；服务器使用版本检查拒绝旧进度覆盖，允许主动回看 |
-| `record_create` | `record_id`、`text`，可选 `position`、`parent_id`、`as_danmaku`；私人记录最多 300 字符 |
+| `record_create` | `record_id`、`text`，可选 `position`、`parent_id`、`as_danmaku`；私人记录最多 300 字符。可选 `draft_revision` 将创建记录与清空匹配的当前草稿原子提交；版本、文字或位置变化时整体冲突，重试不会清除后来创建的草稿 |
 | `record_delete` | `record_id`，只能删除本身份且所属资料一致的记录 |
 | `duration` | `session_id`、从 1 开始递增的 `session_sequence`、`start_at/end_at`；单段最多 2 分钟，重复/重叠区间按并集计算 |
 
-私人草稿可经 `GET /client/learning/items/{item_id}/draft[?parent_id=...]` 查询，经 `POST /client/learning/drafts/commands` 以事件 ID 和期望修订保存或清空。清空保留版本墓碑，旧设备不能以旧版本复活已删除草稿；回复草稿的父记录必须属于当前 Client。历史草稿只能在用户确认来源及身份后，使用 `POST /client/learning/drafts/import-legacy` 在目标不存在任何草稿或墓碑、资料修订一致时导入，保留原编辑时间；冲突时不覆盖或删除本机草稿。草稿与已提交记录独立，不计为学习记录。
+私人草稿可经 `GET /client/learning/items/{item_id}/draft[?parent_id=...]` 查询，经 `POST /client/learning/drafts/commands` 以事件 ID 和期望修订保存或清空。清空保留版本墓碑，旧设备不能以旧版本复活已删除草稿；回复草稿的父记录必须属于当前登录用户。历史草稿只能在用户确认来源及身份后，使用 `POST /client/learning/drafts/import-legacy` 在目标不存在任何草稿或墓碑、资料修订一致时导入，保留原编辑时间；冲突时不覆盖或删除本机草稿。草稿与已提交记录独立，不计为学习记录。每次接受的草稿写入在数据源保留 用户私有的不可变事件快照；清空当前草稿并不清除快照。可通过 `GET /client/learning/items/{item_id}/draft/history` 分页查看、通过 `GET /client/learning/drafts/events/{event_id}` 精确读取；历史留存遵循用户工作区的数据保留规则。
 
 历史未完成的复习待办可在用户明确核验归属后调用 `POST /client/learning/import-legacy-reviews`，以 `{"reviews":[...]}` 传入事件 ID、资料 ID、当前公开修订和原待办关联时间。服务器在事务中检查该身份此资料没有任何既有复习计划或复习事件；已有撤销、完成或待复习记录都拒绝覆盖。该接口只创建待复习状态，不会伪造完成复习次数，也不删除本地待办。重复请求必须使用相同事件 ID 和载荷。
 
-历史私人记录可经用户明确确认后调用 `POST /client/learning/import-legacy-records`，每批 `{"records":[...]}` 最多 100 条。每条需显式给出事件、资料、记录 UUID、正文、原创建／更新时间和资料公开修订，可带位置、已有父记录及音频弹幕标记。要求资料仍公开、当前公开修订一致、记录 ID 未占用；检查与写入原子执行，父记录必须已存在或在批中先于回复。客户端身份由 Key 决定；同事件及全部字段完全相同可幂等重试，字段变化冲突。记录时间按原值保留，该接口不会证明旧记录归属、上传其他历史或清理本机数据；共享记录和无法保真映射的记录应保留待处理。
+历史私人记录可经用户明确确认后调用 `POST /client/learning/import-legacy-records`，每批 `{"records":[...]}` 最多 100 条。每条需显式给出事件、资料、记录 UUID、正文、原创建／更新时间和资料公开修订，可带位置、已有父记录及音频弹幕标记。要求资料仍公开、当前公开修订一致、记录 ID 未占用；检查与写入原子执行，父记录必须已存在或在批中先于回复。学习身份由用户会话决定；同事件及全部字段完全相同可幂等重试，字段变化冲突。记录时间按原值保留，该接口不会证明旧记录归属、上传其他历史或清理本机数据；共享记录和无法保真映射的记录应保留待处理。
 
 `position` 的 `version` 是公开资料 revision；`kind=media` 使用 `time_ms`，`kind=article` 使用稳定的 `block_id=body/source` 和 UTF-16 `offset`，`kind=image` 使用原始资源 UUID `image_id`。文章进度的 mode 为 `preview/fulltext`，其他类型使用空 mode；本机 feed ID 前缀不能传给服务端。
 
-学习数据列表的 `duration_ms` 可使用同时提供的 RFC3339 `from` 和 `until` 限定半开时间窗口（最多 32 天），由客户端按本地日期计算 UTC 边界；不提供时返回全量并集。`/items/{id}/learning-stats` 只返回公开资料的聚合数量，喜欢和收藏按当前有效查询身份计数，不返回其他人的记录；独立查询客户端也可用 `read` 或 `sync` 权限访问 `/client/learning/items/{item_id}/stats`，该接口不接受管理员、录入端或旧全局 Key。管理员可在 `/admin/clients/{id}/learning` 及其 `/events`、`/items/{item_id}/records` 子路径查看指定身份，必须使用管理员凭据。
+学习数据列表的 `duration_ms` 可使用同时提供的 RFC3339 `from` 和 `until` 限定半开时间窗口（最多 32 天），由客户端按本地日期计算 UTC 边界；不提供时返回全量并集。`/items/{id}/learning-stats` 只返回公开资料的聚合数量，喜欢和收藏按当前有效查询身份计数，不返回其他人的记录；独立查询客户端也可用 `read` 或 `sync` 权限访问 `/client/learning/items/{item_id}/stats`，该接口不接受管理员 API Key、录入端或旧全局 Key；管理员用户会话只可查询本人工作区。用户可在 `/workspace/clients/{id}/learning` 等路径检查本人查询客户端的历史兼容数据；系统管理员不能借此查看用户学习数据。
 
 ## 学习推荐查询
 
@@ -82,7 +81,7 @@ GET  /client/learning/items/{item_id}/stats
 
 ## 2. 数据源
 
-### `POST /admin/sources`
+### `POST /workspace/sources`
 
 ```json
 {
@@ -102,22 +101,22 @@ GET  /client/learning/items/{item_id}/stats
 
 - slug：1–64 字符，小写字母/数字/连字符，首字符为字母或数字，唯一。
 - name：非空，最多 200 UTF-8 字节；description 最多 4000 字节。
-- integration：manual 录入来源可标记 `collector/skill/mcp`，创建缺省为 collector、更新省略保留；不影响权限。
+- integration：manual 录入来源可标记 `collector/skill/mcp/agent`，创建缺省为 collector、更新省略保留；不影响权限。
 - kind：`manual`（默认）或 `rss`；`rss` 可读取 RSS 2.0 / Atom，必须给出公开 HTTP(S) feed_url；manual 必须为空。
 - language 默认 `zh-CN`；enabled 默认 true；auto_publish 默认 false；采集间隔默认 900，范围 60–86400 秒。
 - auto_publish 为 true 时，接入新内容/修改内容直接更新公开快照并产生事件；应仅给可信来源开启。
-- manual 录入端的 `permissions` 只接受 `ingest/upload` 且不允许重复；`[]` 撤销全部。创建时省略/null 保留旧默认 `ingest + upload`，不会自动授予阅读/同步；查询客户端单独通过 `/admin/clients` 创建，不复用 Source。RSS 不能设置客户端权限。
+- manual 录入端的 `permissions` 只接受 `ingest/upload` 且不允许重复；`[]` 撤销全部。创建时省略/null 保留旧默认 `ingest + upload`，不会自动授予阅读/同步；查询客户端单独通过 `/workspace/clients` 创建，不复用 Source。RSS 不能设置客户端权限。
 
 返回 201：`{"data":{"source":{"id":"...","revision":1,...},"access_key":"wzsk_..."}}`。
 
 ### 查询与修改
 
-- `GET /admin/sources`：所有源配置及采集状态，不返回 Key/hash、ETag 或采集租约。
-- `GET /admin/sources/{id}`：单源详情。
-- `PUT /admin/sources/{id}`：完整替换可编辑字段，正文为创建字段加 `revision`。slug/kind 必须与原值相同，其他遗漏字段会恢复默认/清空（enabled、permissions 未给出或为 null 时保留原值；permissions=[] 明确撤销全部），不要作为 PATCH 使用。
+- `GET /workspace/sources`：所有源配置及采集状态，不返回 Key/hash、ETag 或采集租约。
+- `GET /workspace/sources/{id}`：单源详情。
+- `PUT /workspace/sources/{id}`：完整替换可编辑字段，正文为创建字段加 `revision`。slug/kind 必须与原值相同，其他遗漏字段会恢复默认/清空（enabled、permissions 未给出或为 null 时保留原值；permissions=[] 明确撤销全部），不要作为 PATCH 使用。
 - 修改配置会撤销正在进行的采集结果；修改 URL 同时清除旧 ETag/Last-Modified。
-- `POST /admin/sources/{id}/key`：正文 `{"revision":1}`；返回新 source 和一次性的 access_key，旧 Key 立即失效。
-- `POST /admin/sources/{id}/refresh`：无请求体，立即采集，成功返回接入计数。最长约 25 秒；正在采集返回 409；不安全目标/网络/格式错误返回 502，并记录通用 last_error。
+- `POST /workspace/sources/{id}/key`：正文 `{"revision":1}`；返回新 source 和一次性的 access_key，旧 Key 立即失效。
+- `POST /workspace/sources/{id}/refresh`：无请求体，立即采集，成功返回接入计数。最长约 25 秒；正在采集返回 409；不安全目标/网络/格式错误返回 502，并记录通用 last_error。
 - 录入端 enabled=false 停止该 Key 的入库、上传及来源采集，不影响其他客户端读取已有线上快照；没有隐式级联删除接口。
 
 读取端 `GET /sources` 仅返回 id、slug、name、description、category、language，不暴露上游 URL、状态错误或密钥设置。
@@ -127,15 +126,15 @@ GET  /client/learning/items/{item_id}/stats
 查询客户端是独立 Client，不再是 manual Source 的权限组合：
 
 ```text
-GET/POST /admin/clients
-GET/PUT  /admin/clients/{id}
-POST     /admin/clients/{id}/key
-GET/POST /admin/identity-migration
+GET/POST /workspace/clients
+GET/PUT  /workspace/clients/{id}
+POST     /workspace/clients/{id}/key
+GET/POST /workspace/identity-migration
 ```
 
 创建请求为 `{"slug":"desktop-query","name":"桌面学习端","permissions":["read","sync"]}`，可带 description/enabled；返回 `{"data":{"client":{...},"access_key":"<仅本次返回>"}}`。权限可配置 read/sync/feedback，反馈必须显式授予，创建省略/null 默认两项，更新省略/null 保留、[] 撤销全部。PUT 和轮换需要最新 revision，客户端不能管理其他身份。
 
-来源增加 integration（collector/skill/mcp；RSS 固定 rss），仅作接入标记。来源不接受 read/sync，客户端不接受 ingest/upload/inbox。待拆分旧来源的普通编辑/轮换返回 409，应先预检并显式迁移，避免丢失旧 Key 归属。
+来源增加 integration（collector/skill/mcp/agent；RSS 固定 rss），仅作接入标记。来源不接受 read/sync，客户端不接受 ingest/upload/inbox。待拆分旧来源的普通编辑/轮换返回 409，应先预检并显式迁移，避免丢失旧 Key 归属。
 
 迁移不会由启动或 GET 自动执行；纯查询 Key 仅迁入 Client，混合 Key 必须明确选择保留给 ingest 或 query，另一侧生成新 Key。全部选择与修订校验成功后原子保存，不修改资料、附件或内容游标。请求及回退说明见 `MANAGEMENT.md`。
 
@@ -198,16 +197,16 @@ GET/POST /admin/identity-migration
 
 响应新增 `receipt_id/source_id/received_at`，保留 created/updated/unchanged/published/items；每项资料返回真实 ID、revision 与状态。回执与资料同事务保存，相同内容重放不增加资料 revision，但可以产生新的成功请求回执。
 
-`GET /admin/intakes?limit=20&offset=0&source_id=<可选UUID>` 仅管理员可读，返回 items/total/limit/offset。limit 1–100、offset 0–10000，按接收时间倒序；不包含资料标题、正文或 Key，不伪造失败/历史批次。回执公开状态是提交时快照。
+`GET /workspace/intakes?limit=20&offset=0&source_id=<可选UUID>` 仅管理员可读，返回 items/total/limit/offset。limit 1–100、offset 0–10000，按接收时间倒序；不包含资料标题、正文或 Key，不伪造失败/历史批次。回执公开状态是提交时快照。
 
 采集程序、Skill 与 MCP 均调用同一录入服务；MCP 的具体协议、文件授权和运行方式见 `mcp/wzstudy_ingest/README.md`。录入成功不等于已公开，也不会向学习客户端分发。
 
 ## 4. 审核、发布和下架
 
-- `GET /admin/items`：管理列表，内容包括 draft 和可选 published 快照。
-- `GET /admin/items/{id}`：完整管理记录。
-- `POST /admin/items/{id}/publish`，正文 `{"revision":1}`。
-- `POST /admin/items/{id}/unpublish`，正文 `{"revision":2}`。
+- `GET /workspace/items`：管理列表，内容包括 draft 和可选 published 快照。
+- `GET /workspace/items/{id}`：完整管理记录。
+- `POST /workspace/items/{id}/publish`，正文 `{"revision":1}`。
+- `POST /workspace/items/{id}/unpublish`，正文 `{"revision":2}`。
 
 修改需要最新管理记录的 revision；过期返回 409。实际发布/下架增加 revision。重复批准同一快照、重复下架不会增加版本或事件。发布时没有 published_at 的内容使用首次创建时间，避免每次轮询产生时间变化。
 

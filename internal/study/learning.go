@@ -181,6 +181,9 @@ func normalizeLearningEvent(in LearningEventInput, now time.Time) (LearningEvent
 		}
 		in.OccurredAt = &at
 	}
+	if in.DraftRevision != nil && (in.Action != "record_create" || *in.DraftRevision < 1) {
+		return in, ErrInvalid
+	}
 	noRecord := in.RecordID == "" && in.ParentID == "" && in.Text == "" && !in.AsDanmaku
 	noSession := in.SessionID == "" && in.SessionSequence == 0 && in.StartAt == nil && in.EndAt == nil
 	noProgress := in.Position == nil && in.Mode == "" && in.ExpectedRevision == nil
@@ -564,6 +567,29 @@ func (s *Service) reportLearning(ctx context.Context, key string, inputs []Learn
 						return ErrInvalid
 					}
 				}
+				if in.DraftRevision != nil {
+					draftKey := learningDraftKey(client.ID, in.ItemID, in.ParentID)
+					draft, draftErr := recordAs[LearningDraft](tx, "learning_draft", draftKey)
+					if errors.Is(draftErr, ErrNotFound) {
+						return ErrConflict
+					}
+					if draftErr != nil {
+						return draftErr
+					}
+					positionMatches := (draft.Position == nil && in.Position == nil) || (draft.Position != nil && in.Position != nil && *draft.Position == *in.Position)
+					if draft.Deleted || draft.Revision != *in.DraftRevision || strings.TrimSpace(draft.Text) != in.Text || !positionMatches {
+						return ErrConflict
+					}
+					draft.Text = ""
+					draft.Position = nil
+					draft.Deleted = true
+					draft.Revision++
+					draft.UpdatedAt = now
+					draft.LastEventID = in.EventID
+					if e = recordSave(tx, "learning_draft", draftKey, draft); e != nil {
+						return e
+					}
+				}
 				createdAt := now
 				var updatedAt *time.Time
 				if importing {
@@ -664,7 +690,7 @@ func learningClientID(tx Tx, key, adminClientID string) (string, error) {
 		if !ok {
 			return "", ErrInvalid
 		}
-		if _, err := recordAs[clientRecord](tx, "client", id); err != nil {
+		if err := personalOwnerExists(tx, id); err != nil {
 			return "", err
 		}
 		return id, nil

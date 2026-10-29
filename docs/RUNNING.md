@@ -1,49 +1,73 @@
 # 温知资料数据服务
 
-当前版本按数据录入与数据查询两条链路组织；`design/index.html` 仅保留历史设计参考。正式界面在 **`/admin/`**，不是直接打开 `design` 中的演示 HTML。
+当前版本按用户工作区隔离资料；`design/index.html` 仅保留历史设计参考。正式共用工作台为 **`/workspace/`**，所有账号使用同一邮箱密码登录入口，管理员权限由服务端根据配置并核验账号后判定；原 `/admin/` 页面保留为兼容入口。
 
 前端资源通过 Go `embed` 打包，无 Node.js、CDN 或前端构建依赖。现有 JSON 入库、RSS/Atom、公开目录、增量拉取接口继续保留；客户端通过接口自行查询和推荐。
 
 ## 1. Windows 本地启动
 
-在仓库根目录 `D:\project\wzstudy` 运行：
+标准入口必须使用 PostgreSQL，不会回退到文件存储。需要 Windows PowerShell、Docker Desktop（引擎已启动）、Docker Compose v2，以及源码启动所需的 Go 1.25+。发行包若同时包含 API 与迁移可执行文件，可不安装 Go。仅接受本机 Docker 命名管道或 Unix socket，不操作 SSH/TCP 远端上下文；首次可能需要下载镜像。
+
+在项目根目录双击 `start-local.cmd`，或运行：
 
 ```powershell
 .\start-local.ps1
 ```
 
-- 已安装 Go 1.25+ 时，脚本会从当前源码构建到 `bin/wzstudy-dev.exe`，不覆盖 `dist` 中的发行可执行文件。
-- 未安装 Go 时，可使用已交付的 `dist/wzstudy-v0.3.0-windows-amd64.exe`。
-- 默认监听 `0.0.0.0:8091`，本机管理入口仍为 `http://127.0.0.1:8091/admin/`；同一局域网设备使用 `http://<服务器局域网IP>:8091/admin/`。监听通配地址 `0.0.0.0` 不能作为浏览器或二维码中的服务地址。
-- 仅允许本机访问时，启动或重启显式加 `-Address '127.0.0.1:8091'`。修改配置不影响已运行进程，需重启后生效。
-- 局域网访问要求客户端与服务器网络可达、防火墙允许受信网络的 TCP 8091。启动脚本不会创建防火墙规则或公网映射，HTTP 仅用于可信局域网调试；公网部署须使用 HTTPS 和生产存储。
-- API 接入仍使用随机管理密钥与只读密钥，保存到 `.local/access-keys.json`；Windows 下会限制新凭据文件的访问 ACL。
-- 首次运行 `start-local.ps1 -InitializeAdmin`，在本机输入管理员邮箱和隐藏密码；网页使用邮箱/密码登录，API 密钥不是登录密码。详见同目录 `ADMIN_AUTH.md`。不要将真实密码、密钥或凭据文件公开。
-- 默认资料数据位于 `.local/data`，不是浏览器 `localStorage`。初始工作空间没有演示资料。
-- 保持终端运行；按 Ctrl+C 停止服务。重启后需重新登录，但资料和文件仍然保留。
+`start-postgres-local.ps1` 和 `start-postgres-local.cmd` 仍是兼容入口。启动器使用项目根目录 `.env` 保存配置，并创建或复用本项目专属 Docker PostgreSQL 数据卷；数据库就绪、迁移成功后才启动 API。数据库默认监听 `127.0.0.1:15432`，服务默认监听 `127.0.0.1:8091`；自动选择其他空闲端口时以终端显示的工作台地址为准。服务在前台运行，Ctrl+C 仅停止 API。此模式仅适用于可信本机开发；Docker 管理者可以读取容器环境中的数据库密码。
+
+首次使用空数据库时，可在 `.env` 同时设置 `SYSTEM_ADMIN_EMAIL` 和 `SYSTEM_ADMIN_PASSWORD`；只设置其中一项会拒绝初始化，有密码时也可通过 `-AdministratorEmail` 指定邮箱。未设置两项时，默认使用 `admin@wzstudy.local` 和随机生成的密码，写入 `.env`。密码保留原始空白，至少 8、最多 128 个 UTF-8 字节；`.env` 值的成对外层引号会去除，不做变量或转义展开。已有管理员始终保留，修改密码配置不会重置它；如果配置的管理员邮箱与已有账号不一致，服务会拒绝启动，不自动转移权限或覆盖账号。已有部署未配置邮箱时，使用之前保存的管理员邮箱作为兼容回退。
+
+**`.env` 含明文密码和 API 密钥**，启动器会将其 Windows ACL 限制为当前用户，且不向终端输出密码。已有文件属于当前用户时，脚本只收紧访问权限、不重新指定所有者，通常无需以管理员身份运行；若文件属于其他用户或当前账户无权修改其访问规则，脚本会停止并提示联系文件所有者处理，不会为了启动而开放权限。不要提交、分享或删除 `.env`；应将 `.env`、PostgreSQL 数据卷和附件目录一同安全备份。旧版 `connection.json` 存在且 `.env` 未登记卷身份时，启动器会核验旧凭据、卷归属及旧标记，将兼容的设置迁入 `.env`；旧文件保留不自动删除。未完成初始化的旧管理员密码文件也只在需要时核验并迁入；配置冲突会停止。旧的 `-InitializeAdmin` 和文件模式 `-ProfileDirectory` 不再适用于此入口。
+
+### 本机数据库初始化
+
+`start-local.ps1` 使用根 `.env` 中的 `DATABASE_URL`、`POSTGRES_PASSWORD`、`ADMIN_API_KEY` 和 `READ_API_KEY`，不会用同名进程变量覆盖文件。没有配置数据库密码时生成随机密码并构造本机连接串；只配置 `POSTGRES_PASSWORD` 时使用该密码并构造连接串。缺少 API 密钥时也会生成，连同卷身份、初始化状态一起安全写入 `.env`，再用同一数据库密码启动专属 Docker PostgreSQL、迁移和 API。写入失败或检测到配置文件并发修改时停止，不会用临时密码创建数据库。
+
+`-NoEnvFile` 是例外的进程环境模式：它不读取或写入 `.env`，仅接受已创建且卷归属匹配的数据库，并要求进程提供完整数据库连接、两个 API 密钥及 `WZSTUDY_LOCAL_INSTANCE_ID`、`WZSTUDY_LOCAL_VOLUME_STATE=created`；不能用它自动初始化新库或生成无法持久保存的密码。
+
+可以配置指向本机的 `DATABASE_URL` 来指定数据库用户、库名和端口，例如 `postgres://<用户>:<URL编码后的密码>@127.0.0.1:15432/<库名>?sslmode=disable`。用户名和库名须以字母或下划线开头，只包含 ASCII 字母、数字和下划线，最长 63 字符；主机仅支持 `127.0.0.1` 或 `localhost`，仅支持 `sslmode=disable` 且不接受其他查询参数（本机 Docker 容器未配置 TLS）。连接串没有指定端口时使用 PostgreSQL 标准端口 5432；没有配置连接串时默认本机端口 15432。配置的端口与 `-DatabasePort` 不一致会报错，不自动切换端口。URL 中没有密码时，使用 `POSTGRES_PASSWORD` 或生成随机密码；两处同时提供密码时必须一致。密码按 UTF-8 原样使用；URL 中的保留字符需百分号编码。密码允许 1–256 UTF-8 字节，不接受 NUL 或换行；请使用足够强的密码。
+
+`.env` 中的本机卷身份和状态用于核对 Docker 标签；已登记的数据卷缺失、归属不符或凭据不完整时停止，不创建替代空库。不能通过修改 `.env` 来重设现有 PostgreSQL 用户密码：如果新连接或密码与卷中实际数据库不匹配，迁移或连接会失败，原数据不会被重置。不要删除数据卷或配置来绕过保护。要连接已有外部数据库，请改用 `scripts/start-dev.ps1 -Postgres` 并配置适合该数据库的 TLS。
+
+### 附件存储路径
+
+根 `.env` 配置媒体附件路径：
+
+```dotenv
+DATA_DIR=.local/postgres-local/data
+```
+
+可改为绝对路径（例如 `DATA_DIR=D:\study-media`）或相对项目根目录的路径；带空格可用成对引号。`-DataDirectory` 优先于进程环境 `DATA_DIR`，进程环境优先于 `.env`；`-NoEnvFile` 不读取 `.env`，无配置时回到上述默认路径。修改配置需重启 API；**仅修改路径不会搬迁已有附件**，切换前请停止服务、备份并确认所需文件已迁移。PostgreSQL 记录仍保存在 Docker 数据卷，`DATA_DIR` 不改变数据库的位置；需要一起备份数据库、附件目录和连接凭据。旧文件模式的账号、资料及附件不会自动迁移或删除。
+
+```powershell
+.\start-local.ps1 -ApiPort 8092 -DataDirectory "D:\study-media"
+.\start-local.ps1 -Check
+```
+
+`-Check` 只解析附件路径和命令行端口，不解析或校验 `DATABASE_URL`、不读取 PostgreSQL 凭据文件、不输出 `.env` 其他字段，也不启动 Docker 或连接数据库。显式端口占用时安全退出；保存的数据库端口不能被启动参数悄然改写。若已登记的数据库卷或凭据丢失，启动器拒绝创建替代，需先恢复原数据。`python scripts/verify_postgres_launcher.py` 只使用临时项目和模拟 Docker；`python scripts/verify_postgres_admin_env.py` 使用单独的临时项目和真实本地 Docker PostgreSQL 验证配置与登录，并在归属校验通过后清理测试容器和数据卷。
+
+默认只允许本机访问。要在可信局域网供手机扫码，先停止现有 API（不要在上传或入库时操作），再显式启动：
+
+```powershell
+.\start-local.ps1 -Lan
+# 使用其他 API 端口：.\start-local.ps1 -Lan -ApiPort 8092
+# 只预览参数，不启动服务或测试网络：.\start-local.ps1 -Lan -Check
+```
+
+`-Lan` 请求 API 监听所有 IPv4 网卡（`0.0.0.0`）；系统可能使用 IPv6 双栈通配套接字，也可能允许 IPv6 访问，请同时检查 IPv4/IPv6 的网络与防火墙边界。启动信息会列出活动网卡的候选 IPv4；根据手机与电脑所连接的网络选择实际可达的地址。二维码中的服务地址填写例如 `http://192.168.1.10:8091`，不要使用 `0.0.0.0`、`127.0.0.1` 或 `/workspace` 路径。也可用 `-Address '192.168.1.10:8091'` 只绑定一个指定的本机 IPv4；`-Address` 不能与 `-Lan` 或 `-ApiPort` 同时使用。数据库仍只监听本机。
+
+启动器不会修改 Windows 防火墙；如手机不能连接，请检查当前网络配置、受信网络的防火墙入站规则和 Wi-Fi 客户端隔离。局域网模式会扩大 API 暴露范围，HTTP 明文传输密码和查询 Key，仅在可信网络临时使用，正式服务请配置 HTTPS，不要直接暴露到公网。
 
 ### 重启与退出码排查
-
-在另一个终端执行以下命令可重启本项目的本地服务：
 
 ```powershell
 .\scripts\restart-local.ps1
 ```
 
-- 重启脚本仅停止端口上属于本项目已知可执行文件的进程；其他程序占用端口时拒绝操作。停止使用强制结束方式，会中断请求，不要在上传或入库期间重启。
-- 新版启动器与重启脚本通过仅限本机会话的进程生命周期信号确认这次重启。旧窗口收到明确通知且服务以 `-1` 退出时，显示“由重启脚本停止”，不再误报运行失败；替代实例的启动结果以执行重启的终端为准。通知不会证明替代实例已成功启动。
-- 没有收到重启通知的 `-1`（Windows `0xFFFFFFFF`）仍然报错，提示检查其他终端、旧版重启脚本、`Stop-Process` 或终端/任务被停止等情况；仅凭退出码不能确定是谁终止了进程。这不是管理员密码错误的证明，不要因此删除数据或重新生成密钥。
-- 更新脚本前已经运行的旧窗口没有上述信号，重启时仍可能显示原来的 `-1` 错误；重新使用新版启动器启动后生效。不需要仅为消除旧窗口报错而再次重启健康实例。
-- 可只读检查当前实例是否就绪：`Invoke-RestMethod http://127.0.0.1:8091/api/v1/health/ready`。返回 `ready` 只说明当前实例就绪，不能证明先前实例的退出原因。
-- 服务仍在前台运行，需保持启动终端打开；本脚本没有安装 Windows 常驻服务，也不会因未知退出而自动无限重启。
+如之前的 API 端口不是 8091，重启时传入实际 `-ApiPort` 或 `-Address`。重启仅停止端口上属于本项目的已识别可执行文件；遇到其他程序、Docker 不可用或缺少构建条件时拒绝停止。重启使用强制结束方式，会中断请求，不要在上传或入库期间操作。新旧服务使用本地生命周期信号确认显式重启；未经确认的强制退出仍报错。旧文件模式进程重启后也会切换到 PostgreSQL，但不会自动迁移数据。
 
-自定义端口或数据目录：
-
-```powershell
-.\start-local.ps1 -Address "127.0.0.1:8092" -DataDirectory "D:\study-data"
-```
-
-如果组织策略不允许运行脚本，请使用已批准的策略，或通过环境变量运行 Go/可执行文件；无需修改系统级执行策略。
+可只读检查就绪状态：`Invoke-RestMethod http://127.0.0.1:8091/api/v1/health/ready`。此脚本不会安装 Windows 常驻服务。
 
 ## 2. 手动运行与环境变量
 
@@ -51,13 +75,16 @@
 
 ```powershell
 $env:APP_ENV = "development"
-$env:STORE = "file"
-$env:DATA_DIR = "D:\study-data"
-$env:HTTP_ADDR = "0.0.0.0:8091"
+$env:STORE = "postgres"
+$env:DATABASE_URL = "<已配置的 PostgreSQL 连接串>"
+$env:DATA_DIR = "D:\study-media"
+$env:HTTP_ADDR = "127.0.0.1:8091"
 # 在本机安全配置中设置两个不同的随机密钥，不要使用固定公开示例值：
 $env:ADMIN_API_KEY = "<32–256 字符的随机管理密钥>"
 $env:READ_API_KEY = "<另一个随机只读密钥>"
-go run wzstudy/cmd/api
+# 空数据库还须安全设置 SYSTEM_ADMIN_EMAIL 和 SYSTEM_ADMIN_PASSWORD。
+go run ./cmd/migrate
+go run ./cmd/api
 ```
 
 上面的占位符必须替换为实际随机值。也可在仓库根目录运行 `go run ./cmd/api`。
@@ -65,10 +92,10 @@ go run wzstudy/cmd/api
 | 变量 | 默认值 / 规则 |
 | --- | --- |
 | `APP_ENV` | `development`；另支持 `test`、`production` |
-| `HTTP_ADDR` | `0.0.0.0:8091`，监听所有 IPv4 网卡；仅本机可显式设为 `127.0.0.1:8091` |
-| `STORE` | 服务默认 `postgres`；本地脚本显式使用 `file`；`memory` 仅用于临时测试 |
-| `DATA_DIR` | 服务默认 `data`；本地脚本使用仓库根目录 `.local/data`，存放文件快照与上传附件 |
-| `DATABASE_URL` | PostgreSQL 模式必填 |
+| `HTTP_ADDR` | 服务自身默认 `0.0.0.0:8091`；本机 PostgreSQL 启动器默认设置为 `127.0.0.1:8091` |
+| `STORE` | 服务默认 `postgres`；本地启动脚本强制使用 `postgres` |
+| `DATA_DIR` | 服务默认 `data`；本地启动从 `.env`、进程环境或参数解析，默认 `.local/postgres-local/data`，存放媒体附件而非 PostgreSQL 数据 |
+| `DATABASE_URL` | 手动 PostgreSQL 模式必填；本机启动器可选，只允许本机 Docker 连接地址 |
 | `ADMIN_API_KEY` | 32–256 字符；仅 Bearer 管理 API 自动化，不用于浏览器登录 |
 | `SYSTEM_ADMIN_EMAIL` | 首次初始化管理员的邮箱；之后可省略，同邮箱不改密码，不同邮箱拒绝 |
 | `SYSTEM_ADMIN_PASSWORD` | 首次初始化密码，8–128 UTF-8 字节；原始空白保留，仅持久化 Argon2id 哈希 |
@@ -131,6 +158,18 @@ GET  /api/v1/changes?after=0
 
 ## 5. PostgreSQL 部署与迁移
 
+项目通过 `DATABASE_URL` 指定 PostgreSQL 用户、密码、主机、端口和数据库，例如：
+
+```text
+DATABASE_URL=postgres://<数据库用户>:<URL编码后的密码>@<数据库主机>:5432/<数据库名>?sslmode=require
+```
+
+将根目录 `.env.example` 复制为 `.env` 并填入真实连接信息；凭据中有 URL 保留字符时应编码。远程或生产环境应启用 TLS，并按数据库证书配置验证方式。不要提交或分享包含真实密码的 `.env`。
+
+- **本机连接已有 PostgreSQL**：`scripts/start-dev.ps1 -Postgres` 会读取 `.env` 中的 `DATABASE_URL`，先执行数据库迁移再启动。还需安全配置两个不同的 `ADMIN_API_KEY` 和 `READ_API_KEY`；它们不是管理员网页密码。首次使用空数据库还需配置管理员邮箱和密码。
+- **Docker Compose 内置 PostgreSQL**：当前 Compose 总会启动自带数据库，并由 `POSTGRES_PASSWORD` 和内置用户名、库名生成容器网络中的连接地址；它**不会读取示例中的 `DATABASE_URL`**，同样需要配置两种 API 密钥。Compose 密码请使用 URL 安全字符。
+- **默认本地启动**：`start-local.ps1` 使用专属本机 Docker PostgreSQL，从 `.env` 读取本机 `DATABASE_URL` 和 `POSTGRES_PASSWORD`；未提供密码则生成并写入 `.env`，不连接外部数据库。现有文件数据不会自动复制到 PostgreSQL；媒体文件位于 `DATA_DIR`，需要与数据库一起备份。
+
 1. 安全配置两类访问密钥与 `DATABASE_URL`。
 2. 执行 `go run wzstudy/cmd/migrate`，在原有迁移基础上追加应用 `000002_management_workspace.sql` 与 `000003_input_query_identities.sql`；不要修改已应用的 `000001_initial.sql`。
 3. 设置 `STORE=postgres`、持久化的 `DATA_DIR`，启动服务。
@@ -162,9 +201,8 @@ GET  /api/v1/changes?after=0
 python scripts/verify_go.py
 go vet ./...
 python scripts/verify_structure.py
-# Windows：隔离验证前台启动、已通知重启与未知强制终止；不操作真实工作区
-New-Item -ItemType Directory -Force .artifacts | Out-Null
-go build -o .artifacts/wzstudy-launcher-test.exe ./cmd/api
+# Windows：使用模拟 Docker 和隔离服务验证 PostgreSQL 启动、数据保护和重启
+python scripts/verify_postgres_launcher.py
 python scripts/verify_local_service.py
 New-Item -ItemType Directory -Force .artifacts | Out-Null
 go build -o .artifacts/wzstudy.exe ./cmd/api
@@ -180,13 +218,11 @@ python -m unittest discover -s mcp/wzstudy_ingest/tests -v
 
 ## 8. 目录与旧入口兼容
 
-- 统一入口为根 `start-local.ps1`，实现位于 `scripts/start-local.ps1`；`scripts/start-dev.ps1` 默认也沿用文件持久化模式。只有显式 `-Memory` 才使用易失内存。
-- `.local`、`.artifacts`、`dist`、`design` 已归位到仓库根。业务 Go 包仍位于 `internal`，内嵌资源路径不变。
-- 本次搬迁是在无本项目服务进程占用时完成；原密钥字节、凭据 ACL 和工作区文件数保持一致，没有重置数据。
-- 启动器兼容仍在 `internal/.local` 的旧工作区；两处同时存在工作区时必须传 `-ProfileDirectory`。不自动迁移或覆盖任一份。
-- `-Check` 只返回路径，不读取密钥、不构建、不生成文件、不启动服务；可从任意当前目录调用根入口。
-- `-SkipBuild` 使用便携版。开发构建在 `bin`，测试构建在 `.artifacts`，发行包在 `dist`，互不覆盖。
-- 旧 `internal/start-local.ps1` 是委托入口，旧相对 `-DataDirectory` 仍以 `internal` 为基准。新入口相对路径以仓库根为基准。
-- Docker 将附件保存在 `/var/lib/wzstudy` 的 `api_data` 卷，数据库和附件卷需一起备份；根及旧层级私有目录均不进入构建上下文。
+- 根 `start-local.ps1` 委托 `start-postgres-local.ps1`；`scripts/start-local.ps1`、`scripts/start-dev.ps1` 的默认入口和 `internal/start-local.ps1` 也使用 PostgreSQL。显式内存模式的启动已禁用。
+- `scripts/start-dev.ps1 -Postgres` 是连接已有 PostgreSQL 的单独路径，需要自行配置连接串与 API 密钥。
+- `-Check` 返回解析后的路径和端口，不读取密钥内容、不构建、不生成文件、不启动服务；可从任意当前目录调用。
+- 从源码构建使用临时构建目录；`-SkipBuild` 需要 `dist` 中同时具备 API 与迁移可执行文件，不会回退文件存储。
+- 旧 `internal/start-local.ps1` 是委托入口，其相对 `-DataDirectory` 仍以 `internal` 为基准；新入口和 `.env` 中的相对路径以项目根为基准。
+- 旧 `.local` 和 `internal/.local` 文件工作区不会被自动搬迁或覆盖。另一套 `docker-compose.yml` 的附件保存在 `api_data` 卷，与本机启动器的 `DATA_DIR` 不同；数据库和附件需一起备份。
 
 详细目录职责见同目录 `PROJECT_LAYOUT.md`。

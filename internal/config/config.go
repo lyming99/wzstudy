@@ -23,6 +23,14 @@ type Config struct {
 	ReadKey                string
 	PollEnabled            bool
 	CORSOrigins            []string
+	AgentEnabled           bool
+	AgentLeaseSeconds      int
+	AgentHeartbeatGrace    int
+	AgentTaskDefaultItems  int
+	AgentTaskMaxItems      int
+	AgentTaskMaxTimeout    int
+	AgentEventMaxBytes     int
+	AgentEventTotalBytes   int
 }
 
 func Load() (Config, error) { return FromEnv(os.Getenv) }
@@ -88,6 +96,38 @@ func FromEnv(get func(string) string) (c Config, err error) {
 	c.PollEnabled, err = strconv.ParseBool(value("POLL_ENABLED", "true"))
 	if err != nil {
 		return c, errors.New("invalid POLL_ENABLED")
+	}
+	c.AgentEnabled, err = strconv.ParseBool(value("AGENT_ENABLED", "true"))
+	if err != nil {
+		return c, errors.New("invalid AGENT_ENABLED")
+	}
+	integer := func(name, fallback string, minimum, maximum int) (int, error) {
+		parsed, e := strconv.Atoi(value(name, fallback))
+		if e != nil || parsed < minimum || parsed > maximum {
+			return 0, errors.New(name + " must be an integer in range")
+		}
+		return parsed, nil
+	}
+	if c.AgentLeaseSeconds, err = integer("AGENT_LEASE_SECONDS", "300", 60, 3600); err != nil {
+		return c, err
+	}
+	if c.AgentHeartbeatGrace, err = integer("AGENT_HEARTBEAT_GRACE_SECONDS", "90", 30, c.AgentLeaseSeconds); err != nil {
+		return c, err
+	}
+	if c.AgentTaskMaxItems, err = integer("AGENT_TASK_MAX_ITEMS", "100", 1, 100); err != nil {
+		return c, err
+	}
+	if c.AgentTaskDefaultItems, err = integer("AGENT_TASK_DEFAULT_ITEMS", "50", 1, c.AgentTaskMaxItems); err != nil {
+		return c, err
+	}
+	if c.AgentTaskMaxTimeout, err = integer("AGENT_TASK_MAX_TIMEOUT_SECONDS", "1800", 60, 7200); err != nil {
+		return c, err
+	}
+	if c.AgentEventMaxBytes, err = integer("AGENT_EVENT_MAX_BYTES", "8192", 1024, 65536); err != nil {
+		return c, err
+	}
+	if c.AgentEventTotalBytes, err = integer("AGENT_EVENT_TOTAL_BYTES", "262144", c.AgentEventMaxBytes, 1<<20); err != nil {
+		return c, err
 	}
 	for _, v := range strings.Split(get("CORS_ORIGINS"), ",") {
 		v = strings.TrimSpace(v)

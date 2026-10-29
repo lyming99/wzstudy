@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -13,7 +12,7 @@ import (
 func TestQueryClientConnectionIdentity(t *testing.T) {
 	s, h, _ := managementApp(t, 1<<20)
 	_, sourceKey := create(t, h, false)
-	for _, key := range []string{"", adminKey, readKey, sourceKey, "invalid-client-key"} {
+	for _, key := range []string{"", adminKey, legacyReadKey, sourceKey, "invalid-client-key"} {
 		if out := request(t, h, http.MethodGet, "/api/v1/client/connection", key, nil); out.Code != 401 {
 			t.Fatal("wrong credential accepted", out.Code)
 		}
@@ -28,7 +27,7 @@ func TestQueryClientConnectionIdentity(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client, key := managedClient(t, h, "connection-"+tc.name, tc.permissions)
-			before, err := s.Client(context.Background(), client.ID)
+			before, err := s.Client(testWorkspaceContext(), client.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -49,7 +48,7 @@ func TestQueryClientConnectionIdentity(t *testing.T) {
 					t.Fatal("identity leaked credentials")
 				}
 			}
-			after, err := s.Client(context.Background(), client.ID)
+			after, err := s.Client(testWorkspaceContext(), client.ID)
 			if err != nil || after.Revision != before.Revision || !after.UpdatedAt.Equal(before.UpdatedAt) {
 				t.Fatal("identity request mutated client")
 			}
@@ -72,7 +71,7 @@ func TestQueryClientConnectionRevocationAndLegacyKey(t *testing.T) {
 		Client study.Client `json:"client"`
 		Key    string       `json:"access_key"`
 	}
-	data(t, request(t, h, "POST", "/api/v1/admin/clients/"+client.ID+"/key", adminKey, map[string]int64{"revision": client.Revision}), &rotated)
+	data(t, request(t, h, "POST", "/api/v1/workspace/clients/"+client.ID+"/key", workspaceKey, map[string]int64{"revision": client.Revision}), &rotated)
 	if out := request(t, h, "GET", "/api/v1/client/connection", key, nil); out.Code != 401 {
 		t.Fatal("old key retained", out.Code)
 	}
@@ -81,13 +80,13 @@ func TestQueryClientConnectionRevocationAndLegacyKey(t *testing.T) {
 	}
 	body := policyBody(rotated.Client, []string{"read", "sync"})
 	body["enabled"] = false
-	data(t, request(t, h, "PUT", "/api/v1/admin/clients/"+client.ID, adminKey, body), &client)
+	data(t, request(t, h, "PUT", "/api/v1/workspace/clients/"+client.ID, workspaceKey, body), &client)
 	if out := request(t, h, "GET", "/api/v1/client/connection", rotated.Key, nil); out.Code != 403 {
 		t.Fatal(out.Code)
 	}
 	body = policyBody(client, []string{})
 	body["enabled"] = true
-	data(t, request(t, h, "PUT", "/api/v1/admin/clients/"+client.ID, adminKey, body), &client)
+	data(t, request(t, h, "PUT", "/api/v1/workspace/clients/"+client.ID, workspaceKey, body), &client)
 	if out := request(t, h, "GET", "/api/v1/client/connection", rotated.Key, nil); out.Code != 403 {
 		t.Fatal(out.Code)
 	}
@@ -95,7 +94,7 @@ func TestQueryClientConnectionRevocationAndLegacyKey(t *testing.T) {
 	// A deliberately migrated old source prefix is valid only because its hash
 	// now belongs to a Client. Prefix checks must not replace identity checks.
 	source, legacyKey := create(t, h, false)
-	if err := s.Store.Update(context.Background(), func(tx study.Tx) error {
+	if err := s.Store.Update(testWorkspaceContext(), func(tx study.Tx) error {
 		v, e := tx.Source(source.ID)
 		if e != nil {
 			return e
@@ -105,7 +104,7 @@ func TestQueryClientConnectionRevocationAndLegacyKey(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.MigrateIdentities(context.Background(), nil); err != nil {
+	if _, err := s.MigrateIdentities(testWorkspaceContext(), nil); err != nil {
 		t.Fatal(err)
 	}
 	if out := request(t, h, "GET", "/api/v1/client/connection", legacyKey, nil); out.Code != 200 {
@@ -115,11 +114,11 @@ func TestQueryClientConnectionRevocationAndLegacyKey(t *testing.T) {
 
 func TestQRCodeLocalStaticBundle(t *testing.T) {
 	_, h, _ := managementApp(t, 1<<20)
-	page := request(t, h, "GET", "/admin/", "", nil)
-	if !strings.Contains(page.Body.String(), "/admin/qrcodegen.js") || strings.Index(page.Body.String(), "/admin/qrcodegen.js") > strings.Index(page.Body.String(), "/admin/app.js") {
+	page := request(t, h, "GET", "/workspace/", "", nil)
+	if !strings.Contains(page.Body.String(), "/workspace/qrcodegen.js") || strings.Index(page.Body.String(), "/workspace/qrcodegen.js") > strings.Index(page.Body.String(), "/workspace/app.js") {
 		t.Fatal("QR encoder load order")
 	}
-	qr := request(t, h, "GET", "/admin/qrcodegen.js", "", nil)
+	qr := request(t, h, "GET", "/workspace/qrcodegen.js", "", nil)
 	if qr.Code != 200 || !strings.Contains(qr.Header().Get("Content-Type"), "javascript") || !strings.Contains(qr.Body.String(), "MIT License") {
 		t.Fatal("local encoder missing")
 	}

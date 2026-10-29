@@ -64,8 +64,8 @@ func TestOpenAPICoversAllBusinessRoutes(t *testing.T) {
 func TestRejectsInvalidUTF8AndNullBodies(t *testing.T) {
 	_, h := app()
 	for _, raw := range [][]byte{[]byte("null"), []byte(`{"slug":"invalid","name":"` + string([]byte{0xff}) + `"}`)} {
-		r := httptest.NewRequest("POST", "/api/v1/admin/sources", bytes.NewReader(raw))
-		r.Header.Set("Authorization", "Bearer "+adminKey)
+		r := httptest.NewRequest("POST", "/api/v1/workspace/sources", bytes.NewReader(raw))
+		r.Header.Set("Authorization", "Bearer "+workspaceKey)
 		r.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)

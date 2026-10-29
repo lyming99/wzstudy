@@ -3,6 +3,7 @@ param(
     [switch]$Postgres,
     [switch]$Memory,
     [string]$Address = '0.0.0.0:8091',
+    [switch]$Lan,
     [string]$DataDirectory = '',
     [string]$ProfileDirectory = '',
     [switch]$InitializeAdmin,
@@ -13,7 +14,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path $PSScriptRoot -Parent
 if ($Postgres -and $Memory) { throw 'Choose either -Postgres or -Memory, not both.' }
-# Default is the same durable local workspace as the root entry point.
+if ($Memory) { throw 'Memory-mode service startup is disabled; PostgreSQL is required.' }
+if ($Lan -and $PSBoundParameters.ContainsKey('Address')) { throw 'Use either -Lan or -Address, not both.' }
+# Default is the same PostgreSQL-backed launcher as the root entry point.
 if (-not $Postgres -and -not $Memory) {
     $null = $PSBoundParameters.Remove('Postgres')
     $null = $PSBoundParameters.Remove('Memory')
@@ -49,7 +52,7 @@ try {
     }
     $env:APP_ENV = 'development'
     $env:STORE = $Mode
-    if ($PSBoundParameters.ContainsKey('Address') -or -not $env:HTTP_ADDR) { $env:HTTP_ADDR=$Address }
+    if ($Lan -or $PSBoundParameters.ContainsKey('Address') -or -not $env:HTTP_ADDR) { $env:HTTP_ADDR=$Address }
     if (-not [string]::IsNullOrWhiteSpace($DataDirectory)) {
         $env:DATA_DIR = if ([IO.Path]::IsPathRooted($DataDirectory)) { $DataDirectory } else { Join-Path $Root $DataDirectory }
     } elseif (-not $env:DATA_DIR) {
@@ -59,7 +62,7 @@ try {
         if (-not $env:DATABASE_URL) { throw 'Configure DATABASE_URL before using -Postgres.' }
         & go run ./cmd/migrate
         if ($LASTEXITCODE -ne 0) { throw 'Database migration failed.' }
-    } else { Write-Warning 'Explicit memory mode: metadata is lost when this process stops. Use the default file mode for persistent local work.' }
+    } else { Write-Warning 'Explicit memory mode is for testing only: metadata is lost when this process stops. The default launcher uses PostgreSQL.' }
     Write-Host "Development mode: $Mode; address: $env:HTTP_ADDR. Keys are not printed."
     & go run ./cmd/api
     if ($LASTEXITCODE -ne 0) { throw 'Development service stopped with an error.' }

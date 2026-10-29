@@ -33,8 +33,9 @@ def free_port():
 
 required = [
     'go.mod', 'cmd/api/main.go', 'internal/adminui/embed.go',
-    'start-local.ps1', 'scripts/start-local.ps1', 'scripts/admin-environment.ps1',
-    'scripts/local-service-lifecycle.ps1', 'internal/start-local.ps1',
+    'start-local.ps1', 'start-local.cmd', 'start-postgres-local.ps1', 'start-postgres-local.cmd',
+    'scripts/docker-compose-local-postgres.yml', 'scripts/start-local.ps1', 'scripts/admin-environment.ps1',
+    'scripts/local-env.ps1', 'scripts/local-postgres-state.ps1', 'scripts/local-service-lifecycle.ps1', 'internal/start-local.ps1',
     'scripts/start-dev.ps1', 'scripts/restart-local.ps1', 'scripts/restart-local.cmd',
     'scripts/verify_go.py', 'scripts/verify_live.py',
     'scripts/verify_package.py', 'scripts/package_release.py',
@@ -73,9 +74,9 @@ package_files = next(node.value for node in package_tree.body
                      and any(isinstance(target, ast.Name) and target.id == 'files'
                              for target in node.targets))
 package_keys = {key.value for key in package_files.keys if isinstance(key, ast.Constant)}
-launcher_files = {'start-local.ps1', 'scripts/start-local.ps1', 'scripts/admin-environment.ps1',
-                  'scripts/local-service-lifecycle.ps1', 'scripts/restart-local.ps1',
-                  'scripts/restart-local.cmd'}
+launcher_files = {'start-local.ps1', 'start-local.cmd', 'start-postgres-local.ps1', 'start-postgres-local.cmd',
+                  'scripts/docker-compose-local-postgres.yml', 'scripts/start-local.ps1', 'scripts/admin-environment.ps1',
+                  'scripts/local-env.ps1', 'scripts/local-postgres-state.ps1', 'scripts/local-service-lifecycle.ps1', 'scripts/restart-local.ps1', 'scripts/restart-local.cmd'}
 assert launcher_files <= package_keys, launcher_files - package_keys
 for key, value in zip(package_files.keys, package_files.values):
     if isinstance(key, ast.Constant) and key.value in launcher_files:
@@ -86,9 +87,9 @@ check('Portable archive whitelist includes every local launcher runtime dependen
 
 powershell = shutil.which('powershell.exe') if os.name == 'nt' else None
 if powershell:
-    paths = [ROOT / name for name in ['start-local.ps1', 'scripts/start-local.ps1',
+    paths = [ROOT / name for name in ['start-local.ps1', 'start-postgres-local.ps1', 'scripts/start-local.ps1',
              'scripts/start-dev.ps1', 'scripts/restart-local.ps1', 'scripts/init-env.ps1',
-             'scripts/admin-environment.ps1', 'scripts/local-service-lifecycle.ps1', 'internal/start-local.ps1']]
+             'scripts/admin-environment.ps1', 'scripts/local-env.ps1', 'scripts/local-postgres-state.ps1', 'scripts/local-service-lifecycle.ps1', 'internal/start-local.ps1']]
     quoted = ','.join("'" + str(p).replace("'", "''") + "'" for p in paths)
     syntax = "$ErrorActionPreference='Stop';foreach($p in @(" + quoted + ")){$t=$null;$e=$null;[void][System.Management.Automation.Language.Parser]::ParseFile($p,[ref]$t,[ref]$e);if($e.Count){throw ('PowerShell syntax error: '+$p)}}"
     subprocess.run([powershell, '-NoProfile', '-NonInteractive', '-Command', syntax],
@@ -137,17 +138,22 @@ try {
         caller = Path(temp) / 'unrelated caller'
         project.mkdir()
         caller.mkdir()
-        for name in ['start-local.ps1', 'scripts/start-local.ps1', 'scripts/admin-environment.ps1', 'scripts/local-service-lifecycle.ps1',
+        for name in ['start-local.ps1', 'start-local.cmd', 'start-postgres-local.ps1', 'start-postgres-local.cmd',
+                     'scripts/docker-compose-local-postgres.yml', 'scripts/start-local.ps1',
+                     'scripts/admin-environment.ps1', 'scripts/local-env.ps1', 'scripts/local-postgres-state.ps1', 'scripts/local-service-lifecycle.ps1',
                      'scripts/start-dev.ps1', 'scripts/restart-local.ps1', 'scripts/restart-local.cmd',
                      'internal/start-local.ps1']:
             destination = project / name
             destination.parent.mkdir(exist_ok=True)
             shutil.copyfile(ROOT / name, destination)
 
-        def run(entry, *args, fail=False):
+        def run(entry, *args, fail=False, extra_env=None):
+            env = dict(os.environ)
+            env.pop('DATA_DIR', None)
+            env.update(extra_env or {})
             result = subprocess.run([powershell, '-NoLogo', '-NoProfile', '-NonInteractive',
                         '-ExecutionPolicy', 'RemoteSigned', '-File', str(project / entry), *args],
-                        cwd=caller, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        cwd=caller, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                         encoding='utf-8', errors='replace', timeout=30)
             if fail:
                 assert result.returncode != 0, entry
@@ -157,98 +163,45 @@ try {
 
         initial = run('start-local.ps1', '-Check')
         assert Path(initial['project_root']) == project
-        assert Path(initial['data_directory']) == project / '.local/data'
-        assert initial['address'] == '0.0.0.0:8091'
-        restart = run('scripts/restart-local.ps1', '-Check', '-SkipBuild', '-NoEnvFile')
-        assert restart['data_directory'] == initial['data_directory']
-        assert restart['address'] == initial['address']
-        assert Path(restart['executable']) == project / 'dist/wzstudy-v0.3.0-windows-amd64.exe'
-        batch = subprocess.run(['cmd.exe', '/d', '/c', str(project / 'scripts/restart-local.cmd'), '-Check'],
-                               cwd=caller, capture_output=True, encoding='utf-8', errors='replace', timeout=30)
-        assert batch.returncode == 0, batch.stderr[-1500:]
-        assert json.loads(batch.stdout.lstrip('\ufeff'))['data_directory'] == initial['data_directory']
-        assert not (project / '.local').exists()
-        check('Root and restart launchers (including double-click wrapper) support unrelated cwd, spaces and read-only -Check')
-
-        entries = ['start-local.ps1', 'scripts/start-local.ps1', 'scripts/start-dev.ps1',
-                   'scripts/restart-local.ps1', 'internal/start-local.ps1']
+        assert Path(initial['data_directory']) == project / '.local/postgres-local/data'
+        assert initial['address'] == '127.0.0.1:8091' and initial['store'] == 'postgres'
+        entries = ['start-local.ps1', 'start-postgres-local.ps1', 'scripts/start-local.ps1',
+                   'scripts/start-dev.ps1', 'scripts/restart-local.ps1', 'internal/start-local.ps1']
         for entry in entries:
             config = run(entry, '-Check')
-            assert config['data_directory'] == initial['data_directory']
-            assert config['address'] == '0.0.0.0:8091', entry
-            for address in ['127.0.0.1:8092', '192.0.2.10:8092']:
-                assert run(entry, '-Check', '-Address', address)['address'] == address, entry
-        check('All launchers share the durable workspace and default LAN listener; explicit loopback/IP addresses are preserved')
+            assert config['store'] == 'postgres' and config['data_directory'] == initial['data_directory'], entry
+            assert run(entry, '-Check', '-Address', '0.0.0.0:8092')['address'] == '0.0.0.0:8092', entry
+            lan = run(entry, '-Check', '-Lan')
+            assert lan['address'] == '0.0.0.0:8091' and lan['database_host'] == '127.0.0.1', entry
+            assert 'either -Lan or -Address' in run(
+                entry, '-Check', '-Lan', '-Address', '127.0.0.1:8091', fail=True).stderr, entry
+            if entry != 'scripts/start-dev.ps1':
+                assert run(entry, '-Check', '-Lan', '-ApiPort', '8092')['address'] == '0.0.0.0:8092', entry
+        batch = subprocess.run(['cmd.exe', '/d', '/c', str(project / 'scripts/restart-local.cmd'), '-Check'],
+                               cwd=caller, capture_output=True, encoding='utf-8', errors='replace', timeout=30,
+                               env={key: value for key, value in os.environ.items() if key != 'DATA_DIR'})
+        assert batch.returncode == 0, batch.stderr[-1500:]
+        assert json.loads(batch.stdout.lstrip('\ufeff'))['store'] == 'postgres'
+        assert not (project / '.local').exists()
+        check('All default launch and restart entries resolve to PostgreSQL and support read-only checks from unrelated cwd')
 
         modern = run('start-local.ps1', '-Check', '-DataDirectory', 'custom data')
         legacy = run('internal/start-local.ps1', '-Check', '-DataDirectory', 'custom data')
         assert Path(modern['data_directory']) == project / 'custom data'
         assert Path(legacy['data_directory']) == project / 'internal/custom data'
-        check('New relative data paths use project root; legacy relative paths preserve their old meaning')
+        (project / '.env').write_text('DATA_DIR="folder with spaces"\n', encoding='utf-8')
+        configured = run('start-local.ps1', '-Check')
+        assert Path(configured['data_directory']) == project / 'folder with spaces'
+        overridden = run('start-local.ps1', '-Check', extra_env={'DATA_DIR': 'process dir'})
+        assert Path(overridden['data_directory']) == project / 'process dir'
+        assert Path(run('start-local.ps1', '-Check', '-NoEnvFile')['data_directory']) == project / '.local/postgres-local/data'
+        check('DATA_DIR uses command > process > .env > default; relative paths and legacy argument behavior are preserved')
 
-        old_profile = project / 'internal/.local'
-        old_profile.mkdir()
-        (old_profile / 'access-keys.json').write_text('synthetic sentinel, not a key', encoding='utf-8')
-        old = run('start-local.ps1', '-Check')
-        assert old['legacy_profile'] and Path(old['profile_directory']) == old_profile
-        check('Existing legacy workspace is selected without reading or rewriting its credential file')
-
-        root_profile = project / '.local'
-        root_profile.mkdir()
-        (root_profile / 'access-keys.json').write_text('another synthetic sentinel', encoding='utf-8')
-        result = run('start-local.ps1', '-Check', fail=True)
-        assert 'Both .local' in result.stderr
-        explicit = run('start-local.ps1', '-Check', '-ProfileDirectory', str(old_profile))
-        assert Path(explicit['profile_directory']) == old_profile
-        check('Ambiguous workspaces are refused; an explicit profile resolves the ambiguity')
-
-        pg = run('scripts/start-dev.ps1', '-Postgres', '-Check')
-        memory = run('scripts/start-dev.ps1', '-Memory', '-Check')
-        assert pg['store'] == 'postgres' and memory['store'] == 'memory'
-        assert pg['address'] == memory['address'] == '0.0.0.0:8091'
-        for mode in ['-Postgres', '-Memory']:
-            assert run('scripts/start-dev.ps1', mode, '-Address', '127.0.0.1:8092',
-                       '-Check')['address'] == '127.0.0.1:8092'
-        run('scripts/start-dev.ps1', '-Memory', '-Postgres', '-Check', fail=True)
-        check('PostgreSQL and memory are explicit, mutually exclusive modes; diagnostics do not load .env')
-
-        orphan = project / 'orphaned-data'
-        orphan.mkdir()
-        (orphan / 'workspace.json').write_text('{}', encoding='utf-8')
-        fresh_profile = project / 'new-profile'
-        result = run('start-local.ps1', '-Address', f'127.0.0.1:{free_port()}',
-                     '-ProfileDirectory', str(fresh_profile), '-DataDirectory', str(orphan), '-SkipBuild', fail=True)
-        assert 'Existing data was found without' in result.stderr
-        assert not (fresh_profile / 'access-keys.json').exists()
-        check('Existing data without original keys is not assigned automatically regenerated credentials')
-
-        with socket.socket() as listener:
-            listener.bind(('127.0.0.1', 0))
-            listener.listen()
-            port = listener.getsockname()[1]
-            result = run('start-local.ps1', '-Address', f'127.0.0.1:{port}',
-                         '-ProfileDirectory', str(old_profile), '-SkipBuild', fail=True)
-            assert 'already in use' in result.stderr
-        check('Occupied ports are rejected before building, reading keys or starting another service')
-
-        # Only a leaf marker is needed: the foreign listener must be refused before launch.
-        packaged = project / 'dist/wzstudy-v0.3.0-windows-amd64.exe'
-        packaged.parent.mkdir()
-        packaged.write_bytes(b'synthetic executable marker; never run')
-        foreign = subprocess.Popen([sys.executable, '-c',
-            "import socket,time; s=socket.socket(); s.bind(('127.0.0.1',0)); s.listen(); "
-            "print(s.getsockname()[1],flush=True); time.sleep(60)"], stdout=subprocess.PIPE, text=True)
-        try:
-            port = int(foreign.stdout.readline().strip())
-            result = run('scripts/restart-local.ps1', '-Address', f'127.0.0.1:{port}',
-                         '-ProfileDirectory', str(old_profile), '-SkipBuild', fail=True)
-            assert 'not a recognized executable' in result.stderr, result.stderr[-1500:]
-            assert foreign.poll() is None
-        finally:
-            foreign.terminate()
-            foreign.wait(timeout=10)
-            foreign.stdout.close()
-        check('Restart refuses an unrelated port owner without stopping it or reading fixture keys')
+        assert run('scripts/start-dev.ps1', '-Postgres', '-Check')['store'] == 'postgres'
+        assert 'PostgreSQL is required' in run('scripts/start-dev.ps1', '-Memory', '-Check', fail=True).stderr
+        assert 'no longer supported' in run('start-local.ps1', '-InitializeAdmin', '-Check', fail=True).stderr
+        assert 'file-mode workspace' in run('start-local.ps1', '-ProfileDirectory', 'old', '-Check', fail=True).stderr
+        check('Legacy file profile and memory launch are refused rather than silently bypassing PostgreSQL')
 
         # This fixture .env is synthetic; never read the real project's .env.
         (project / '.env').write_text('SYSTEM_ADMIN_EMAIL=file@example.test\nSYSTEM_ADMIN_PASSWORD="  file-password  "\nSYSTEM_ADMIN_DISPLAY_NAME=File admin\n', encoding='utf-8')

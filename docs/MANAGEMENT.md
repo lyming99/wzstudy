@@ -1,28 +1,28 @@
 # 数据录入与数据查询：管理 API
 
-基础路径 `/api/v1`，管理页面 `/admin/`，机器契约 `/openapi.json`。录入来源提交资料，查询客户端获取已发布资料；服务端提供规则推荐，并在显式授权后按客户端身份保存和查询学习反馈、复习、记录及进度。
+基础路径 `/api/v1`，共用工作台 `/workspace/`（管理员登录后显示用户管理，普通用户显示自己的资料），原管理员账号页面 `/admin/` 保留兼容，机器契约 `/openapi.json`。录入来源提交资料，查询客户端获取已发布资料；服务端提供规则推荐，并在显式授权后按登录用户保存和查询私人学习数据。
 
 ## 认证与安全边界
 
-- 管理员使用邮箱/密码建立 HttpOnly 会话，或使用 `ADMIN_API_KEY` 自动化管理。初始化、Argon2id 密码哈希及启动规则见 `ADMIN_AUTH.md`。
-- Cookie 为 `wzstudy_admin`、SameSite=Strict，最长 8 小时；生产要求 HTTPS，写请求必须来自受信任 Origin。重启后需重新登录。
-- **录入端 Source** 使用专用 `wzsk_` Key，仅配置 `ingest/upload`。
-- **查询客户端 Client** 独立存储、创建、启停及轮换，新 Key 前缀 `wzck_`，配置 `read/sync` 及显式授予的 `feedback`。迁入的旧查询 Key 可保留原前缀；鉴权依据实际独立记录而不是前缀。
-- `READ_API_KEY` 仅作旧版全局只读兼容；新接入不需要分发它。管理员、全局只读、查询客户端均不能代替录入端入库。
-- 服务端仅持久保存 Key 哈希。完整 Key 只在创建、轮换或显式迁移生成时返回一次；列表、工作空间与后续查询不返回 Key 或哈希。
-- 客户端不能访问 `/admin/*`、管理其他身份或调用审核接口。筛选条件不是租户隔离权限；`read/sync` 覆盖工作空间的已发布内容。
+- 管理员和其他账号一样拥有自己的资料与学习工作区，另外可管理用户账号；初始化见 `ADMIN_AUTH.md`。管理员用户会话只能访问本人资料，`ADMIN_API_KEY` 不具有资料超级权限。
+- 浏览器统一使用 `/auth/login`，均获得 HttpOnly/SameSite=Strict 的 `wzstudy_user` Cookie；原生应用可通过 `/user/auth/login` 使用 `session_mode=token` 返回 Bearer 会话令牌。管理员用户会话额外可访问用户管理。
+- 用户会话才能操作 `/workspace/*`。资料、草稿、附件、来源、查询客户端、合集、路线、回执与学习数据全部属于当前用户，不与其他用户共享。
+- 用户创建的 Source Key 仅有本来源 `ingest/upload`；用户创建的 Client Key 仅在所属工作区 `read/sync`，不能作为个人学习身份。
+- 系统管理员、旧全局 `READ_API_KEY`、没有所有者的历史 Key 都不能读取所有用户资料。历史无所有者数据保留但不自动认领。
+- 同一用户跨设备登录共享本人资料和学习记录；账号停用会同时阻止其所有用户会话、来源与查询客户端访问。更多迁移与客户端接入说明见 `USER_WORKSPACES.md`。
+- 完整 Key 只在创建/轮换时显示；服务端仅存哈希，不能放入 URL、日志或网页持久存储。Cookie 写请求要求本站 Origin，生产必须 HTTPS。
 
-成功响应为 `{ "data": ... }`，失败为 `{ "error": { "code": "...", "message": "..." } }`。JSON 请求拒绝未知字段及无效 UTF-8，不支持 URL 中携带 Key。
+成功响应为 `{ "data": ... }`，失败为 `{ "error": { "code": "...", "message": "..." } }`。JSON 拒绝未知字段，所有者不能由输入指定。
 
 ## 录入端管理
 
 ```text
-GET  /admin/sources
-POST /admin/sources
-GET  /admin/sources/{id}
-PUT  /admin/sources/{id}
-POST /admin/sources/{id}/key
-POST /admin/sources/{id}/refresh
+GET  /workspace/sources
+POST /workspace/sources
+GET  /workspace/sources/{id}
+PUT  /workspace/sources/{id}
+POST /workspace/sources/{id}/key
+POST /workspace/sources/{id}/refresh
 ```
 
 创建 API/Skill/MCP 录入端示例：
@@ -54,11 +54,11 @@ POST /admin/sources/{id}/refresh
 ## 独立查询客户端管理
 
 ```text
-GET  /admin/clients
-POST /admin/clients
-GET  /admin/clients/{id}
-PUT  /admin/clients/{id}
-POST /admin/clients/{id}/key
+GET  /workspace/clients
+POST /workspace/clients
+GET  /workspace/clients/{id}
+PUT  /workspace/clients/{id}
+POST /workspace/clients/{id}/key
 ```
 
 创建示例：
@@ -76,16 +76,16 @@ POST /admin/clients/{id}/key
 
 ## 数据源合集与章节
 
-管理员 API（与历史已退役的 `/admin/collections` 分开）：
+用户本人 API（与历史已退役的 `/workspace/collections` 分开）：
 
 ```text
-GET  /admin/catalog/collections?limit=20&offset=0
-POST /admin/catalog/collections
-GET  /admin/catalog/collections/{id}
-PUT  /admin/catalog/collections/{id}
-POST /admin/catalog/collections/{id}/publish
-POST /admin/catalog/collections/{id}/unpublish
-POST /admin/catalog/collections/{id}/delete
+GET  /workspace/catalog/collections?limit=20&offset=0
+POST /workspace/catalog/collections
+GET  /workspace/catalog/collections/{id}
+PUT  /workspace/catalog/collections/{id}
+POST /workspace/catalog/collections/{id}/publish
+POST /workspace/catalog/collections/{id}/unpublish
+POST /workspace/catalog/collections/{id}/delete
 ```
 
 创建时 revision 为 0；更新、发布、下架、删除必须带最新 revision。保存请求示例：
@@ -98,36 +98,36 @@ POST /admin/catalog/collections/{id}/delete
 
 ## 学习路线图（思维导图）
 
-管理端左侧“学习路线图”（`/admin/#roadmaps`）是独立编排模块。支持新建、名称/简介搜索、分页、编辑、删除；画布支持添加子节点/同级节点、拖动分支或选择上级、同级排序、折叠、缩放平移、撤销重做、节点说明和关联资料。显式保存到服务端，未保存离开会提示，版本冲突不会静默覆盖。
+管理端左侧“学习路线图”（`/workspace/#roadmaps`）是独立编排模块。支持新建、名称/简介搜索、分页、编辑、删除；画布支持添加子节点/同级节点、拖动分支或选择上级、同级排序、折叠、缩放平移、撤销重做、节点说明和关联资料。显式保存到服务端，未保存离开会提示，版本冲突不会静默覆盖。
 
 ```text
-GET  /admin/roadmaps?q=<关键词>&limit=20&offset=0
-POST /admin/roadmaps
-GET  /admin/roadmaps/{id}
-PUT  /admin/roadmaps/{id}
-POST /admin/roadmaps/{id}/delete
+GET  /workspace/roadmaps?q=<关键词>&limit=20&offset=0
+POST /workspace/roadmaps
+GET  /workspace/roadmaps/{id}
+PUT  /workspace/roadmaps/{id}
+POST /workspace/roadmaps/{id}/delete
 ```
 
-仅管理员可读写，不开放给查询客户端，不修改个人学习进度或现有公开资料游标。节点使用唯一 UUID 和 parent_id 表示树，数组顺序决定同级顺序，唯一根节点标题与路线图名称一致。最多 300 节点、12 层、每节点 20 份资料引用；保存/删除携带当前 revision，409 时保留本地草稿。删除只移除路线图或关联，不删除资料。字段、使用步骤、键盘操作与部署注意事项见 `LEARNING_ROADMAPS.md`，完整契约见 `/openapi.json`。
+仅用户本人可读写，不开放给查询客户端，不修改个人学习进度或现有公开资料游标。节点使用唯一 UUID 和 parent_id 表示树，数组顺序决定同级顺序，唯一根节点标题与路线图名称一致。最多 300 节点、12 层、每节点 20 份资料引用；保存/删除携带当前 revision，409 时保留本地草稿。删除只移除路线图或关联，不删除资料。字段、使用步骤、键盘操作与部署注意事项见 `LEARNING_ROADMAPS.md`，完整契约见 `/openapi.json`。
 
 ## 工作空间与资料维护
 
-`GET /admin/workspace` 返回 sources、clients、identity_migration、summary、settings、recent，不再包含 plans/collections。summary 只作为链路辅助状态，不是独立数据洞察业务。
+`GET /workspace/workspace` 返回 sources、clients、identity_migration、summary、settings、recent，不再包含 plans/collections。summary 只作为链路辅助状态，不是独立数据洞察业务。
 
 ```text
-GET  /admin/items
-GET  /admin/items/{id}
-POST /admin/items
-PUT  /admin/items/{id}
-POST /admin/items/{id}/submit
-POST /admin/items/{id}/publish
-POST /admin/items/{id}/unpublish
-POST /admin/items/{id}/delete
-POST /admin/uploads
-PUT  /admin/settings
+GET  /workspace/items
+GET  /workspace/items/{id}
+POST /workspace/items
+PUT  /workspace/items/{id}
+POST /workspace/items/{id}/submit
+POST /workspace/items/{id}/publish
+POST /workspace/items/{id}/unpublish
+POST /workspace/items/{id}/delete
+POST /workspace/uploads
+PUT  /workspace/settings
 ```
 
-管理员列表支持 kind、status、source_id、category、tag、q、sort、limit、offset，返回 items/total/limit/offset，列表正文省略；详情返回完整资料。来源归属及 external_id 在编辑中保持不变。
+用户本人列表支持 kind、status、source_id、category、tag、q、sort、limit、offset，返回 items/total/limit/offset，列表正文省略；详情返回完整资料。来源归属及 external_id 在编辑中保持不变。
 
 手动保存结构：
 
@@ -140,8 +140,8 @@ PUT  /admin/settings
 - 下架或软删除写入 delete 墓碑。删除不清理附件；普通重复入库不会悄悄复活已删除的 external_id。
 - 文件上传使用 multipart：metadata 为上述管理输入，files 为一个音视频/文章或最多 20 张轮播。默认总量 200 MiB，支持配置上限；文本须 UTF-8，正文最多 262144 字节。
 - 原文件不转码；拒绝 HTML/SVG、类型不匹配、空文件和超限。校验失败清理未提交文件，提交结果不确定时保留不可变文件，不盲目重传。
-- 浏览器管理员可查看私有附件；公开媒体只能读取仍被当前公开快照引用的资产，支持 Range。历史变更中的旧地址不代表下架后仍可访问。
-- `/admin/settings` 保存管理员显示名称、compact 与 revision，不增加新的业务模块。
+- 浏览器用户本人可查看私有附件；公开媒体只能读取仍被当前公开快照引用的资产，支持 Range。历史变更中的旧地址不代表下架后仍可访问。
+- `/workspace/settings` 保存用户本人显示名称、compact 与 revision，不增加新的业务模块。
 
 ## 统一录入与回执
 
@@ -149,7 +149,7 @@ PUT  /admin/settings
 GET  /ingest/{source_id}/status
 POST /ingest/{source_id}
 POST /ingest/{source_id}/files
-GET  /admin/intakes?limit=20&offset=0&source_id=<可选UUID>
+GET  /workspace/intakes?limit=20&offset=0&source_id=<可选UUID>
 ```
 
 采集程序、Skill、MCP 复用同一认证、校验、来源绑定、幂等更新和附件登记流程。请求/字段约束见 `API.md`；MCP 说明见项目 `mcp/wzstudy_ingest/README.md`。
@@ -159,7 +159,7 @@ GET  /admin/intakes?limit=20&offset=0&source_id=<可选UUID>
 - `source_id + external_id` 幂等更新，内容相同不增加资料 revision。每次成功提交可以有独立回执，包括未变更批次。
 - 成功新增 `receipt_id/source_id/received_at`，保留 created/updated/unchanged/published/items。每项资料含真实 ID、revision 和状态。
 - 回执与资料在同一事务保存，只记录已提交批次，不伪造失败或历史记录；不保存资料标题、正文或 Key。
-- `/admin/intakes` 支持来源筛选、limit 1–100、offset 0–10000，返回 items/total/limit/offset。公开状态是提交时快照，之后可发生审核变化。
+- `/workspace/intakes` 支持来源筛选、limit 1–100、offset 0–10000，返回 items/total/limit/offset。公开状态是提交时快照，之后可发生审核变化。
 - published 是本批发布计数，不是整个库的公开数量。录入成功不等于已公开，也不向学习客户端主动分发。
 
 ## 客户端主动查询
@@ -174,13 +174,13 @@ GET /changes?after=0&limit=100
 
 read 读取公开目录、详情及媒体；sync 读取公开变更（包含公开正文），两者不隐式互授。列表分页不是冻结快照；可靠缓存从 changes 的游标 0 回放，按 item_id 应用 upsert/delete，与 next_cursor 原子提交，空过滤页也要保存游标，has_more=true 继续补拉。
 
-管理端查询预览使用公开接口和管理员会话，只展示公开结果；它不等于替某个客户端验证实际 Key 的权限。客户端鉴权由独立集成测试与客户端自身请求验证。
+管理端查询预览使用公开接口和用户本人会话，只展示公开结果；它不等于替某个客户端验证实际 Key 的权限。客户端鉴权由独立集成测试与客户端自身请求验证。
 
 ## 旧身份显式迁移
 
 ```text
-GET  /admin/identity-migration
-POST /admin/identity-migration
+GET  /workspace/identity-migration
+POST /workspace/identity-migration
 ```
 
 预检只读返回 entries/pending/mixed，不返回哈希/Key，不写文件或改内容游标。旧 nil 来源仍是入库/上传，`[]` 与仅 inbox 不自动获得查询权。
@@ -204,7 +204,7 @@ POST /admin/identity-migration
 - PostgreSQL 必须追加执行 `000003_input_query_identities.sql`，扩展记录种类并新增客户端哈希唯一索引及回执索引；不改历史迁移。缺少新结构时 readiness 不通过。
 - 历史 collection/plan/delivery 记录保留但不再提供业务入口；原推送、收件箱、SSE 及专题管理路由返回 404。
 - 迁移身份后的回退需要成套恢复迁移前备份，不能只换回旧可执行文件而假定旧 Key 归属已还原。
-- 附件持久化与数据库备份须保持同一时间点；生产只用 PostgreSQL、HTTPS 和共享附件卷。管理员会话仍需单实例或粘性路由。
+- 附件持久化与数据库备份须保持同一时间点；生产只用 PostgreSQL、HTTPS 和共享附件卷。用户本人会话仍需单实例或粘性路由。
 
 
 ## 客户端二维码接入
@@ -213,13 +213,13 @@ POST /admin/identity-migration
 
 载荷为最大 1200 UTF-8 字节的 JSON，严格六字段：`type="wzstudy.query_client"`、整数 `version=1`、`base_url`（HTTP(S) 服务 origin）、UUID `client_id`、`name`、`access_key`。不要把 Key 放进 URL，二维码持有者等同于持有 Key。
 
-新增 `GET /api/v1/client/connection`，仅使用 `Authorization: Bearer <查询 Key>` 验证真实身份；需要 read 或 sync，拒绝管理员 Cookie/Key、旧全局 Key、来源 Key，不回退其他角色。返回 `{data:{type,version,client_id,name,permissions}}`，不含 Key/哈希/备注，禁止缓存。
+新增 `GET /api/v1/client/connection`，仅使用 `Authorization: Bearer <查询 Key>` 验证真实身份；需要 read 或 sync，拒绝用户本人 Cookie/Key、旧全局 Key、来源 Key，不回退其他角色。返回 `{data:{type,version,client_id,name,permissions}}`，不含 Key/哈希/备注，禁止缓存。
 
 扫码客户端应先确认目标地址，再调用该接口核对 client_id、类型、版本及实际权限，然后安全保存连接。普通相机只显示 JSON 不等于已经添加；实际客户端需接入协议。标准库导入模块为 `examples/client_connection.py`，完整说明见 `docs/CLIENT_QR.md`。
 
-手机不可直接使用管理员电脑的 127.0.0.1 地址；填写可达地址不会修改服务监听。局域网/防火墙/HTTPS 需按部署需求显式配置。二维码无独立失效期，停用、撤权或轮换后失效；下载/截图副本需用户自行保护。
+手机不可直接使用用户本人电脑的 127.0.0.1 地址；填写可达地址不会修改服务监听。局域网/防火墙/HTTPS 需按部署需求显式配置。二维码无独立失效期，停用、撤权或轮换后失效；下载/截图副本需用户自行保护。
 
 
 ## 客户端反馈与去重
 
-客户端可显式申请 feedback 权限，上报推荐/曝光、已读、喜欢、学习记录和收藏，按事件 ID 幂等保存。`POST /api/v1/client/feedback` 仅写本身份；`GET /api/v1/items?exclude=recommended,read` 或 `unseen=true` 可过滤旧候选，支持时间窗口和本页状态。管理员只读查看反馈或按身份模拟查询，不替用户上报。默认 read/sync 及所有旧 Key 不自动扩权。详见 `docs/CLIENT_FEEDBACK.md`（文档目录内为 `CLIENT_FEEDBACK.md`），示例为 `examples/feedback_client.py`。
+客户端可显式申请 feedback 权限，上报推荐/曝光、已读、喜欢、学习记录和收藏，按事件 ID 幂等保存。`POST /api/v1/client/feedback` 仅写本身份；`GET /api/v1/items?exclude=recommended,read` 或 `unseen=true` 可过滤旧候选，支持时间窗口和本页状态。用户本人只读查看反馈或按身份模拟查询，不替用户上报。默认 read/sync 及所有旧 Key 不自动扩权。详见 `docs/CLIENT_FEEDBACK.md`（文档目录内为 `CLIENT_FEEDBACK.md`），示例为 `examples/feedback_client.py`。
