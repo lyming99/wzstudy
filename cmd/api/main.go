@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"wzstudy/internal/agentruntime"
 	"wzstudy/internal/config"
 	"wzstudy/internal/feed"
 	"wzstudy/internal/httpapi"
@@ -78,6 +79,7 @@ func run() error {
 		EventMaxBytes:         cfg.AgentEventMaxBytes,
 		EventTotalBytes:       cfg.AgentEventTotalBytes,
 	}
+	runtimeManager := agentruntime.New(service, logger)
 	bootstrapCtx, bootstrapDone := context.WithTimeout(ctx, 30*time.Second)
 	administrator, created, bootstrapErr := service.EnsureAdministrator(bootstrapCtx, study.AdministratorSettings{Email: cfg.SystemAdminEmail, Password: cfg.SystemAdminPassword, DisplayName: cfg.SystemAdminDisplayName})
 	bootstrapDone()
@@ -93,6 +95,17 @@ func run() error {
 	_ = os.Unsetenv("SYSTEM_ADMIN_PASSWORD")
 	_ = os.Unsetenv("BOOTSTRAP_ADMIN_PASSWORD")
 	logger.Info("system administrator ready", "created", created)
+	if err := runtimeManager.Load(ctx); err != nil {
+		logger.Warn("agent runtime settings could not be loaded", "error", err)
+	}
+	if runtimeManager.Settings().AutoStart {
+		go func() {
+			if err := runtimeManager.Start(ctx); err != nil {
+				logger.Warn("agent runtime auto-start failed", "error", err)
+			}
+		}()
+	}
+	defer func() { _ = runtimeManager.Stop(context.Background()) }()
 	// Legacy unowned records remain archived. Startup never assigns ownership
 	// or publishes user content through an unscoped system transaction.
 	worker := &feed.Worker{Service: service, Fetcher: feed.NewFetcher(), Logger: logger}
@@ -102,7 +115,7 @@ func run() error {
 	} else {
 		close(workerDone)
 	}
-	server := &http.Server{Addr: cfg.HTTPAddr, Handler: httpapi.New(cfg, service, worker, logger), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Minute, WriteTimeout: 5 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10, BaseContext: func(net.Listener) context.Context { return ctx }}
+	server := &http.Server{Addr: cfg.HTTPAddr, Handler: httpapi.New(cfg, service, worker, logger, httpapi.WithAgentRuntime(runtimeManager)), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Minute, WriteTimeout: 5 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10, BaseContext: func(net.Listener) context.Context { return ctx }}
 	errors := make(chan error, 1)
 	go func() {
 		logger.Info("wzstudy listening", "address", cfg.HTTPAddr, "store", cfg.Store)

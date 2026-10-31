@@ -9,11 +9,13 @@ const (
 )
 
 type Constraints struct {
-	MaxItems     int      `json:"max_items"`
-	Language     string   `json:"language,omitempty"`
-	Category     string   `json:"category,omitempty"`
-	Tags         []string `json:"tags,omitempty"`
-	AllowDomains []string `json:"allow_domains,omitempty"`
+	MaxItems        int      `json:"max_items"`
+	DuplicatePolicy string   `json:"duplicate_policy,omitempty"`
+	Language        string   `json:"language,omitempty"`
+	Category        string   `json:"category,omitempty"`
+	ContentType     string   `json:"content_type,omitempty"`
+	Tags            []string `json:"tags,omitempty"`
+	AllowDomains    []string `json:"allow_domains,omitempty"`
 }
 
 type Budget struct {
@@ -37,6 +39,13 @@ type Task struct {
 	CancelRequested bool        `json:"cancel_requested"`
 }
 
+type Asset struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	MIME string `json:"mime"`
+	Size int64  `json:"size"`
+}
+
 type Content struct {
 	Kind            string     `json:"kind,omitempty"`
 	ExternalID      string     `json:"external_id"`
@@ -46,6 +55,7 @@ type Content struct {
 	Format          string     `json:"format,omitempty"`
 	URL             string     `json:"url,omitempty"`
 	Author          string     `json:"author,omitempty"`
+	Assets          []Asset    `json:"assets,omitempty"`
 	Category        string     `json:"category,omitempty"`
 	Language        string     `json:"language,omitempty"`
 	Tags            []string   `json:"tags,omitempty"`
@@ -67,6 +77,7 @@ type Receipt struct {
 	Created     int           `json:"created"`
 	Updated     int           `json:"updated"`
 	Unchanged   int           `json:"unchanged"`
+	Skipped     int           `json:"skipped"`
 	Published   int           `json:"published"`
 	Items       []ReceiptItem `json:"items"`
 }
@@ -91,6 +102,7 @@ type Stats struct {
 	ItemsCreated   int   `json:"items_created"`
 	ItemsUpdated   int   `json:"items_updated"`
 	ItemsUnchanged int   `json:"items_unchanged"`
+	ItemsSkipped   int   `json:"items_skipped"`
 	Rounds         int   `json:"rounds"`
 	ToolCalls      int   `json:"tool_calls"`
 	DurationMS     int64 `json:"duration_ms"`

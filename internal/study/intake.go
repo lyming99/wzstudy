@@ -22,6 +22,7 @@ type IntakeReceipt struct {
 	Created     int          `json:"created"`
 	Updated     int          `json:"updated"`
 	Unchanged   int          `json:"unchanged"`
+	Skipped     int          `json:"skipped"`
 	Published   int          `json:"published"`
 	Items       []IntakeItem `json:"items"`
 	ReceivedAt  time.Time    `json:"received_at"`

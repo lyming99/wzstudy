@@ -90,3 +90,5 @@
  .catalog-actions{flex-wrap:wrap}
 }
 @media(max-width:380px){.catalog-table tbody tr{padding:16px;gap:12px 8px}}
+
+.query-table th:first-child,.query-table td:first-child{width:36px;padding-left:14px;text-align:center}.query-table th:nth-child(2),.query-table td:nth-child(2){width:44%;text-align:left}.query-table th:nth-child(3){width:18%}.query-table th:nth-child(4){width:7%}.query-table th:nth-child(5){width:16%}.query-table th:last-child{width:15%}.query-batch-bar{display:flex;align-items:center;gap:12px;margin:10px 0}.query-select-all{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}.query-select-col{text-align:center}.query-select-col input{width:14px;height:14px;accent-color:var(--green)}

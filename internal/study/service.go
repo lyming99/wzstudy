@@ -15,6 +15,8 @@ type Service struct {
 	AgentPolicy     AgentPolicy
 	recommendMu     sync.Mutex
 	recommendations map[string]recommendationSession
+	clientKeyMu     sync.RWMutex
+	clientKeyVault  []byte
 }
 
 func NewService(s Store) *Service {

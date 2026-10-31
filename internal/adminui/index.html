@@ -27,13 +27,18 @@
   <nav class="nav-list user-only" aria-label="资料服务导航">
     <button class="nav-item" data-route="library" title="数据录入"><span class="icon" data-icon="upload"></span><span class="nav-label">数据录入</span><span class="nav-count" id="nav-count">0</span></button>
     <button class="nav-item" data-route="query" title="数据管理"><span class="icon" data-icon="search"></span><span class="nav-label">数据管理</span></button>
+    <button class="nav-item" data-route="rss" title="RSS 订阅"><span class="icon" data-icon="rss"></span><span class="nav-label">RSS 订阅</span></button>
     <button class="nav-item" data-route="roadmaps" title="学习路线图"><span class="icon" data-icon="roadmap"></span><span class="nav-label">学习路线图</span></button>
     <button class="nav-item" data-route="clients" title="客户端管理"><span class="icon" data-icon="monitor"></span><span class="nav-label">客户端管理</span></button>
+  </nav>
+  <div class="nav-group-title">Agent 服务</div>
+  <nav class="nav-list" aria-label="Agent 服务导航">
+    <button class="nav-item" data-route="agent-access" title="Agent 接入"><span class="icon" data-icon="code"></span><span class="nav-label">Agent 接入</span></button>
+    <button class="nav-item" data-route="tasks" title="收集任务"><span class="icon" data-icon="upload"></span><span class="nav-label">收集任务</span></button>
   </nav>
   <div class="nav-group-title admin-only">系统管理</div>
   <nav class="nav-list admin-only" aria-label="管理员导航">
     <button class="nav-item" data-route="users" title="用户管理"><span class="icon" data-icon="shield"></span><span class="nav-label">用户管理</span></button>
-    <button class="nav-item" data-route="tasks" title="采集任务"><span class="icon" data-icon="upload"></span><span class="nav-label">采集任务</span></button>
   </nav>
   <div class="sidebar-bottom">
     <div class="storage user-only"><div class="storage-title"><span class="icon" data-icon="cloud"></span>附件存储</div><div class="storage-info" id="storage-info">正在连接服务…</div></div>
@@ -61,6 +66,7 @@
 <script src="/workspace/user-management.js" defer></script>
 <script src="/workspace/home.js" defer></script>
 <script src="/workspace/tasks.js" defer></script>
+<script src="/workspace/agent-access.js" defer></script>
 <script src="/workspace/app.js" defer></script>
 </body>
 </html>

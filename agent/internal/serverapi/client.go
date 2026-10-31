@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -117,6 +119,63 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		return response.StatusCode, fmt.Errorf("decode data: %w", err)
 	}
 	return response.StatusCode, nil
+}
+
+func (c *Client) UploadAsset(ctx context.Context, path string) (Asset, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return Asset{}, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return Asset{}, errors.New("asset must be a regular file")
+	}
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("files", filepath.Base(path))
+	if err != nil {
+		return Asset{}, err
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		return Asset{}, err
+	}
+	if err := writer.Close(); err != nil {
+		return Asset{}, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint("/agent/uploads"), &body)
+	if err != nil {
+		return Asset{}, err
+	}
+	request.Header.Set("Authorization", "Bearer "+c.key)
+	request.Header.Set("User-Agent", "wzstudy-agent/"+c.version)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	response, err := c.http.Do(request)
+	if err != nil {
+		return Asset{}, err
+	}
+	defer response.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		return Asset{}, err
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		var envelope struct {
+			Error struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		_ = json.Unmarshal(raw, &envelope)
+		return Asset{}, &Error{Status: response.StatusCode, Code: envelope.Error.Code, Message: envelope.Error.Message}
+	}
+	var envelope struct {
+		Data Asset `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return Asset{}, fmt.Errorf("decode asset: %w", err)
+	}
+	return envelope.Data, nil
 }
 
 // retry runs a bounded exponential backoff for transport errors, 429 and 5xx.

@@ -134,8 +134,18 @@ func normalizeAssets(tx Tx, c *Content, sourceID string, admin bool) error {
 		if e != nil {
 			return ErrInvalid
 		}
-		if !admin && v.SourceID != sourceID {
-			return ErrUnauthorized
+		if !admin {
+			switch v.SourceID {
+			case "":
+				v.SourceID = sourceID
+				v.URL = "/api/v1/media/" + v.ID
+				if e := recordSave(tx, "asset", v.ID, v); e != nil {
+					return e
+				}
+			case sourceID:
+			default:
+				return ErrUnauthorized
+			}
 		}
 		c.Assets[n] = v
 	}
@@ -173,6 +183,24 @@ func registerAssets(tx Tx, assets []Asset, sourceID string) error {
 		}
 	}
 	return nil
+}
+
+// RegisterUploadedAsset records bytes already written by an upload handler.
+// The asset stays unbound until the task ingest binds it to the task source.
+func (s *Service) RegisterUploadedAsset(ctx context.Context, asset Asset) error {
+	if _, e := uuid.Parse(asset.ID); e != nil || asset.Size < 1 || asset.Name == "" || asset.MIME == "" {
+		return ErrInvalid
+	}
+	return s.Store.Update(ctx, func(tx Tx) error {
+		if _, e := tx.Record("asset", asset.ID); e == nil {
+			return ErrConflict
+		} else if e != ErrNotFound {
+			return e
+		}
+		asset.SourceID = ""
+		asset.URL = "/api/v1/media/" + asset.ID
+		return recordSave(tx, "asset", asset.ID, asset)
+	})
 }
 
 func (s *Service) SaveManaged(ctx context.Context, id string, in ManagedInput, assets []Asset) (out Item, err error) {

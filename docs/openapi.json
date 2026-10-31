@@ -11,894 +11,1797 @@
     }
   ],
   "paths": {
-    "/agent/status": {
-        "get": {
-            "operationId": "get__agent_status",
-            "summary": "采集端自查身份与服务端策略",
-            "security": [
-                {
-                    "AgentBearer": []
-                }
-            ],
-            "responses": {
-                "200": {
-                    "description": "Success",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "data": {
-                                        "$ref": "#/components/schemas/AgentStatus"
-                                    }
-                                },
-                                "required": [
-                                    "data"
-                                ],
-                                "additionalProperties": false
-                            }
+    "/admin/agent/runtime": {
+      "get": {
+        "operationId": "get_admin_agent_runtime",
+        "summary": "读取服务端采集端运行时状态",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Runtime status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "configured": {
+                          "type": "boolean"
+                        },
+                        "work_dir": {
+                          "type": "string"
+                        },
+                        "auto_start": {
+                          "type": "boolean"
+                        },
+                        "running": {
+                          "type": "boolean"
+                        },
+                        "pid": {
+                          "type": "integer"
+                        },
+                        "last_error": {
+                          "type": "string"
+                        },
+                        "logs": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
+                      }
                     }
-                },
-                "default": {
-                    "description": "Error; see error.code",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/Error"
-                            }
-                        }
-                    }
+                  }
                 }
+              }
             }
+          },
+          "503": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
+      },
+      "put": {
+        "operationId": "put_admin_agent_runtime",
+        "summary": "保存内置 Agent 配置，可同时重启应用新配置",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "work_dir"
+                ],
+                "properties": {
+                  "work_dir": {
+                    "type": "string",
+                    "description": "绝对路径，需包含 wzstudy-agent.exe 与 agent.env"
+                  },
+                  "auto_start": {
+                    "type": "boolean"
+                  },
+                  "model": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "enum": [
+                          "deepseek",
+                          "openai",
+                          "qwen",
+                          "custom"
+                        ]
+                      },
+                      "base_url": {
+                        "type": "string"
+                      },
+                      "model": {
+                        "type": "string"
+                      },
+                      "api_key": {
+                        "type": "string",
+                        "writeOnly": true,
+                        "description": "留空保留已保存的密钥"
+                      },
+                      "clear_api_key": {
+                        "type": "boolean",
+                        "description": "清除已保存的密钥"
+                      }
+                    }
+                  },
+                  "install_dir": {
+                    "type": "string",
+                    "description": "采集端程序目录，包含可执行文件和 agent.env"
+                  },
+                  "restart": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "保存成功后重启内置 Agent；停止状态下会启动。重启失败返回 502，配置仍保留。"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Runtime status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "configured": {
+                          "type": "boolean"
+                        },
+                        "work_dir": {
+                          "type": "string"
+                        },
+                        "auto_start": {
+                          "type": "boolean"
+                        },
+                        "running": {
+                          "type": "boolean"
+                        },
+                        "pid": {
+                          "type": "integer"
+                        },
+                        "last_error": {
+                          "type": "string"
+                        },
+                        "logs": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/agent/runtime/start": {
+      "post": {
+        "operationId": "post_admin_agent_runtime_start",
+        "summary": "在服务端启动采集端进程",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Runtime status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "configured": {
+                          "type": "boolean"
+                        },
+                        "work_dir": {
+                          "type": "string"
+                        },
+                        "auto_start": {
+                          "type": "boolean"
+                        },
+                        "running": {
+                          "type": "boolean"
+                        },
+                        "pid": {
+                          "type": "integer"
+                        },
+                        "last_error": {
+                          "type": "string"
+                        },
+                        "logs": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/agent/runtime/stop": {
+      "post": {
+        "operationId": "post_admin_agent_runtime_stop",
+        "summary": "停止服务端采集端进程",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Runtime status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "configured": {
+                          "type": "boolean"
+                        },
+                        "work_dir": {
+                          "type": "string"
+                        },
+                        "auto_start": {
+                          "type": "boolean"
+                        },
+                        "running": {
+                          "type": "boolean"
+                        },
+                        "pid": {
+                          "type": "integer"
+                        },
+                        "last_error": {
+                          "type": "string"
+                        },
+                        "logs": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/agent/models": {
+      "post": {
+        "operationId": "post_admin_agent_models",
+        "summary": "查询模型供应商可用模型（OpenAI 兼容 /models）",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "deepseek",
+                      "openai",
+                      "qwen",
+                      "custom"
+                    ],
+                    "default": "deepseek"
+                  },
+                  "base_url": {
+                    "type": "string",
+                    "description": "自定义或覆盖供应商默认地址"
+                  },
+                  "api_key": {
+                    "type": "string",
+                    "writeOnly": true
+                  },
+                  "use_saved_key": {
+                    "type": "boolean",
+                    "description": "API Key 留空时使用服务端运行时已保存的密钥"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Model identifiers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "models": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "base_url": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/agent/binary": {
+      "get": {
+        "operationId": "get_admin_agent_binary",
+        "summary": "下载服务端内置的采集端程序",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Windows agent executable",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/agent/deployments": {
+      "post": {
+        "operationId": "post_admin_agent_deployments",
+        "summary": "创建采集端并生成含配置的一键部署压缩包",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "description": "采集端显示名称；留空自动生成"
+                  },
+                  "slug": {
+                    "type": "string",
+                    "description": "可选，默认随机 deploy-xxxxxxxx"
+                  },
+                  "model": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "enum": [
+                          "deepseek",
+                          "openai",
+                          "qwen",
+                          "custom"
+                        ],
+                        "default": "deepseek",
+                        "description": "模型供应商预设"
+                      },
+                      "base_url": {
+                        "type": "string",
+                        "description": "自定义或覆盖供应商默认地址"
+                      },
+                      "api_key": {
+                        "type": "string",
+                        "writeOnly": true,
+                        "description": "模型密钥，仅写入下载包，不保存到服务端"
+                      },
+                      "model": {
+                        "type": "string",
+                        "description": "模型名称；留空使用供应商默认"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Deployment archive (agent + agent.env + scripts)",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/agent/releases": {
+      "get": {
+        "operationId": "get__admin_agent_releases",
+        "summary": "列出已发布的采集端程序包",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AgentRelease"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post__admin_agent_releases",
+        "summary": "上传采集端程序包（multipart，最大 64 MiB）",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AgentRelease"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "version",
+                  "platform",
+                  "arch",
+                  "file"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "string",
+                    "description": "如 0.1.0"
+                  },
+                  "platform": {
+                    "type": "string",
+                    "enum": [
+                      "windows",
+                      "linux",
+                      "macos"
+                    ]
+                  },
+                  "arch": {
+                    "type": "string",
+                    "enum": [
+                      "amd64",
+                      "arm64"
+                    ]
+                  },
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/agent/releases/{id}/download": {
+      "get": {
+        "operationId": "get_admin_agent_releases_download",
+        "summary": "下载程序包（仅管理员）",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Package bytes",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/agent/releases/{id}/delete": {
+      "post": {
+        "operationId": "post_admin_agent_releases_delete",
+        "summary": "删除程序包元数据与文件",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/status": {
+      "get": {
+        "operationId": "get__agent_status",
+        "summary": "采集端自查身份与服务端策略",
+        "security": [
+          {
+            "AgentBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AgentStatus"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "/agent/tasks/claim": {
-        "post": {
-            "operationId": "post__agent_tasks_claim",
-            "summary": "领取一个采集任务（长轮询，204 表示暂无任务）",
-            "security": [
-                {
-                    "AgentBearer": []
-                }
-            ],
-            "responses": {
-                "200": {
-                    "description": "Success",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "data": {
-                                        "$ref": "#/components/schemas/ClaimResult"
-                                    }
-                                },
-                                "required": [
-                                    "data"
-                                ],
-                                "additionalProperties": false
-                            }
-                        }
+      "post": {
+        "operationId": "post__agent_tasks_claim",
+        "summary": "领取一个收集任务（长轮询，204 表示暂无任务）",
+        "security": [
+          {
+            "AgentBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ClaimResult"
                     }
-                },
-                "default": {
-                    "description": "Error; see error.code",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/Error"
-                            }
-                        }
-                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
                 }
-            },
-            "description": "任务在串行化写事务中连同过期租约回收一起处理，多个采集端不会重复领取同一任务。",
-            "requestBody": {
-                "required": true,
-                "content": {
-                    "application/json": {
-                        "schema": {
-                            "$ref": "#/components/schemas/ClaimInput"
-                        }
-                    }
-                }
+              }
             }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "任务在串行化写事务中连同过期租约回收一起处理，多个采集端不会重复领取同一任务。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimInput"
+              }
+            }
+          }
         }
+      }
     },
     "/agent/tasks/{id}/heartbeat": {
-        "post": {
-            "operationId": "post__agent_tasks_id_heartbeat",
-            "summary": "续租并读取取消信号",
-            "security": [
-                {
-                    "AgentBearer": []
-                }
-            ],
-            "responses": {
-                "200": {
-                    "description": "Success",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "data": {
-                                        "$ref": "#/components/schemas/HeartbeatResult"
-                                    }
-                                },
-                                "required": [
-                                    "data"
-                                ],
-                                "additionalProperties": false
-                            }
-                        }
+      "post": {
+        "operationId": "post__agent_tasks_id_heartbeat",
+        "summary": "续租并读取取消信号",
+        "security": [
+          {
+            "AgentBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/HeartbeatResult"
                     }
-                },
-                "default": {
-                    "description": "Error; see error.code",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/Error"
-                            }
-                        }
-                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
                 }
-            },
-            "requestBody": {
-                "required": true,
-                "content": {
-                    "application/json": {
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": false
-                        }
-                    }
-                }
+              }
             }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
         }
+      }
     },
     "/agent/tasks/{id}/events": {
-        "post": {
-            "operationId": "post__agent_tasks_id_events",
-            "summary": "上报本轮进度事件（按 seq 幂等）",
-            "security": [
-                {
-                    "AgentBearer": []
-                }
-            ],
-            "responses": {
-                "200": {
-                    "description": "Success",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "data": {
-                                        "$ref": "#/components/schemas/EventsAck"
-                                    }
-                                },
-                                "required": [
-                                    "data"
-                                ],
-                                "additionalProperties": false
-                            }
-                        }
+      "post": {
+        "operationId": "post__agent_tasks_id_events",
+        "summary": "上报本轮进度事件（按 seq 幂等）",
+        "security": [
+          {
+            "AgentBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/EventsAck"
                     }
-                },
-                "default": {
-                    "description": "Error; see error.code",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/Error"
-                            }
-                        }
-                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
                 }
-            },
-            "requestBody": {
-                "required": true,
-                "content": {
-                    "application/json": {
-                        "schema": {
-                            "$ref": "#/components/schemas/EventsInput"
-                        }
-                    }
-                }
+              }
             }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventsInput"
+              }
+            }
+          }
         }
+      }
     },
     "/agent/tasks/{id}/items": {
-        "post": {
-            "operationId": "post__agent_tasks_id_items",
-            "summary": "推送采集结果（绑定任务来源，服务端校验配额与域名）",
-            "security": [
-                {
-                    "AgentBearer": []
-                }
-            ],
-            "responses": {
-                "200": {
-                    "description": "Success",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "data": {
-                                        "$ref": "#/components/schemas/IntakeReceipt"
-                                    }
-                                },
-                                "required": [
-                                    "data"
-                                ],
-                                "additionalProperties": false
-                            }
-                        }
+      "post": {
+        "operationId": "post__agent_tasks_id_items",
+        "summary": "推送采集结果（绑定任务来源，服务端校验配额与域名）",
+        "security": [
+          {
+            "AgentBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/IntakeReceipt"
                     }
-                },
-                "default": {
-                    "description": "Error; see error.code",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/Error"
-                            }
-                        }
-                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
                 }
-            },
-            "requestBody": {
-                "required": true,
-                "content": {
-                    "application/json": {
-                        "schema": {
-                            "$ref": "#/components/schemas/ItemsInput"
-                        }
-                    }
-                }
+              }
             }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ItemsInput"
+              }
+            }
+          }
         }
+      }
     },
     "/agent/tasks/{id}/complete": {
-        "post": {
-            "operationId": "post__agent_tasks_id_complete",
-            "summary": "提交终态结果（幂等）",
-            "security": [
-                {
-                    "AgentBearer": []
+      "post": {
+        "operationId": "post__agent_tasks_id_complete",
+        "summary": "提交终态结果（幂等）",
+        "security": [
+          {
+            "AgentBearer": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
-            ],
-            "responses": {
-                "204": {
-                    "description": "No Content"
-                },
-                "default": {
-                    "description": "Error; see error.code",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/Error"
-                            }
-                        }
-                    }
-                }
-            },
-            "requestBody": {
-                "required": true,
-                "content": {
-                    "application/json": {
-                        "schema": {
-                            "$ref": "#/components/schemas/CompleteInput"
-                        }
-                    }
-                }
+              }
             }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteInput"
+              }
+            }
+          }
         }
+      }
     },
     "/agent/tasks/{id}/release": {
-        "post": {
-            "operationId": "post__agent_tasks_id_release",
-            "summary": "归还任务租约（优雅退出）",
-            "security": [
-                {
-                    "AgentBearer": []
+      "post": {
+        "operationId": "post__agent_tasks_id_release",
+        "summary": "归还任务租约（优雅退出）",
+        "security": [
+          {
+            "AgentBearer": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
-            ],
-            "responses": {
-                "204": {
-                    "description": "No Content"
-                },
-                "default": {
-                    "description": "Error; see error.code",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/Error"
-                            }
-                        }
-                    }
-                }
-            },
-            "requestBody": {
-                "required": true,
-                "content": {
-                    "application/json": {
-                        "schema": {
-                            "$ref": "#/components/schemas/ReleaseInput"
-                        }
-                    }
-                }
+              }
             }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReleaseInput"
+              }
+            }
+          }
         }
+      }
     },
     "/admin/agent/status": {
-        "get": {
-            "operationId": "get__admin_agent_status",
-            "summary": "采集端模块状态与任务计数",
-            "security": [
-                {
-                    "UserSession": []
-                }
-            ],
-            "responses": {
-                "200": {
-                    "description": "Success",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "data": {
-                                        "$ref": "#/components/schemas/AgentAdminStatus"
-                                    }
-                                },
-                                "required": [
-                                    "data"
-                                ],
-                                "additionalProperties": false
-                            }
-                        }
+      "get": {
+        "operationId": "get__admin_agent_status",
+        "summary": "采集端模块状态与任务计数",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AgentAdminStatus"
                     }
-                },
-                "default": {
-                    "description": "Error; see error.code",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/Error"
-                            }
-                        }
-                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
                 }
+              }
             }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
+      }
     },
     "/admin/agent/agents": {
-        "get": {
-            "operationId": "get__admin_agent_agents",
-            "summary": "列出采集端身份（不含密钥）",
-            "security": [
-                {
-                    "UserSession": []
-                }
-            ],
-            "responses": {
-                "200": {
-                    "description": "Success",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "data": {
-                                        "type": "array",
-                                        "items": {
-                                            "$ref": "#/components/schemas/Agent"
-                                        }
-                                    }
-                                },
-                                "required": [
-                                    "data"
-                                ],
-                                "additionalProperties": false
-                            }
-                        }
+      "get": {
+        "operationId": "get__admin_agent_agents",
+        "summary": "列出采集端身份（不含密钥）",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Agent"
+                      }
                     }
-                },
-                "default": {
-                    "description": "Error; see error.code",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/Error"
-                            }
-                        }
-                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
                 }
+              }
             }
-        },
-        "post": {
-            "operationId": "post__admin_agent_agents",
-            "summary": "创建采集端身份并一次性返回密钥",
-            "security": [
-                {
-                    "UserSession": []
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
-            ],
-            "responses": {
-                "201": {
-                    "description": "Success",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "data": {
-                                        "$ref": "#/components/schemas/AgentKey"
-                                    }
-                                },
-                                "required": [
-                                    "data"
-                                ],
-                                "additionalProperties": false
-                            }
-                        }
-                    }
-                },
-                "default": {
-                    "description": "Error; see error.code",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/Error"
-                            }
-                        }
-                    }
-                }
-            },
-            "requestBody": {
-                "required": true,
-                "content": {
-                    "application/json": {
-                        "schema": {
-                            "$ref": "#/components/schemas/AgentInput"
-                        }
-                    }
-                }
+              }
             }
+          }
         }
+      },
+      "post": {
+        "operationId": "post__admin_agent_agents",
+        "summary": "创建采集端身份并一次性返回密钥",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AgentKey"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentInput"
+              }
+            }
+          }
+        }
+      }
     },
     "/admin/agent/agents/{id}": {
-        "get": {
-            "operationId": "get__admin_agent_agents_id",
-            "summary": "读取采集端身份",
-            "security": [
-                {
-                    "UserSession": []
-                }
-            ],
-            "responses": {
-                "200": {
-                    "description": "Success",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "data": {
-                                        "$ref": "#/components/schemas/Agent"
-                                    }
-                                },
-                                "required": [
-                                    "data"
-                                ],
-                                "additionalProperties": false
-                            }
-                        }
+      "get": {
+        "operationId": "get__admin_agent_agents_id",
+        "summary": "读取采集端身份",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Agent"
                     }
-                },
-                "default": {
-                    "description": "Error; see error.code",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/Error"
-                            }
-                        }
-                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
                 }
+              }
             }
-        },
-        "put": {
-            "operationId": "put__admin_agent_agents_id",
-            "summary": "更新采集端身份（版本校验）",
-            "security": [
-                {
-                    "UserSession": []
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
-            ],
-            "responses": {
-                "200": {
-                    "description": "Success",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "data": {
-                                        "$ref": "#/components/schemas/Agent"
-                                    }
-                                },
-                                "required": [
-                                    "data"
-                                ],
-                                "additionalProperties": false
-                            }
-                        }
-                    }
-                },
-                "default": {
-                    "description": "Error; see error.code",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/Error"
-                            }
-                        }
-                    }
-                }
-            },
-            "requestBody": {
-                "required": true,
-                "content": {
-                    "application/json": {
-                        "schema": {
-                            "$ref": "#/components/schemas/AgentUpdate"
-                        }
-                    }
-                }
+              }
             }
+          }
         }
+      },
+      "put": {
+        "operationId": "put__admin_agent_agents_id",
+        "summary": "更新采集端身份（版本校验）",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Agent"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentUpdate"
+              }
+            }
+          }
+        }
+      }
     },
     "/admin/agent/agents/{id}/key": {
-        "post": {
-            "operationId": "post__admin_agent_agents_id_key",
-            "summary": "轮换采集端密钥",
-            "security": [
-                {
-                    "UserSession": []
-                }
-            ],
-            "responses": {
-                "200": {
-                    "description": "Success",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "data": {
-                                        "$ref": "#/components/schemas/AgentKey"
-                                    }
-                                },
-                                "required": [
-                                    "data"
-                                ],
-                                "additionalProperties": false
+      "get": {
+        "operationId": "get__admin_agent_agents_id_key",
+        "summary": "查看当前工作区采集端身份的 Agent 密钥",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "access_key": {
+                          "type": "string"
+                        },
+                        "package": {
+                          "type": "object",
+                          "properties": {
+                            "provider": {
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string"
+                            },
+                            "base_url": {
+                              "type": "string"
                             }
+                          }
                         }
+                      },
+                      "required": [
+                        "access_key"
+                      ],
+                      "additionalProperties": false
                     }
-                },
-                "default": {
-                    "description": "Error; see error.code",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/Error"
-                            }
-                        }
-                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
                 }
-            },
-            "requestBody": {
-                "required": true,
-                "content": {
-                    "application/json": {
-                        "schema": {
-                            "$ref": "#/components/schemas/RevisionInput"
-                        }
-                    }
-                }
+              }
             }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
+      },
+      "post": {
+        "operationId": "post__admin_agent_agents_id_key",
+        "summary": "轮换采集端密钥",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AgentKey"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevisionInput"
+              }
+            }
+          }
+        }
+      }
     },
     "/admin/agent/tasks": {
-        "get": {
-            "operationId": "get__admin_agent_tasks",
-            "summary": "分页列出采集任务",
-            "security": [
-                {
-                    "UserSession": []
-                }
-            ],
-            "responses": {
-                "200": {
-                    "description": "Success",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "data": {
-                                        "$ref": "#/components/schemas/CollectionTaskPage"
-                                    }
-                                },
-                                "required": [
-                                    "data"
-                                ],
-                                "additionalProperties": false
-                            }
-                        }
+      "get": {
+        "operationId": "get__admin_agent_tasks",
+        "summary": "分页列出收集任务",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CollectionTaskPage"
                     }
-                },
-                "default": {
-                    "description": "Error; see error.code",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/Error"
-                            }
-                        }
-                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
                 }
+              }
             }
-        },
-        "post": {
-            "operationId": "post__admin_agent_tasks",
-            "summary": "创建采集任务（绑定来源）",
-            "security": [
-                {
-                    "UserSession": []
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
-            ],
-            "responses": {
-                "201": {
-                    "description": "Success",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "data": {
-                                        "$ref": "#/components/schemas/CollectionTask"
-                                    }
-                                },
-                                "required": [
-                                    "data"
-                                ],
-                                "additionalProperties": false
-                            }
-                        }
-                    }
-                },
-                "default": {
-                    "description": "Error; see error.code",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/Error"
-                            }
-                        }
-                    }
-                }
-            },
-            "requestBody": {
-                "required": true,
-                "content": {
-                    "application/json": {
-                        "schema": {
-                            "$ref": "#/components/schemas/CollectionTaskInput"
-                        }
-                    }
-                }
+              }
             }
+          }
         }
+      },
+      "post": {
+        "operationId": "post__admin_agent_tasks",
+        "summary": "创建收集任务（绑定来源）",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CollectionTask"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionTaskInput"
+              }
+            }
+          }
+        }
+      }
     },
     "/admin/agent/tasks/{id}": {
-        "get": {
-            "operationId": "get__admin_agent_tasks_id",
-            "summary": "读取采集任务",
-            "security": [
-                {
-                    "UserSession": []
-                }
-            ],
-            "responses": {
-                "200": {
-                    "description": "Success",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "data": {
-                                        "$ref": "#/components/schemas/CollectionTask"
-                                    }
-                                },
-                                "required": [
-                                    "data"
-                                ],
-                                "additionalProperties": false
-                            }
-                        }
+      "get": {
+        "operationId": "get__admin_agent_tasks_id",
+        "summary": "读取收集任务",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CollectionTask"
                     }
-                },
-                "default": {
-                    "description": "Error; see error.code",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/Error"
-                            }
-                        }
-                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
                 }
+              }
             }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
+      }
     },
     "/admin/agent/tasks/{id}/events": {
-        "get": {
-            "operationId": "get__admin_agent_tasks_id_events",
-            "summary": "读取任务进度事件",
-            "security": [
-                {
-                    "UserSession": []
-                }
-            ],
-            "responses": {
-                "200": {
-                    "description": "Success",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "data": {
-                                        "type": "array",
-                                        "items": {
-                                            "$ref": "#/components/schemas/AgentEvent"
-                                        }
-                                    }
-                                },
-                                "required": [
-                                    "data"
-                                ],
-                                "additionalProperties": false
-                            }
-                        }
+      "get": {
+        "operationId": "get__admin_agent_tasks_id_events",
+        "summary": "读取任务进度事件",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AgentEvent"
+                      }
                     }
-                },
-                "default": {
-                    "description": "Error; see error.code",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/Error"
-                            }
-                        }
-                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
                 }
+              }
             }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
         }
+      }
     },
     "/admin/agent/tasks/{id}/cancel": {
-        "post": {
-            "operationId": "post__admin_agent_tasks_id_cancel",
-            "summary": "取消任务；运行中任务在下次心跳生效",
-            "security": [
-                {
-                    "UserSession": []
-                }
-            ],
-            "responses": {
-                "200": {
-                    "description": "Success",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "data": {
-                                        "$ref": "#/components/schemas/CollectionTask"
-                                    }
-                                },
-                                "required": [
-                                    "data"
-                                ],
-                                "additionalProperties": false
-                            }
-                        }
+      "post": {
+        "operationId": "post__admin_agent_tasks_id_cancel",
+        "summary": "取消任务；运行中任务在下次心跳生效",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CollectionTask"
                     }
-                },
-                "default": {
-                    "description": "Error; see error.code",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/Error"
-                            }
-                        }
-                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
                 }
-            },
-            "requestBody": {
-                "required": true,
-                "content": {
-                    "application/json": {
-                        "schema": {
-                            "$ref": "#/components/schemas/CancelInput"
-                        }
-                    }
-                }
+              }
             }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelInput"
+              }
+            }
+          }
         }
+      }
     },
     "/admin/agent/tasks/{id}/retry": {
-        "post": {
-            "operationId": "post__admin_agent_tasks_id_retry",
-            "summary": "重置失败/取消/过期任务为待领取",
-            "security": [
-                {
-                    "UserSession": []
-                }
-            ],
-            "responses": {
-                "200": {
-                    "description": "Success",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "data": {
-                                        "$ref": "#/components/schemas/CollectionTask"
-                                    }
-                                },
-                                "required": [
-                                    "data"
-                                ],
-                                "additionalProperties": false
-                            }
-                        }
+      "post": {
+        "operationId": "post__admin_agent_tasks_id_retry",
+        "summary": "重置失败/取消/过期任务为待领取",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CollectionTask"
                     }
-                },
-                "default": {
-                    "description": "Error; see error.code",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/Error"
-                            }
-                        }
-                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
                 }
-            },
-            "requestBody": {
-                "required": true,
-                "content": {
-                    "application/json": {
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": false
-                        }
-                    }
-                }
+              }
             }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
         }
+      }
     },
     "/client/recommendations": {
       "get": {
@@ -4622,10 +5525,21 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "authenticated": { "type": "boolean" },
-                        "role": { "type": "string", "enum": ["admin", "user"] }
+                        "authenticated": {
+                          "type": "boolean"
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "admin",
+                            "user"
+                          ]
+                        }
                       },
-                      "required": ["authenticated", "role"]
+                      "required": [
+                        "authenticated",
+                        "role"
+                      ]
                     }
                   },
                   "required": [
@@ -5570,6 +6484,155 @@
       }
     },
     "/workspace/clients/{id}/key": {
+      "get": {
+        "operationId": "get_workspace_client_key",
+        "summary": "查看本人查询客户端加密保存的 Key",
+        "description": "仅所属用户会话可访问；旧版仅存哈希或加密密钥变更时 available 为 false。响应禁止缓存。",
+        "security": [
+          {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "保存状态及 Key（不可用时为空字符串）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "available",
+                        "access_key"
+                      ],
+                      "properties": {
+                        "available": {
+                          "type": "boolean"
+                        },
+                        "access_key": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_workspace_client_key",
+        "summary": "验证并加密保存原有查询 Key，不轮换",
+        "description": "仅所属用户会话可访问；在同一事务中匹配当前 Key 哈希，错误 Key 不会覆盖。响应禁止缓存。",
+        "security": [
+          {
+            "UserBearer": []
+          },
+          {
+            "UserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "access_key"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "access_key": {
+                    "type": "string",
+                    "minLength": 32,
+                    "maxLength": 256
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已保存",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "saved"
+                      ],
+                      "properties": {
+                        "saved": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "operationId": "post__workspace_clients_id_key",
         "summary": "轮换查询 Key，旧 Key 立即失效",
@@ -7245,14 +8308,1872 @@
           }
         }
       }
+    },
+    "/admin/agent/tasks/{id}/delete": {
+      "post": {
+        "operationId": "post_admin_agent_tasks_delete",
+        "summary": "删除已结束的收集任务及其进度事件",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Deleted task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CollectionTask"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Task is still active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/uploads": {
+      "post": {
+        "operationId": "post__agent_uploads",
+        "summary": "采集端上传媒体文件并登记资产",
+        "security": [
+          {
+            "AgentBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    }
+                  }
+                },
+                "required": [
+                  "files"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Asset"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspace/items/batch-delete": {
+      "post": {
+        "operationId": "post__workspace_items_batch_delete",
+        "summary": "批量删除当前工作区的资料",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "revision"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "items"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "deleted": {
+                          "type": "integer"
+                        },
+                        "failed": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        }
+                      },
+                      "required": [
+                        "deleted",
+                        "failed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/agent/task-templates": {
+      "get": {
+        "operationId": "get__admin_agent_task_templates",
+        "summary": "列出当前工作区的任务模板",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post__admin_agent_task_templates",
+        "summary": "把当前表单配置保存为任务模板",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "goal": {
+                    "type": "string"
+                  },
+                  "constraints": {
+                    "$ref": "#/components/schemas/TaskConstraints"
+                  },
+                  "budget": {
+                    "$ref": "#/components/schemas/TaskBudget"
+                  },
+                  "priority": {
+                    "type": "integer"
+                  },
+                  "assigned_agent_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/agent/task-templates/{id}/delete": {
+      "post": {
+        "operationId": "post__admin_agent_task_templates_id_delete",
+        "summary": "删除任务模板；表单配置不受影响",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspace/agent/status": {
+      "get": {
+        "operationId": "get__workspace_agent_status",
+        "summary": "采集端模块状态与任务计数",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AgentAdminStatus"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspace/agent/agents": {
+      "get": {
+        "operationId": "get__workspace_agent_agents",
+        "summary": "列出采集端身份（不含密钥）",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Agent"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post__workspace_agent_agents",
+        "summary": "创建采集端身份并一次性返回密钥",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AgentKey"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspace/agent/agents/{id}": {
+      "get": {
+        "operationId": "get__workspace_agent_agents_id",
+        "summary": "读取采集端身份",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Agent"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "put__workspace_agent_agents_id",
+        "summary": "更新采集端身份（版本校验）",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Agent"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentUpdate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspace/agent/agents/{id}/key": {
+      "get": {
+        "operationId": "get__workspace_agent_agents_id_key",
+        "summary": "查看当前工作区采集端身份的 Agent 密钥",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "access_key": {
+                          "type": "string"
+                        },
+                        "package": {
+                          "type": "object",
+                          "properties": {
+                            "provider": {
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string"
+                            },
+                            "base_url": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "access_key"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post__workspace_agent_agents_id_key",
+        "summary": "轮换采集端密钥",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AgentKey"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevisionInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspace/agent/tasks": {
+      "get": {
+        "operationId": "get__workspace_agent_tasks",
+        "summary": "分页列出收集任务",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CollectionTaskPage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post__workspace_agent_tasks",
+        "summary": "创建收集任务（绑定来源）",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CollectionTask"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionTaskInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspace/agent/tasks/{id}": {
+      "get": {
+        "operationId": "get__workspace_agent_tasks_id",
+        "summary": "读取收集任务",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CollectionTask"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspace/agent/tasks/{id}/events": {
+      "get": {
+        "operationId": "get__workspace_agent_tasks_id_events",
+        "summary": "读取任务进度事件",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AgentEvent"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspace/agent/tasks/{id}/cancel": {
+      "post": {
+        "operationId": "post__workspace_agent_tasks_id_cancel",
+        "summary": "取消任务；运行中任务在下次心跳生效",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CollectionTask"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspace/agent/tasks/{id}/retry": {
+      "post": {
+        "operationId": "post__workspace_agent_tasks_id_retry",
+        "summary": "重置失败/取消/过期任务为待领取",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CollectionTask"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspace/agent/tasks/{id}/delete": {
+      "post": {
+        "operationId": "post_workspace_agent_tasks_delete",
+        "summary": "删除已结束的收集任务及其进度事件",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Deleted task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CollectionTask"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Task is still active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspace/agent/binary": {
+      "get": {
+        "operationId": "get_workspace_agent_binary",
+        "summary": "下载服务端内置的采集端程序",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Windows agent executable",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspace/agent/task-templates": {
+      "get": {
+        "operationId": "get__workspace_agent_task_templates",
+        "summary": "列出当前工作区的任务模板",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post__workspace_agent_task_templates",
+        "summary": "把当前表单配置保存为任务模板",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "goal": {
+                    "type": "string"
+                  },
+                  "constraints": {
+                    "$ref": "#/components/schemas/TaskConstraints"
+                  },
+                  "budget": {
+                    "$ref": "#/components/schemas/TaskBudget"
+                  },
+                  "priority": {
+                    "type": "integer"
+                  },
+                  "assigned_agent_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspace/agent/task-templates/{id}/delete": {
+      "post": {
+        "operationId": "post__workspace_agent_task_templates_id_delete",
+        "summary": "删除任务模板；表单配置不受影响",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/agent/agents/{id}/package": {
+      "post": {
+        "operationId": "post__admin_agent_agents_id_package",
+        "summary": "为已有采集端身份生成包含程序、配置和启动脚本的 ZIP 包",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "access_key": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "provider": {
+                        "type": "string"
+                      },
+                      "base_url": {
+                        "type": "string"
+                      },
+                      "api_key": {
+                        "type": "string"
+                      },
+                      "model": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "access_key"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ZIP archive",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/agent/agents/{id}/delete": {
+      "post": {
+        "operationId": "post__admin_agent_agents_id_delete",
+        "summary": "删除管理员工作区的采集端身份；仍有未结束任务时拒绝删除",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "revision": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "revision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspace/agent/agents/{id}/package": {
+      "post": {
+        "operationId": "post__workspace_agent_agents_id_package",
+        "summary": "为已有采集端身份生成包含程序、配置和启动脚本的 ZIP 包",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "access_key": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "provider": {
+                        "type": "string"
+                      },
+                      "base_url": {
+                        "type": "string"
+                      },
+                      "api_key": {
+                        "type": "string"
+                      },
+                      "model": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "access_key"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ZIP archive",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspace/agent/agents/{id}/delete": {
+      "post": {
+        "operationId": "post__workspace_agent_agents_id_delete",
+        "summary": "删除当前工作区的采集端身份；仍有未结束任务时拒绝删除",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "revision": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "revision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/agent/runtime/restart": {
+      "post": {
+        "operationId": "post_admin_agent_runtime_restart",
+        "summary": "使用已保存配置重启内置 Agent；未运行时启动",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Runtime status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "configured": {
+                          "type": "boolean"
+                        },
+                        "work_dir": {
+                          "type": "string"
+                        },
+                        "auto_start": {
+                          "type": "boolean"
+                        },
+                        "running": {
+                          "type": "boolean"
+                        },
+                        "pid": {
+                          "type": "integer"
+                        },
+                        "last_error": {
+                          "type": "string"
+                        },
+                        "logs": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/agent/runtime/test-connection": {
+      "post": {
+        "operationId": "post_admin_agent_runtime_test_connection",
+        "summary": "用当前表单配置发起一次极短的模型对话请求，不保存配置、不执行采集任务",
+        "security": [
+          {
+            "UserSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "deepseek",
+                      "openai",
+                      "qwen",
+                      "custom"
+                    ],
+                    "default": "deepseek"
+                  },
+                  "base_url": {
+                    "type": "string",
+                    "description": "自定义或覆盖供应商默认地址"
+                  },
+                  "api_key": {
+                    "type": "string",
+                    "writeOnly": true
+                  },
+                  "use_saved_key": {
+                    "type": "boolean",
+                    "description": "API Key 留空时使用服务端运行时已保存的密钥"
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "clear_api_key": {
+                    "type": "boolean",
+                    "description": "测试时不使用任何模型密钥，优先于 api_key/use_saved_key"
+                  }
+                },
+                "required": [
+                  "model"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "连接成功、测试模型及耗时；可能产生少量 Token 费用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "connected": {
+                          "type": "boolean"
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "latency_ms": {
+                          "type": "integer"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/tasks/{id}/duplicates": {
+      "post": {
+        "operationId": "post_agent_tasks_id_duplicates",
+        "summary": "按候选稳定标识做同工作区查重，含删除保护，只返回布尔结果",
+        "security": [
+          {
+            "AgentBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "仅返回候选 external_id 与 exists，不泄露库内正文或其他标识",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "external_id": {
+                                "type": "string"
+                              },
+                              "exists": {
+                                "type": "boolean"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error; see error.code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "attempt",
+                  "items"
+                ],
+                "properties": {
+                  "attempt": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "external_id": {
+                          "type": "string"
+                        },
+                        "url": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "securitySchemes": {
       "AgentBearer": {
-            "type": "http",
-            "scheme": "bearer",
-            "description": "采集端专属密钥（wzag_...）。仅可领取任务、上报进度和写入任务绑定的来源，不能查询资料库。"
+        "type": "http",
+        "scheme": "bearer",
+        "description": "采集端专属密钥（wzag_...）。仅可领取任务、上报进度和写入任务绑定的来源，不能查询资料库。"
       },
       "AdminKey": {
         "type": "http",
@@ -7293,686 +10214,771 @@
       }
     },
     "schemas": {
-      "Agent": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                  "id": {
-                        "type": "string",
-                        "format": "uuid"
-                  },
-                  "slug": {
-                        "type": "string"
-                  },
-                  "name": {
-                        "type": "string"
-                  },
-                  "description": {
-                        "type": "string"
-                  },
-                  "enabled": {
-                        "type": "boolean"
-                  },
-                  "permissions": {
-                        "type": "array",
-                        "items": {
-                              "type": "string",
-                              "enum": [
-                                    "task.claim",
-                                    "ingest"
-                              ]
-                        }
-                  },
-                  "revision": {
-                        "type": "integer",
-                        "minimum": 1
-                  },
-                  "last_seen_at": {
-                        "type": "string",
-                        "format": "date-time"
-                  },
-                  "version": {
-                        "type": "string"
-                  },
-                  "hostname": {
-                        "type": "string"
-                  },
-                  "created_at": {
-                        "type": "string",
-                        "format": "date-time"
-                  },
-                  "updated_at": {
-                        "type": "string",
-                        "format": "date-time"
-                  }
-            },
-            "required": [
-                  "id",
-                  "slug",
-                  "name",
-                  "description",
-                  "enabled",
-                  "permissions",
-                  "revision",
-                  "created_at",
-                  "updated_at"
+      "AgentRelease": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "windows",
+              "linux",
+              "macos"
             ]
+          },
+          "arch": {
+            "type": "string",
+            "enum": [
+              "amd64",
+              "arm64"
+            ]
+          },
+          "filename": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "platform",
+          "arch",
+          "filename",
+          "size",
+          "sha256",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "Agent": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "task.claim",
+                "ingest"
+              ]
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "string"
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "description",
+          "enabled",
+          "permissions",
+          "revision",
+          "created_at",
+          "updated_at"
+        ]
       },
       "AgentInput": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                  "slug": {
-                        "type": "string"
-                  },
-                  "name": {
-                        "type": "string"
-                  },
-                  "description": {
-                        "type": "string"
-                  },
-                  "enabled": {
-                        "type": "boolean"
-                  },
-                  "permissions": {
-                        "type": "array",
-                        "items": {
-                              "type": "string",
-                              "enum": [
-                                    "task.claim",
-                                    "ingest"
-                              ]
-                        }
-                  }
-            },
-            "required": [
-                  "slug",
-                  "name",
-                  "description"
-            ]
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "task.claim",
+                "ingest"
+              ]
+            }
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "description"
+        ]
       },
       "AgentUpdate": {
-            "allOf": [
-                  {
-                        "$ref": "#/components/schemas/AgentInput"
-                  },
-                  {
-                        "type": "object",
-                        "properties": {
-                              "revision": {
-                                    "type": "integer",
-                                    "minimum": 1
-                              }
-                        },
-                        "required": [
-                              "revision"
-                        ]
-                  }
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AgentInput"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "revision": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "revision"
             ]
+          }
+        ]
       },
       "AgentKey": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                  "agent": {
-                        "$ref": "#/components/schemas/Agent"
-                  },
-                  "access_key": {
-                        "type": "string",
-                        "writeOnly": true
-                  }
-            },
-            "required": [
-                  "agent",
-                  "access_key"
-            ]
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/Agent"
+          },
+          "access_key": {
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "agent",
+          "access_key"
+        ]
       },
       "AgentStatus": {
-            "type": "object",
-            "properties": {
-                  "agent": {
-                        "$ref": "#/components/schemas/Agent"
-                  },
-                  "server_time": {
-                        "type": "string",
-                        "format": "date-time"
-                  },
-                  "lease_seconds": {
-                        "type": "integer"
-                  }
-            }
+        "type": "object",
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/Agent"
+          },
+          "server_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lease_seconds": {
+            "type": "integer"
+          }
+        }
       },
       "AgentAdminStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "lease_seconds": {
+            "type": "integer"
+          },
+          "tasks": {
             "type": "object",
-            "properties": {
-                  "enabled": {
-                        "type": "boolean"
-                  },
-                  "lease_seconds": {
-                        "type": "integer"
-                  },
-                  "tasks": {
-                        "type": "object",
-                        "additionalProperties": {
-                              "type": "integer"
-                        }
-                  },
-                  "agents": {
-                        "type": "array",
-                        "items": {
-                              "$ref": "#/components/schemas/Agent"
-                        }
-                  }
+            "additionalProperties": {
+              "type": "integer"
             }
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Agent"
+            }
+          }
+        }
       },
       "TaskConstraints": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                  "max_items": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 100
-                  },
-                  "language": {
-                        "type": "string",
-                        "maxLength": 35
-                  },
-                  "category": {
-                        "type": "string",
-                        "maxLength": 200
-                  },
-                  "tags": {
-                        "type": "array",
-                        "items": {
-                              "type": "string"
-                        },
-                        "maxItems": 20
-                  },
-                  "allow_domains": {
-                        "type": "array",
-                        "items": {
-                              "type": "string"
-                        },
-                        "maxItems": 20
-                  }
-            }
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "max_items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "language": {
+            "type": "string",
+            "maxLength": 35
+          },
+          "category": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20
+          },
+          "allow_domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20
+          },
+          "content_type": {
+            "type": "string",
+            "enum": [
+              "",
+              "article",
+              "video",
+              "audio",
+              "carousel"
+            ],
+            "description": "要求的数据类型；video/audio 必须包含对应媒体文件，否则拒绝入库"
+          },
+          "duplicate_policy": {
+            "type": "string",
+            "enum": [
+              "skip",
+              "update"
+            ],
+            "default": "skip",
+            "description": "skip为只新增，已有及已删除跳过；update允许同来源更新"
+          }
+        }
       },
       "TaskBudget": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                  "max_rounds": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 32
-                  },
-                  "max_tool_calls": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 128
-                  },
-                  "timeout_seconds": {
-                        "type": "integer",
-                        "minimum": 30
-                  }
-            }
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "max_rounds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 32
+          },
+          "max_tool_calls": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 128,
+            "description": "默认 100，最大 128"
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 30
+          }
+        }
       },
       "TaskStats": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                  "items_created": {
-                        "type": "integer"
-                  },
-                  "items_updated": {
-                        "type": "integer"
-                  },
-                  "items_unchanged": {
-                        "type": "integer"
-                  },
-                  "rounds": {
-                        "type": "integer"
-                  },
-                  "tool_calls": {
-                        "type": "integer"
-                  },
-                  "duration_ms": {
-                        "type": "integer",
-                        "format": "int64"
-                  }
-            }
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items_created": {
+            "type": "integer"
+          },
+          "items_updated": {
+            "type": "integer"
+          },
+          "items_unchanged": {
+            "type": "integer"
+          },
+          "rounds": {
+            "type": "integer"
+          },
+          "tool_calls": {
+            "type": "integer"
+          },
+          "duration_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "items_skipped": {
+            "type": "integer",
+            "description": "入库时跳过的重复数，不占配额"
+          }
+        }
       },
       "TaskError": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                  "code": {
-                        "type": "string"
-                  },
-                  "message": {
-                        "type": "string"
-                  }
-            }
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
       },
       "CollectionTask": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                  "id": {
-                        "type": "string",
-                        "format": "uuid"
-                  },
-                  "source_id": {
-                        "type": "string",
-                        "format": "uuid"
-                  },
-                  "title": {
-                        "type": "string"
-                  },
-                  "goal": {
-                        "type": "string"
-                  },
-                  "constraints": {
-                        "$ref": "#/components/schemas/TaskConstraints"
-                  },
-                  "budget": {
-                        "$ref": "#/components/schemas/TaskBudget"
-                  },
-                  "status": {
-                        "type": "string",
-                        "enum": [
-                              "pending",
-                              "claimed",
-                              "running",
-                              "succeeded",
-                              "failed",
-                              "cancelled",
-                              "expired"
-                        ]
-                  },
-                  "priority": {
-                        "type": "integer"
-                  },
-                  "attempts": {
-                        "type": "integer"
-                  },
-                  "max_attempts": {
-                        "type": "integer"
-                  },
-                  "agent_id": {
-                        "type": "string"
-                  },
-                  "assigned_agent_id": {
-                        "type": "string"
-                  },
-                  "lease_expires_at": {
-                        "type": "string",
-                        "format": "date-time"
-                  },
-                  "deadline": {
-                        "type": "string",
-                        "format": "date-time"
-                  },
-                  "cancel_requested": {
-                        "type": "boolean"
-                  },
-                  "cancel_reason": {
-                        "type": "string"
-                  },
-                  "stats": {
-                        "$ref": "#/components/schemas/TaskStats"
-                  },
-                  "created_at": {
-                        "type": "string",
-                        "format": "date-time"
-                  },
-                  "updated_at": {
-                        "type": "string",
-                        "format": "date-time"
-                  },
-                  "finished_at": {
-                        "type": "string",
-                        "format": "date-time"
-                  }
-            },
-            "required": [
-                  "id",
-                  "source_id",
-                  "title",
-                  "goal",
-                  "constraints",
-                  "budget",
-                  "status",
-                  "attempts",
-                  "max_attempts",
-                  "created_at",
-                  "updated_at"
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "constraints": {
+            "$ref": "#/components/schemas/TaskConstraints"
+          },
+          "budget": {
+            "$ref": "#/components/schemas/TaskBudget"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "claimed",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "expired"
             ]
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "max_attempts": {
+            "type": "integer"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "assigned_agent_id": {
+            "type": "string"
+          },
+          "lease_expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deadline": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "cancel_reason": {
+            "type": "string"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/TaskStats"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "source_id",
+          "title",
+          "goal",
+          "constraints",
+          "budget",
+          "status",
+          "attempts",
+          "max_attempts",
+          "created_at",
+          "updated_at"
+        ]
       },
       "CollectionTaskInput": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                  "source_id": {
-                        "type": "string",
-                        "format": "uuid"
-                  },
-                  "title": {
-                        "type": "string",
-                        "maxLength": 200
-                  },
-                  "goal": {
-                        "type": "string",
-                        "maxLength": 4000
-                  },
-                  "constraints": {
-                        "$ref": "#/components/schemas/TaskConstraints"
-                  },
-                  "budget": {
-                        "$ref": "#/components/schemas/TaskBudget"
-                  },
-                  "priority": {
-                        "type": "integer",
-                        "minimum": -10,
-                        "maximum": 10
-                  },
-                  "max_attempts": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 10
-                  },
-                  "assigned_agent_id": {
-                        "type": "string",
-                        "format": "uuid"
-                  }
-            },
-            "required": [
-                  "source_id",
-                  "goal"
-            ]
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "可选；留空时自动创建并使用“Agent 收集”来源"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "goal": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "constraints": {
+            "$ref": "#/components/schemas/TaskConstraints"
+          },
+          "budget": {
+            "$ref": "#/components/schemas/TaskBudget"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": -10,
+            "maximum": 10
+          },
+          "max_attempts": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "assigned_agent_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "goal"
+        ]
       },
       "CollectionTaskPage": {
-            "type": "object",
-            "properties": {
-                  "tasks": {
-                        "type": "array",
-                        "items": {
-                              "$ref": "#/components/schemas/CollectionTask"
-                        }
-                  },
-                  "total": {
-                        "type": "integer"
-                  },
-                  "limit": {
-                        "type": "integer"
-                  },
-                  "offset": {
-                        "type": "integer"
-                  }
-            },
-            "required": [
-                  "tasks",
-                  "total",
-                  "limit",
-                  "offset"
-            ]
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CollectionTask"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tasks",
+          "total",
+          "limit",
+          "offset"
+        ]
       },
       "ClaimInput": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                  "capacity": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 4
-                  },
-                  "wait_seconds": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 25
-                  },
-                  "version": {
-                        "type": "string",
-                        "maxLength": 64
-                  },
-                  "hostname": {
-                        "type": "string",
-                        "maxLength": 200
-                  }
-            }
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "capacity": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4
+          },
+          "wait_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 25
+          },
+          "version": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "hostname": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
       },
       "ClaimResult": {
-            "type": "object",
-            "properties": {
-                  "task": {
-                        "$ref": "#/components/schemas/CollectionTask"
-                  }
-            },
-            "required": [
-                  "task"
-            ]
+        "type": "object",
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/CollectionTask"
+          }
+        },
+        "required": [
+          "task"
+        ]
       },
       "HeartbeatResult": {
-            "type": "object",
-            "properties": {
-                  "lease_expires_at": {
-                        "type": "string",
-                        "format": "date-time"
-                  },
-                  "cancel_requested": {
-                        "type": "boolean"
-                  },
-                  "cancel_reason": {
-                        "type": "string"
-                  },
-                  "status": {
-                        "type": "string"
-                  }
-            },
-            "required": [
-                  "cancel_requested",
-                  "status"
-            ]
+        "type": "object",
+        "properties": {
+          "lease_expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "cancel_reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cancel_requested",
+          "status"
+        ]
       },
       "AgentEventInput": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                  "seq": {
-                        "type": "integer",
-                        "minimum": 1
-                  },
-                  "kind": {
-                        "type": "string",
-                        "enum": [
-                              "round_start",
-                              "assistant",
-                              "tool_call",
-                              "tool_result",
-                              "notice",
-                              "finish"
-                        ]
-                  },
-                  "text": {
-                        "type": "string"
-                  },
-                  "tool": {
-                        "type": "string"
-                  },
-                  "summary": {
-                        "type": "string"
-                  },
-                  "at": {
-                        "type": "string",
-                        "format": "date-time"
-                  }
-            },
-            "required": [
-                  "seq",
-                  "kind"
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "round_start",
+              "assistant",
+              "tool_call",
+              "tool_result",
+              "notice",
+              "finish"
             ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "seq",
+          "kind"
+        ]
       },
       "EventsInput": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                  "attempt": {
-                        "type": "integer",
-                        "minimum": 1
-                  },
-                  "events": {
-                        "type": "array",
-                        "maxItems": 200,
-                        "items": {
-                              "$ref": "#/components/schemas/AgentEventInput"
-                        }
-                  }
-            },
-            "required": [
-                  "attempt",
-                  "events"
-            ]
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "events": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "$ref": "#/components/schemas/AgentEventInput"
+            }
+          }
+        },
+        "required": [
+          "attempt",
+          "events"
+        ]
       },
       "EventsAck": {
-            "type": "object",
-            "properties": {
-                  "accepted": {
-                        "type": "integer"
-                  },
-                  "highest_seq": {
-                        "type": "integer"
-                  }
-            },
-            "required": [
-                  "accepted",
-                  "highest_seq"
-            ]
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "integer"
+          },
+          "highest_seq": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "accepted",
+          "highest_seq"
+        ]
       },
       "AgentEvent": {
-            "type": "object",
-            "properties": {
-                  "task_id": {
-                        "type": "string",
-                        "format": "uuid"
-                  },
-                  "attempt": {
-                        "type": "integer"
-                  },
-                  "seq": {
-                        "type": "integer"
-                  },
-                  "kind": {
-                        "type": "string"
-                  },
-                  "text": {
-                        "type": "string"
-                  },
-                  "tool": {
-                        "type": "string"
-                  },
-                  "summary": {
-                        "type": "string"
-                  },
-                  "at": {
-                        "type": "string",
-                        "format": "date-time"
-                  }
-            }
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attempt": {
+            "type": "integer"
+          },
+          "seq": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       },
       "ItemsInput": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                  "attempt": {
-                        "type": "integer",
-                        "minimum": 1
-                  },
-                  "items": {
-                        "type": "array",
-                        "minItems": 1,
-                        "maxItems": 20,
-                        "items": {
-                              "$ref": "#/components/schemas/Content"
-                        }
-                  }
-            },
-            "required": [
-                  "attempt",
-                  "items"
-            ]
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/Content"
+            }
+          }
+        },
+        "required": [
+          "attempt",
+          "items"
+        ]
       },
       "CompleteInput": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                  "attempt": {
-                        "type": "integer",
-                        "minimum": 1
-                  },
-                  "status": {
-                        "type": "string",
-                        "enum": [
-                              "succeeded",
-                              "failed",
-                              "cancelled"
-                        ]
-                  },
-                  "summary": {
-                        "type": "string",
-                        "maxLength": 8000
-                  },
-                  "stats": {
-                        "$ref": "#/components/schemas/TaskStats"
-                  },
-                  "error": {
-                        "$ref": "#/components/schemas/TaskError"
-                  }
-            },
-            "required": [
-                  "attempt",
-                  "status"
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "failed",
+              "cancelled"
             ]
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "stats": {
+            "$ref": "#/components/schemas/TaskStats"
+          },
+          "error": {
+            "$ref": "#/components/schemas/TaskError"
+          }
+        },
+        "required": [
+          "attempt",
+          "status"
+        ]
       },
       "ReleaseInput": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                  "attempt": {
-                        "type": "integer",
-                        "minimum": 1
-                  },
-                  "reason": {
-                        "type": "string",
-                        "maxLength": 500
-                  }
-            },
-            "required": [
-                  "attempt"
-            ]
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "attempt"
+        ]
       },
       "CancelInput": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                  "reason": {
-                        "type": "string",
-                        "maxLength": 500
-                  }
-            }
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
       },
       "RevisionInput": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                  "revision": {
-                        "type": "integer",
-                        "minimum": 1
-                  }
-            },
-            "required": [
-                  "revision"
-            ]
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "revision"
+        ]
       },
       "RecommendationPage": {
         "type": "object",
@@ -9429,7 +12435,8 @@
           "integration": {
             "type": "string",
             "enum": [
-              "", "agent",
+              "",
+              "agent",
               "collector",
               "skill",
               "mcp",
@@ -9515,7 +12522,8 @@
           "integration": {
             "type": "string",
             "enum": [
-              "", "agent",
+              "",
+              "agent",
               "collector",
               "skill",
               "mcp",
@@ -9634,7 +12642,8 @@
           "integration": {
             "type": "string",
             "enum": [
-              "", "agent",
+              "",
+              "agent",
               "collector",
               "skill",
               "mcp",

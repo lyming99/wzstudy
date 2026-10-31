@@ -1,6 +1,6 @@
 # wzstudy-agent
 
-独立的采集端进程：从 WzStudy 服务端领取采集任务，用 agent loop + function calling 完成抓取、整理与入库。
+独立的采集端进程：从 WzStudy 服务端领取收集任务，用 agent loop + function calling 完成抓取、整理与入库。
 
 完整协议见 `../docs/AGENT_PROTOCOL.md`，部署与运维见 `../docs/AGENT_COLLECTION.md`。
 

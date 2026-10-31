@@ -57,3 +57,6 @@ desktop.ini
 agent.env
 agent.env.*
 !agent.env.example
+
+# 构建时复制进来的采集端二进制（发布构建由脚本生成）
+internal/agentbundle/assets/*.exe

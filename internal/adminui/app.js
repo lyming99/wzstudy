@@ -35,11 +35,11 @@ const CATEGORIES=['学习方法','人工智能','认知思维','语言学习','�
 
 
 const $=(selector,root=document)=>root.querySelector(selector);
-const ROUTES={home:'首页',library:'数据录入',sources:'录入端管理',access:'接入指引',receipts:'入库记录',query:'数据查询',catalog:'合集管理',roadmaps:'学习路线图',clients:'客户端管理',users:'用户管理',tasks:'采集任务'};
+const ROUTES={home:'首页',library:'数据录入',sources:'录入端管理',access:'接入指引',receipts:'入库记录',query:'数据查询',catalog:'合集管理',roadmaps:'学习路线图',clients:'客户端管理',users:'用户管理',tasks:'收集任务',rss:'RSS 订阅','agent-access':'Agent 接入'};
 const INTEGRATIONS={agent:'Agent 录入',collector:'采集程序',skill:'Skill',mcp:'MCP',rss:'RSS',manual:'手动维护'};
 const state={authenticated:false,items:[],total:0,sources:[],clients:[],migration:{entries:[],pending:0,mixed:0},recent:[],settings:{name:'用户',compact:false,revision:0},summary:{total:0,pending:0,published:0,draft:0,week_new:0,by_kind:{},by_category:{},by_source:{},trends:[],asset_bytes:0,asset_count:0},maxUpload:200*1024*1024};
 let route=resolveRoute(location.hash.slice(1));history.replaceState(null,'','#'+route);
-let queryFilters={q:'',kind:'',category:'',tag:'',source_id:'',limit:20,client_id:'',exclude:[],exclude_since:''},queryPage=1,queryResult=null,queryRequest=0,authEpoch=0,intakePage=1,intakeSource='',intakeRequest=0;
+let queryFilters={q:'',kind:'',category:'',tag:'',source_id:'',limit:20,client_id:'',exclude:[],exclude_since:''},queryPage=1,queryResult=null,querySelected=new Map(),queryRequest=0,authEpoch=0,intakePage=1,intakeSource='',intakeRequest=0;
 let catalogPage=1,catalogRequest=0,catalogItems=[],catalogChoices=new Map();
 let filters={status:'all',type:'all',category:'all',query:'',sort:'desc'},page=1,view='list';
 let selected=new Map(),cache=new Map(),listRequest=0,workspaceRequest=0,detailRequest=0,searchTimer,detailItem=null,detailTab='preview',slide=0,uploadFiles=[],editingItem=null;
@@ -84,7 +84,7 @@ function closeModal(){clearClientQR(undefined,true);const had=$('#modal-root').c
 function closeDrawer(){detailRequest++;const had=$('#drawer-root').children.length;$('#drawer-root').innerHTML='';detailItem=null;syncBodyLock();if(had&&drawerFocus?.isConnected)drawerFocus.focus();drawerFocus=null}
 function formError(message){const box=$('#form-error');if(box){box.innerHTML=`<div class="form-error" role="alert">${esc(message)}</div>`;box.scrollIntoView({block:'nearest'})}else toast(message,true)}
 function showLogin(message=''){authEpoch++;
- state.authenticated=false;state.role=null;state.user=null;state.admin=null;adminUsersView.reset();homeView.reset();state.sources=[];state.recent=[];state.summary={total:0,pending:0,published:0,draft:0,week_new:0,by_kind:{},by_category:{},by_source:{},trends:[],asset_bytes:0,asset_count:0};state.settings={name:'个人工作区',compact:false,revision:0};state.migration={entries:[],pending:0,mixed:0};catalogItems=[];catalogChoices.clear();queryFilters.client_id='';resetRoadmaps();listRequest++;workspaceRequest++;detailRequest++;queryRequest++;intakeRequest++;queryResult=null;state.clients=[];cache.clear();selected.clear();state.items=[];
+ state.authenticated=false;state.role=null;state.user=null;state.admin=null;adminUsersView.reset();homeView.reset();agentAccessView.reset();state.sources=[];state.recent=[];state.summary={total:0,pending:0,published:0,draft:0,week_new:0,by_kind:{},by_category:{},by_source:{},trends:[],asset_bytes:0,asset_count:0};state.settings={name:'个人工作区',compact:false,revision:0};state.migration={entries:[],pending:0,mixed:0};catalogItems=[];catalogChoices.clear();queryFilters.client_id='';resetRoadmaps();listRequest++;workspaceRequest++;detailRequest++;queryRequest++;intakeRequest++;queryResult=null;state.clients=[];cache.clear();selected.clear();state.items=[];
  document.body.classList.add('unauthenticated');document.body.classList.remove('role-admin','identity-check');closeModal();closeDrawer();closeMenu();$('#main-content').innerHTML='';
  $('#login-root').innerHTML=`<div class="login-page"><section class="login-card"><div class="login-brand">${$('.brand').innerHTML}</div><span class="eyebrow">YOUR KNOWLEDGE, CONNECTED.</span><h1>欢迎回到温知</h1><p id="login-description">使用邮箱和密码登录温知。</p><form id="login-form"><div class="field"><label for="login-email">登录邮箱</label><input id="login-email" name="email" type="email" required maxlength="254" autocomplete="username" placeholder="请输入登录邮箱" spellcheck="false" autocapitalize="none"></div><div class="field"><label for="login-password">登录密码</label><input id="login-password" name="password" type="password" required maxlength="128" autocomplete="current-password" placeholder="请输入登录密码"></div><div id="login-error" role="alert">${message?`<div class="form-error">${esc(message)}</div>`:''}</div><button class="btn primary" type="submit">登录工作空间${icon('arrowRight')}</button></form><div class="login-note">${icon('shield')}账号由管理员创建，资料与学习数据按用户隔离。密码不保存在浏览器本地存储。</div><footer>温知 · 学习内容管理平台 <span>v0.3.0</span></footer></section></div>`;
  requestAnimationFrame(()=>$('#login-email')?.focus())
@@ -92,12 +92,12 @@ function showLogin(message=''){authEpoch++;
 async function loadWorkspace(){const seq=++workspaceRequest;const w=await api('/workspace/workspace');if(seq!==workspaceRequest||!state.authenticated)return false;state.sources=w.sources||[];state.clients=w.clients||[];state.migration=w.identity_migration||{entries:[],pending:0,mixed:0};state.summary=w.summary;state.settings=w.settings;state.recent=remember(w.recent||[]);updateShell();return true}
 function updateShell(){
  $('#nav-count').textContent=state.summary.total;$('#profile-name').textContent=state.user?.display_name||state.settings.name;$('#profile-name').title=state.user?.email||'';$('.user-button small').textContent=state.role==='admin'?'个人工作区 · 管理员':'个人资料工作区';$('#profile-avatar').textContent=(state.user?.display_name||state.settings.name).slice(-1);$('#storage-info').textContent=formatBytes(state.summary.asset_bytes)+' · '+state.summary.asset_count+' 个附件';document.body.classList.toggle('compact-table',state.settings.compact);$('#notification-button').classList.toggle('read',!state.summary.pending);$('#notification-button').setAttribute('aria-label','资料状态');
- const activeRoute=route==='home'?'home':route==='users'?'users':route==='roadmaps'?'roadmaps':route==='clients'?'clients':route==='tasks'?'tasks':isQueryRoute()?'query':'library';
+ const activeRoute=route==='home'?'home':route==='users'?'users':route==='roadmaps'?'roadmaps':route==='clients'?'clients':route==='tasks'?'tasks':route==='rss'?'rss':route==='agent-access'?'agent-access':isQueryRoute()?'query':'library';
  document.querySelectorAll('.sidebar [data-route]').forEach(b=>{const active=b.dataset.route===activeRoute;b.classList.toggle('active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
- $('#breadcrumb-current').textContent=route==='home'?'首页':(route==='roadmaps'?'学习路线图':route==='clients'?'客户端管理':route==='tasks'?'采集任务':isQueryRoute()?'数据管理':'数据录入')+(['library','clients','roadmaps','tasks'].includes(route)?'':' / '+ROUTES[route]);document.title=ROUTES[route]+' · 温知数据服务'
+ $('#breadcrumb-current').textContent=route==='home'?'首页':(route==='roadmaps'?'学习路线图':route==='clients'?'客户端管理':route==='tasks'?'收集任务':route==='rss'?'RSS 订阅':route==='agent-access'?'Agent 接入':isQueryRoute()?'数据管理':'数据录入')+(['library','clients','roadmaps','tasks','rss','agent-access'].includes(route)?'':' / '+ROUTES[route]);document.title=ROUTES[route]+' · 温知数据服务'
 }
 async function refresh(){if(!await loadWorkspace())return;renderPage();await loadRouteData()}
-async function navigate(next){next=resolveRoute(next);if(!state.authenticated)return;if(state.role==='admin'&&adminUsersView.busy()){toast('账号正在保存，请等待完成后再切换页面。');history.replaceState(null,'','#'+route);return}if(state.role!=='admin'&&(next==='users'||next==='tasks'))next='home';if($('#modal-root form[data-submitting="true"]')){toast('正在保存，请等待结果后再切换页面。');history.replaceState(null,'','#'+route);return;}if(route==='roadmaps'&&!leaveRoadmaps(next)){history.replaceState(null,'','#'+route);return;}queryRequest++;intakeRequest++;closeMenu();closeDrawer();closeModal();route=next;selected.clear();document.body.classList.remove('mobile-open');history.replaceState(null,'','#'+next);updateShell();renderPage();window.scrollTo({top:0,behavior:'instant'});await loadRouteData()}
+async function navigate(next){next=resolveRoute(next);if(!state.authenticated)return;if(state.role==='admin'&&adminUsersView.busy()){toast('账号正在保存，请等待完成后再切换页面。');history.replaceState(null,'','#'+route);return}if(state.role!=='admin'&&next==='users')next='home';if($('#modal-root form[data-submitting="true"]')){toast('正在保存，请等待结果后再切换页面。');history.replaceState(null,'','#'+route);return;}if(route==='roadmaps'&&!leaveRoadmaps(next)){history.replaceState(null,'','#'+route);return;}queryRequest++;intakeRequest++;closeMenu();closeDrawer();closeModal();route=next;selected.clear();document.body.classList.remove('mobile-open');history.replaceState(null,'','#'+next);updateShell();renderPage();window.scrollTo({top:0,behavior:'instant'});await loadRouteData()}
 function stats(){const s=state.summary;const active=ingestors().filter(v=>v.enabled);return `<section class="stats-grid" aria-label="内容概况"><article class="stat"><div class="stat-label"><span class="stat-icon">${icon('library')}</span>资料总量</div><div class="stat-value"><strong>${String(s.total).padStart(2,'0')}</strong><span class="unit">份资料</span></div><div class="stat-note"><span class="increase">${icon('trend')} +${s.week_new}</span>近 7 天新增</div><svg class="sparkline" viewBox="0 0 68 32" fill="none" aria-hidden="true"><polyline points="${s.trends.map((d,n)=>`${1+n*11},${28-(d.client+d.internet)/Math.max(1,...s.trends.map(v=>v.client+v.internet))*24}`).join(' ')}" stroke="#a8bd87" stroke-width="1.5"/></svg></article><article class="stat"><div class="stat-label"><span class="stat-icon">${icon('clock')}</span>待审核资料</div><div class="stat-value"><strong>${String(s.pending).padStart(2,'0')}</strong><span class="unit">份待处理</span></div><div class="stat-note">仅管理工作台手动录入需审核；推送入库即公开</div></article><article class="stat"><div class="stat-label"><span class="stat-icon">${icon('checkCircle')}</span>已发布内容</div><div class="stat-value"><strong>${String(s.published).padStart(2,'0')}</strong><span class="unit">份可查询</span></div><div class="stat-note"><span class="dot" style="color:#a7bf99;width:4px;height:4px"></span>可通过客户端接口同步学习</div></article><article class="stat"><div class="stat-label"><span class="stat-icon">${icon('globe')}</span>已连接来源</div><div class="stat-value"><strong>${String(active.length).padStart(2,'0')}</strong><span class="unit">个内容来源</span></div><div class="stat-note">${active.filter(v=>v.kind==='manual').length} 个接入端 · ${active.filter(v=>v.kind==='rss').length} 个订阅源</div></article></section>`}
 function renderIntakeMethods(){return `<section class="intake-section" aria-labelledby="intake-title"><div class="intake-heading"><h2 id="intake-title">统一数据录入</h2><span>三种接入方式，共用校验、去重和回执</span></div><div class="intake-grid"><article class="intake-card"><span class="intake-icon">${icon('code')}</span><div><h3>采集程序</h3><p>通过 HTTP JSON 或文件接口入库；RSS 作为录入来源管理。</p><div class="intake-actions"><button class="text-btn" data-action="collector-guide">HTTP 接入${icon('arrowRight')}</button><button class="text-btn" data-action="new-rss-source">添加 RSS</button></div></div></article><article class="intake-card"><span class="intake-icon ai">${icon('bolt')}</span><div><h3>Skill</h3><p>复用 wzstudy-push，提交有出处的资料与真实媒体文件。</p><div class="intake-actions"><button class="text-btn" data-action="ai-skill">配置 Skill${icon('arrowRight')}</button></div></div></article><article class="intake-card"><span class="intake-icon rss">${icon('monitor')}</span><div><h3>MCP</h3><p>独立 stdio 适配器调用同一录入 API，不提供查询或管理工具。</p><div class="intake-actions"><button class="text-btn" data-action="mcp-guide">配置 MCP${icon('arrowRight')}</button></div></div></article></div></section>`}
 function renderLibrary(){return heading('数据录入','统一接收采集程序、Skill 与 MCP 的资料，手动维护作为辅助。',`<button class="btn" data-action="export">${icon('download')}导出清单</button><button class="btn" data-action="collect">${icon('link')}登记链接</button><button class="btn primary" data-action="upload">${icon('plus')}手动录入</button>`,'CONTENT LIBRARY')+renderMigrationNotice()+stats()+renderIntakeMethods()+`<div class="workspace-grid"><section class="panel library-panel" aria-label="资料列表"><div class="library-panel-top"><div class="library-tabs" role="tablist" aria-label="资料状态">${[['all','全部资料'],['pending','待审核'],['published','已发布'],['draft','草稿']].map(([key,label])=>`<button class="library-tab ${filters.status===key?'active':''}" role="tab" aria-selected="${filters.status===key}" data-action="status" data-value="${key}">${label}<span class="tab-num">${countStatus(key)}</span></button>`).join('')}</div><div class="view-toggle" aria-label="显示方式">${['list','grid'].map(k=>`<button class="${view===k?'active':''}" data-action="view" data-value="${k}" aria-label="${k==='list'?'列表':'卡片'}视图" aria-pressed="${view===k}">${icon(k)}</button>`).join('')}</div></div><div class="filter-toolbar"><label class="search-field">${icon('search')}<input id="library-search" placeholder="搜索标题、摘要或标签…" value="${esc(filters.query)}" aria-label="搜索资料" autocomplete="off" maxlength="150"></label><span class="select-wrap"><select id="type-filter" class="filter-select" aria-label="资料类型"><option value="all">全部类型</option>${Object.entries(TYPES).map(([k,v])=>`<option value="${k}" ${filters.type===k?'selected':''}>${v}</option>`).join('')}</select></span><span class="select-wrap"><select id="category-filter" class="filter-select" aria-label="内容分类"><option value="all">全部分类</option>${optionsForCategory(filters.category)}</select></span><button class="sort-button" data-action="sort" title="${filters.sort==='desc'?'最近更新优先':'最早更新优先'}" aria-label="切换时间排序">${icon('sort')}</button></div><div id="selection-bar"></div><div id="library-results">${loading()}</div><div class="pagination" id="pagination"></div></section>${renderRail()}</div>`+footer()}
@@ -109,7 +109,7 @@ function updateSelection(){const root=$('#selection-bar');if(!root)return;root.i
 function updateResults(){if(!$('#library-results'))return;$('#library-results').innerHTML=state.items.length?(view==='list'?renderTable(state.items):renderGrid(state.items)):empty(state.summary.total?'还没有找到相关资料':'让第一份好内容，在这里安家',state.summary.total?'试试其他关键词，或放宽筛选条件。':'上传学习资料，或连接客户端与 RSS 订阅。',`<button class="btn small-btn" data-action="${state.summary.total?'reset-filters':'upload'}">${state.summary.total?'重置筛选':'上传第一份资料'}</button>`);updateSelection();const pages=Math.max(1,Math.ceil(state.total/pageSize));const nums=[...new Set([1,page-1,page,page+1,pages])].filter(n=>n>0&&n<=pages).sort((a,b)=>a-b);$('#pagination').innerHTML=`<span>显示 ${state.total?(page-1)*pageSize+1:0}–${Math.min(page*pageSize,state.total)} 条，共 ${state.total} 条资料</span><div class="page-buttons"><button data-action="page" data-value="${page-1}" ${page===1?'disabled':''} aria-label="上一页">${icon('chevronLeft')}</button>${nums.map((n,i)=>`${i&&n-nums[i-1]>1?'<span>…</span>':''}<button data-action="page" data-value="${n}" class="${n===page?'active':''}" aria-label="第 ${n} 页" ${n===page?'aria-current="page"':''}>${n}</button>`).join('')}<button data-action="page" data-value="${page+1}" ${page===pages?'disabled':''} aria-label="下一页">${icon('chevronRight')}</button></div>`;const all=$('#select-all');if(all)all.indeterminate=state.items.some(i=>selected.has(i.id))&&!state.items.every(i=>selected.has(i.id))}
 function renderSources(){return heading('录入端管理','仅负责接收资料；录入 Key 不能查询资料库。',`<button class="btn" data-action="new-rss-source">${icon('rss')}添加 RSS</button><button class="btn primary" data-action="new-source">${icon('plus')}新建录入端</button>`)+renderMigrationNotice()+`<div class="section-banner">${icon('shield')}<span><b>来源与消费端分离。</b> 仅配置入库、上传权限；推送入库即发布、客户端可直接查询，Key 仅创建或轮换时显示。</span></div><div class="secondary-grid">${ingestors().map(s=>`<article class="panel source-card"><div class="source-card-head"><div class="source-large-icon ${s.kind}">${icon(s.kind==='rss'?'rss':'code')}</div><button class="switch ${s.enabled?'on':''}" role="switch" aria-checked="${s.enabled}" aria-label="${esc(s.name)}启用状态" data-action="toggle-source" data-id="${esc(s.id)}"></button></div><h3>${esc(s.name)}</h3><p class="source-desc">${esc(s.description||'统一录入来源')}</p><div class="source-stats"><div><strong>${state.summary.by_source[s.id]||0}</strong><small>份来源资料</small></div><div><strong style="font-size:17px;line-height:37px">${esc(INTEGRATIONS[s.integration]||(s.kind==='rss'?'RSS':'采集程序'))}</strong><small>${s.enabled?'已启用':'已停用'}</small></div></div>${s.kind==='manual'?`<div class="client-permission-tags">${permissionTags(s)}</div>`:''}${s.last_error?`<p class="source-error">${esc(s.last_error)}</p>`:''}<div class="source-foot"><span>${s.kind==='rss'?(s.last_fetched_at?'采集于 '+dateText(s.last_fetched_at):'尚未采集'):'录入专用 Key'}</span><div><button class="text-btn" data-action="edit-source" data-id="${esc(s.id)}">${icon('edit')}配置</button><button class="text-btn" data-action="${s.kind==='rss'?'sync-source':'source-access'}" data-id="${esc(s.id)}" ${!s.enabled&&s.kind==='rss'?'disabled':''}>${icon(s.kind==='rss'?'refresh':'code')}${s.kind==='rss'?'立即采集':'接入说明'}</button></div></div></article>`).join('')||empty('还没有录入端','创建采集程序、Skill 或 MCP 专用来源。')}</div>`+footer()}
 function renderClients(){const list=state.clients;return heading('客户端管理','独立查询身份，只读本人已发布资料；不承担资料入库。',`<button class="btn primary" data-action="new-client">${icon('plus')}新建查询客户端</button>`)+renderMigrationNotice()+`<div class="section-banner">${icon('shield')}<span><b>${list.filter(v=>v.enabled).length} 个查询客户端已启用。</b> 每个客户端独立 Key，只配置阅读与增量拉取权限；学习必须另行登录用户账号；启用不代表设备在线。</span></div><section class="panel client-list">${list.map(c=>`<article class="client-row"><span class="source-large-icon">${icon('monitor')}</span><div class="client-row-body"><h3>${esc(c.name)}</h3><p>${esc(c.description||c.slug)}</p><div class="client-permission-tags">${permissionTags(c)}</div></div><span class="badge ${c.enabled?'published':'paused'}"><span class="dot"></span>${c.enabled?'已启用':'已停用'}</span><div class="client-actions"><button class="btn small-btn" data-action="edit-client" data-id="${esc(c.id)}">配置权限</button><button class="btn small-btn" data-action="client-feedback" data-id="${esc(c.id)}">历史客户端反馈</button><button class="btn small-btn" data-action="client-learning" data-id="${esc(c.id)}">历史客户端学习数据</button><button class="btn small-btn" data-action="client-qr" data-id="${esc(c.id)}">扫码接入</button><button class="btn small-btn" data-action="client-access" data-id="${esc(c.id)}">Key / 接口说明</button><button class="btn small-btn" data-action="toggle-client" data-id="${esc(c.id)}">${c.enabled?'停用':'启用'}</button></div></article>`).join('')||empty('尚无查询客户端','在这里创建只读消费身份，不复用录入来源 Key。')}</section><div class="info-box client-access-note" style="margin-top:22px">${icon('shield')}<span>阅读与增量拉取覆盖工作空间的已发布资料。筛选条件不是租户隔离权限。学习用户通过独立账号登录后使用推荐、复习、记录和进度。旧客户端学习数据仅保留为历史记录，不自动分配给任何用户。</span></div>`+footer()}
-function renderPage(){if(!state.authenticated)return;updateShell();const renderers={home:homeView.render,library:renderLibrary,sources:renderSources,access:renderAccess,receipts:renderReceipts,query:renderQuery,catalog:renderCatalog,roadmaps:renderRoadmaps,clients:renderClients,tasks:tasksView.render,users:adminUsersView.render};$('#main-content').innerHTML=renderSectionTabs()+(renderers[route]||renderLibrary)()}
+function renderPage(){if(!state.authenticated)return;updateShell();const renderers={home:homeView.render,library:renderLibrary,sources:renderSources,access:renderAccess,receipts:renderReceipts,query:renderQuery,catalog:renderCatalog,roadmaps:renderRoadmaps,clients:renderClients,tasks:tasksView.render,rss:renderRssSources,'agent-access':renderAgentAccess,users:adminUsersView.render};$('#main-content').innerHTML=renderSectionTabs()+(renderers[route]||renderLibrary)()}
 function uploadModal(item=null){uploadFiles=[];editingItem=item;openModal(item?'编辑学习资料':'手动录入资料',item?'编辑后需重新审核；原有公开版本不受影响。':'直接编写文章，或选择本地文件上传；资料保存在服务端。',`<form id="upload-form">${!item?`<label class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="选择或拖放本地文件"><span class="upload-symbol">${icon('upload')}</span><strong>拖拽文件至此，或<b>点击选择文件</b></strong><small>音频 / 视频 / TXT / Markdown / PNG、JPG、GIF、WebP</small><input id="file-input" type="file" accept="audio/*,video/*,.txt,.md,.markdown,.png,.jpg,.jpeg,.gif,.webp" multiple><span class="file-preview" id="file-preview"></span></label>`:`<div class="info-box" style="margin-bottom:17px">${icon(item.type)}<span>类型：${TYPES[item.type]} · ${esc(item.meta)}。此处编辑资料信息；更换媒体文件请上传为新资料。</span></div>`}<div class="field"><label for="material-title">资料标题 <span class="required">*</span></label><input id="material-title" name="title" required maxlength="150" placeholder="给这份知识一个清晰的名字" value="${esc(item?.title||'')}"></div><div class="field-grid"><div class="field"><label for="material-type">资料类型</label><select id="material-type" name="type" ${item?'disabled':''}>${Object.entries(TYPES).map(([k,v])=>`<option value="${k}" ${item?.type===k?'selected':''}>${v}</option>`).join('')}</select></div><div class="field"><label for="material-category">内容分类</label><select id="material-category" name="category">${optionsForCategory(item?.category)}</select></div></div><div class="field"><label for="material-summary">内容摘要</label><textarea id="material-summary" name="summary" rows="2" style="min-height:64px" maxlength="1500" placeholder="用一两句话介绍资料的价值…">${esc(item?.summary||'')}</textarea></div><div class="field ${!item||item.type==='article'?'':'hide'}" id="article-field"><label for="article-content">文章正文 <span class="muted small">（或选择文本文件）</span></label><textarea id="article-content" name="content" maxlength="85000" rows="5" placeholder="支持安全文本和 Markdown 标题、段落…">${esc(item?.content||'')}</textarea></div><div class="field"><label>保存状态</label><div class="radio-row"><label><input type="radio" name="target" value="pending" ${item?.status!=='draft'?'checked':''}>提交审核</label><label><input type="radio" name="target" value="draft" ${item?.status==='draft'?'checked':''}>保存草稿</label></div></div><div class="info-box">${icon('shield')}<span>单次总大小上限 ${formatBytes(state.maxUpload)}；轮播最多 20 张图片。上传内容需审核后才会对客户端公开。</span></div><div id="form-error"></div></form>`,`<button class="btn" data-action="close-modal">取消</button><button class="btn primary" type="submit" form="upload-form">${icon(item?'check':'upload')}${item?'保存修改':'保存并入库'}</button>`,{icon:item?'edit':'upload',className:'wide'});if(!item)$('#material-type').value='article'}
 function handleFiles(files){uploadFiles=Array.from(files);const first=uploadFiles[0];$('#file-preview').textContent=uploadFiles.map(f=>f.name+' · '+formatBytes(f.size)).join(' / ');if(!first)return;if(!$('#material-title').value)$('#material-title').value=first.name.replace(/\.[^.]+$/,'');$('#material-type').value=first.type.startsWith('audio/')?'audio':first.type.startsWith('video/')?'video':first.type.startsWith('image/')?'carousel':/\.(mp3|m4a|wav|ogg|flac)$/i.test(first.name)?'audio':/\.(mp4|webm|mov|m4v)$/i.test(first.name)?'video':'article';$('#article-field').classList.toggle('hide',$('#material-type').value!=='article')}
 async function saveUpload(form){const fd=new FormData(form),item=editingItem,type=item?.type||String(fd.get('type')),title=String(fd.get('title')).trim();if(!title)return formError('请填写资料标题。');if(!item){if(type!=='article'&&!uploadFiles.length)return formError('请先选择需要上传的文件。');if(type==='article'&&!uploadFiles.length&&!String(fd.get('content')||'').trim())return formError('请填写正文或选择文本文件。');if(type!=='carousel'&&uploadFiles.length>1)return formError('一次仅接收一个音频、视频或文章；图片轮播可多选。');if(uploadFiles.length>20)return formError('一份轮播最多接收 20 张图片。');if(uploadFiles.reduce((n,f)=>n+f.size,0)>state.maxUpload)return formError('文件总大小超过服务端限制。')}
@@ -141,7 +141,7 @@ async function saveSource(form){
  if(!old){state.sources=[...state.sources.filter(s=>s.id!==out.source.id),out.source];if(mode==='rss')openModal('RSS 订阅已添加','订阅已保存，尚未进行首次采集。',`<div class="info-box">${icon('rss')}<span>${esc(out.source.name)}<br>订阅地址：${esc(out.source.feed_url)}<br>采集间隔：${out.source.poll_interval_seconds} 秒<br>采集到的资料入库即公开，客户端可直接查询；可在内容来源中查看采集进度、错误与入库数量。</span></div>`,`<button class="btn" data-action="close-modal">关闭</button><button class="btn primary" data-action="manage-sources">管理订阅</button>`,{icon:'rss'});else keyModal(out.source,out.access_key,mode==='ai')}
  await refresh();if(old)toast('录入端配置已保存，立即生效')
 }
-function keyModal(source,key,ai=false){openModal('Key 已生成，请安全保存','完整 Key 仅在本次显示，关闭后无法再次读取。',`<div class="info-box" style="margin-bottom:17px">${icon('shield')}<span>身份名称：${esc(source.name)}<br>ID：${esc(source.id)}<br>请将 Key 保存到客户端安全配置中，不要写入公开网页或版本库。</span></div>${source.kind!=='rss'?`<div class="client-permission-tags">${permissionTags(source)}</div>`:''}<div class="field"><label for="one-time-key">一次性显示的接入 Key</label><input id="one-time-key" ${source.kind==='query'?'data-connection-key':''} type="password" readonly value="${esc(key)}" autocomplete="off" spellcheck="false"></div><div class="key-actions"><button class="btn small-btn" data-action="reveal-key">${icon('eye')}显示 / 隐藏</button><button class="btn small-btn" data-action="copy-key">${icon('copy')}复制 Key</button></div><p class="field-note" style="margin-top:15px">遗失时请在管理端轮换，旧 Key 立即失效。权限可单独修改，无需更换 Key。</p>${source.kind==='query'?renderClientQrPanel(source):''}`,`${ai?`<button class="btn" data-action="ai-skill" data-id="${esc(source.id)}">已保存，查看 Skill 配置</button>`:''}<button class="btn primary" data-action="close-modal">我已安全保存</button>`,{icon:'shield',className:'wide'})}
+function keyModal(source,key,ai=false){openModal('Key 已生成，请安全保存',source.kind==='query'?'查询 Key 已由服务端加密保存，可在扫码接入时再次查看。':'完整 Key 仅在本次显示，关闭后无法再次读取。',`<div class="info-box" style="margin-bottom:17px">${icon('shield')}<span>身份名称：${esc(source.name)}<br>ID：${esc(source.id)}<br>请将 Key 保存到客户端安全配置中，不要写入公开网页或版本库。</span></div>${source.kind!=='rss'?`<div class="client-permission-tags">${permissionTags(source)}</div>`:''}<div class="field"><label for="one-time-key">${source.kind==='query'?'查询客户端 Key':'一次性显示的接入 Key'}</label><input id="one-time-key" ${source.kind==='query'?'data-connection-key':''} type="password" readonly value="${esc(key)}" autocomplete="off" spellcheck="false"></div><div class="key-actions"><button class="btn small-btn" data-action="reveal-key">${icon('eye')}显示 / 隐藏</button><button class="btn small-btn" data-action="copy-key">${icon('copy')}复制 Key</button></div><p class="field-note" style="margin-top:15px">遗失时请在管理端轮换，旧 Key 立即失效。权限可单独修改，无需更换 Key。</p>${source.kind==='query'?renderClientQrPanel(source):''}`,`${ai?`<button class="btn" data-action="ai-skill" data-id="${esc(source.id)}">已保存，查看 Skill 配置</button>`:''}<button class="btn primary" data-action="close-modal">我已安全保存</button>`,{icon:'shield',className:'wide'})}
 function sourceAccess(source){const id=esc(source.id),allow=p=>permissionsOf(source).includes(p);openModal('录入端接入说明',esc(source.name),`<dl class="detail-keyvalues"><dt>来源 ID</dt><dd class="mono">${id}</dd><dt>状态</dt><dd>${source.enabled?'已启用':'已停用'}</dd><dt>认证</dt><dd>Authorization: Bearer &lt;录入专用 Key&gt;</dd></dl><div class="client-permission-tags">${permissionTags(source)}</div><pre class="intake-code">${allow('ingest')?`GET /api/v1/ingest/${id}/status\nPOST /api/v1/ingest/${id}`:'未授予入库权限'}${allow('ingest')&&allow('upload')?`\nPOST /api/v1/ingest/${id}/files`:''}</pre><div class="info-box">${icon('shield')}<span>此 Key 不可查询资料、读取公开媒体或访问管理 API。查询客户端需单独创建。Key 不可回读，轮换后旧 Key 立即失效。</span></div>`,`<button class="btn danger" data-action="rotate-source" data-id="${id}">轮换 Key</button><button class="btn" data-action="edit-source" data-id="${id}">配置录入权限</button><button class="btn" data-action="ai-skill" data-id="${id}">Skill 配置</button><button class="btn primary" data-action="close-modal">关闭</button>`,{icon:'code',className:'wide'})}
 function aiSkillModal(sourceId=''){
  const candidates=ingestors().filter(s=>s.kind==='manual'&&permissionsOf(s).includes('ingest'));
@@ -167,11 +167,11 @@ function resolveRoute(value){return ({intake:'library',overview:'library',analyt
 
 function isQueryRoute(value=route){return ['query','catalog'].includes(value)}
 
-function renderSectionTabs(){if(['home','clients','roadmaps','users','tasks'].includes(route))return '';const entries=isQueryRoute()?[['query','资料查询'],['catalog','合集管理']]:[['library','资料管理'],['sources','录入端管理'],['access','接入指引'],['receipts','入库记录']];return `<nav class="section-tabs" aria-label="${isQueryRoute()?'数据管理':'数据录入'}内页">${entries.map(([key,label])=>`<button data-route="${key}" class="${route===key?'active':''}" ${route===key?'aria-current="page"':''}>${label}</button>`).join('')}</nav>`}
+function renderSectionTabs(){if(['home','clients','roadmaps','users','tasks','agent-access'].includes(route))return '';const entries=isQueryRoute()?[['query','资料查询'],['catalog','合集管理']]:[['library','资料管理'],['receipts','入库记录']];return `<nav class="section-tabs" aria-label="${isQueryRoute()?'数据管理':'数据录入'}内页">${entries.map(([key,label])=>`<button data-route="${key}" class="${route===key?'active':''}" ${route===key?'aria-current="page"':''}>${label}</button>`).join('')}</nav>`}
 
 function ingestors(){return state.sources.filter(s=>!s.system&&(!s.migrated_client_id||permissionsOf(s).length))}
 
-async function loadRouteData(){if(route==='home')await homeView.load();else if(route==='users'&&state.role==='admin')await adminUsersView.load();else if(route==='library')await loadItems();else if(route==='query')await loadQuery();else if(route==='catalog')await loadCatalog();else if(route==='receipts')await loadIntakes();else if(route==='roadmaps')await loadRoadmaps();else if(route==='tasks'&&state.role==='admin')await tasksView.load()}
+async function loadRouteData(){if(route==='home')await homeView.load();else if(route==='users'&&state.role==='admin')await adminUsersView.load();else if(route==='library')await loadItems();else if(route==='query')await loadQuery();else if(route==='catalog')await loadCatalog();else if(route==='receipts')await loadIntakes();else if(route==='roadmaps')await loadRoadmaps();else if(route==='tasks')await tasksView.load();else if(route==='rss')await loadWorkspace();else if(route==='agent-access'){await loadWorkspace();await agentAccessView.load();if(state.role==='admin')await loadAgentRuntime()}}
 
 function renderMigrationNotice(){return state.migration?.pending?`<div class="section-banner migration-banner">${icon('shield')}<span><b>${state.migration.pending} 个旧身份待拆分，含 ${state.migration.mixed} 个混合 Key。</b> 录入与查询将使用独立身份；旧混合 Key 归属需明确选择，不会自动扩权。</span><button class="btn small-btn" data-action="identity-migration">查看预检</button></div>`:''}
 
@@ -194,7 +194,7 @@ function clientQrAddressHint(value){
 
 function renderClientQrPanel(client,manual=false){
  const eligible=client.enabled&&client.permissions?.some(p=>['read','sync'].includes(p));
- return `<section id="client-qr-panel" class="client-qr-panel" data-client-id="${esc(client.id)}"><h3>${icon('monitor')}扫码快速接入</h3><p class="field-note">二维码包含服务地址、客户端名称、ID 和查询 Key。请在支持 WzStudy 扫码协议的客户端中扫描；普通相机可能只显示文本。</p><div class="field"><label for="client-qr-url">扫码设备可访问的服务地址</label><input id="client-qr-url" type="url" value="${esc(location.origin)}" placeholder="https://study.example.com" maxlength="512" autocomplete="off" spellcheck="false"><p id="client-qr-url-hint" class="field-note">${esc(clientQrAddressHint(location.origin))}</p></div>${manual?'<div class="field"><label for="client-qr-key">已保存的此客户端查询 Key</label><input id="client-qr-key" data-connection-key type="password" maxlength="256" autocomplete="off" spellcheck="false" placeholder="粘贴已安全保存的 Key"><p class="field-note">服务端只存哈希，不能回读旧 Key。粘贴不会轮换或修改任何 Key。</p></div>':''}<label class="qr-consent"><input id="client-qr-confirm" type="checkbox"><span>我确认地址属于当前数据服务、扫码设备可访问，并知悉二维码等同于完整 Key，不公开分享。</span></label>${!eligible?'<p class="source-error">此客户端尚未启用或未授予 read/sync，不能生成可用的接入二维码，请先配置权限。</p>':''}<div class="qr-controls"><button type="button" class="btn primary small-btn" data-action="generate-client-qr" ${eligible?'':'disabled'}>${icon('monitor')}生成接入二维码</button><button type="button" id="client-qr-download" class="btn small-btn hide" data-action="download-client-qr">${icon('download')}下载二维码 PNG</button></div><p id="client-qr-status" class="field-note" role="status" aria-live="polite"></p><div id="client-qr-result" class="client-qr-result hide"><div id="client-qr-canvas"></div><p class="field-note">二维码无独立过期时间，可被重复使用；轮换 Key、停用或撤权后失效。每台设备需要独立撤销时，请分别创建客户端。</p></div></section>`;
+ return `<section id="client-qr-panel" class="client-qr-panel" data-client-id="${esc(client.id)}"><h3>${icon('monitor')}扫码快速接入</h3><p class="field-note">二维码包含服务地址、客户端名称、ID 和查询 Key。请在支持 WzStudy 扫码协议的客户端中扫描；普通相机可能只显示文本。</p><div class="field"><label for="client-qr-url">扫码设备可访问的服务地址</label><input id="client-qr-url" type="url" value="${esc(location.origin)}" placeholder="https://study.example.com" maxlength="512" autocomplete="off" spellcheck="false"><p id="client-qr-url-hint" class="field-note">${esc(clientQrAddressHint(location.origin))}</p></div>${manual?`<div class="field"><label for="client-qr-key">此客户端查询 Key</label><input id="client-qr-key" data-connection-key type="password" maxlength="256" autocomplete="off" spellcheck="false" placeholder="旧 Key 未保存时可在此粘贴"><div class="key-actions"><button type="button" class="btn small-btn" data-action="reveal-qr-key">${icon('eye')}显示 / 隐藏</button><button type="button" class="btn small-btn" data-action="copy-qr-key">${icon('copy')}复制 Key</button><button type="button" class="btn small-btn" data-action="remember-client-key">保存此 Key 供下次扫码</button></div><p id="client-key-status" class="field-note" role="status" aria-live="polite">正在读取已保存的查询 Key…</p></div>`:''}<label class="qr-consent"><input id="client-qr-confirm" type="checkbox"><span>我确认地址属于当前数据服务、扫码设备可访问，并知悉二维码等同于完整 Key，不公开分享。</span></label>${!eligible?'<p class="source-error">此客户端尚未启用或未授予 read/sync，不能生成可用的接入二维码，请先配置权限。</p>':''}<div class="qr-controls"><button type="button" class="btn primary small-btn" data-action="generate-client-qr" ${eligible?'':'disabled'}>${icon('monitor')}生成接入二维码</button><button type="button" id="client-qr-download" class="btn small-btn hide" data-action="download-client-qr">${icon('download')}下载二维码 PNG</button></div><p id="client-qr-status" class="field-note" role="status" aria-live="polite"></p><div id="client-qr-result" class="client-qr-result hide"><div id="client-qr-canvas"></div><p class="field-note">二维码无独立过期时间，可被重复使用；轮换 Key、停用或撤权后失效。每台设备需要独立撤销时，请分别创建客户端。</p></div></section>`;
 }
 
 function clearClientQR(panel=$('#client-qr-panel'),dispose=false){
@@ -210,9 +210,29 @@ function clearClientQR(panel=$('#client-qr-panel'),dispose=false){
  if(dispose){const key=panel.closest('.dialog')?.querySelector('[data-connection-key]');if(key){key.value='';key.removeAttribute('value')}}
 }
 
-function clientQrModal(client){
+async function clientQrModal(client){
  if(!client)return toast('客户端状态已变化，请刷新后重试。',true);
- openModal('扫码接入客户端',esc(client.name),`<div class="info-box">${icon('shield')}<span>填写已保存的查询 Key 即可生成，不修改客户端配置。若已遗失，请显式确认轮换，旧连接将立即失效。</span></div>${renderClientQrPanel(client,true)}`,`<button class="btn danger" data-action="rotate-client" data-id="${esc(client.id)}">重新生成 Key（旧 Key 失效）</button><button class="btn" data-action="close-modal">关闭</button>`,{icon:'monitor',className:'wide'});
+ openModal('扫码接入客户端',esc(client.name),`<div class="info-box">${icon('shield')}<span>所属账号可再次查看已加密保存的查询 Key，生成二维码不会轮换 Key；二维码和 Key 请勿公开分享。</span></div>${renderClientQrPanel(client,true)}`,`<button class="btn danger" data-action="rotate-client" data-id="${esc(client.id)}">重新生成 Key（旧 Key 失效）</button><button class="btn" data-action="close-modal">关闭</button>`,{icon:'monitor',className:'wide'});
+ const panel=$('#client-qr-panel'),input=panel.querySelector('#client-qr-key'),status=panel.querySelector('#client-key-status'),epoch=authEpoch,generation=panel.dataset.generation;
+ const current=()=>panel.isConnected&&state.authenticated&&authEpoch===epoch&&panel.dataset.generation===generation&&!input.value;
+ try{
+  const result=await api('/workspace/clients/'+encodeURIComponent(client.id)+'/key');
+  if(!current())return;
+  if(result.available&&typeof result.access_key==='string'&&result.access_key){input.value=result.access_key;status.textContent='已读取此账号加密保存的 Key，可直接生成二维码。';}
+  else status.textContent='旧 Key 原先未保存，或服务端加密配置已变，无法直接回读。若仍有原 Key，可粘贴并保存；遗失时须确认轮换，旧连接会失效。';
+ }catch(error){if(current())status.textContent='无法读取已保存的 Key：'+(error.message||'请稍后重试。');}
+}
+
+async function rememberClientKey(){
+ const panel=$('#client-qr-panel'),input=panel?.querySelector('#client-qr-key'),status=panel?.querySelector('#client-key-status');if(!panel||!input||!status)return;
+ const key=input.value,epoch=authEpoch,generation=panel.dataset.generation;
+ const current=()=>panel.isConnected&&state.authenticated&&authEpoch===epoch&&panel.dataset.generation===generation&&input.value===key;
+ if(!/^[A-Za-z0-9_-]{32,256}$/.test(key)){status.textContent='请填写此客户端的完整查询 Key，再保存。';return;}
+ status.textContent='正在验证并加密保存 Key…';
+ try{
+  await api('/workspace/clients/'+encodeURIComponent(panel.dataset.clientId)+'/key',{method:'PUT',body:{access_key:key}});
+  if(current())status.textContent='验证并加密保存成功；原 Key 和现有连接未改变。';
+ }catch(error){if(current())status.textContent=error.message||'保存失败，请稍后重试。';}
 }
 
 async function checkConnectionKey(key){
@@ -271,19 +291,33 @@ async function downloadClientQR(){
 }
 
 
-function clientModal(c=null){const permissions=c?.permissions||PERMISSION_PRESETS.reader;openModal(c?'配置查询客户端':'新建查询客户端','可配置阅读、增量拉取与独立反馈授权；不提供资料入库或上传权限。',`<form id="client-form" data-id="${esc(c?.id||'')}"><div class="field"><label for="client-name">客户端名称</label><input id="client-name" name="name" required maxlength="60" value="${esc(c?.name||'')}"></div><div class="field"><label for="client-desc">说明</label><textarea id="client-desc" name="description" rows="2" maxlength="1000">${esc(c?.description||'')}</textarea></div><fieldset id="client-permissions" class="permission-fieldset"><legend>查询权限</legend><div class="field"><label for="permission-preset">快捷配置</label><select id="permission-preset"><option value="custom">自定义权限</option><option value="reader" ${!c?'selected':''}>阅读 / 增量拉取</option><option value="learner">阅读 / 增量 / 学习反馈（显式授予）</option><option value="read">仅阅读</option><option value="sync">仅增量拉取</option><option value="none">不授予任何权限</option></select></div><div class="permission-grid">${CLIENT_PERMISSIONS.map(([key,label,description])=>`<label class="permission-option"><input type="checkbox" name="permissions" value="${key}" ${permissions.includes(key)?'checked':''}><span><b>${label}</b><small>${description}</small></span></label>`).join('')}</div></fieldset><div class="info-box">${icon('shield')}<span>反馈默认不授予；已有客户端需主动勾选，不自动扩权。授予后服务端可保存私人学习记录、进度、复习与时长，用户可查看；查询 Key 仅代表接入应用，不代表学习用户，学习者仍需知情。取消全部勾选会撤销权限。Key 仅创建或轮换时返回一次。</span></div><div id="form-error"></div></form>`,`<button class="btn" data-action="close-modal">取消</button><button class="btn primary" form="client-form" type="submit">${c?'保存配置':'创建查询客户端'}</button>`,{icon:'monitor',className:'wide'})}
+function clientModal(c=null){const permissions=c?.permissions||PERMISSION_PRESETS.reader;openModal(c?'配置查询客户端':'新建查询客户端','可配置阅读、增量拉取与独立反馈授权；不提供资料入库或上传权限。',`<form id="client-form" data-id="${esc(c?.id||'')}"><div class="field"><label for="client-name">客户端名称</label><input id="client-name" name="name" required maxlength="60" value="${esc(c?.name||'')}"></div><div class="field"><label for="client-desc">说明</label><textarea id="client-desc" name="description" rows="2" maxlength="1000">${esc(c?.description||'')}</textarea></div><fieldset id="client-permissions" class="permission-fieldset"><legend>查询权限</legend><div class="field"><label for="permission-preset">快捷配置</label><select id="permission-preset"><option value="custom">自定义权限</option><option value="reader" ${!c?'selected':''}>阅读 / 增量拉取</option><option value="learner">阅读 / 增量 / 学习反馈（显式授予）</option><option value="read">仅阅读</option><option value="sync">仅增量拉取</option><option value="none">不授予任何权限</option></select></div><div class="permission-grid">${CLIENT_PERMISSIONS.map(([key,label,description])=>`<label class="permission-option"><input type="checkbox" name="permissions" value="${key}" ${permissions.includes(key)?'checked':''}><span><b>${label}</b><small>${description}</small></span></label>`).join('')}</div></fieldset><div class="info-box">${icon('shield')}<span>反馈默认不授予；已有客户端需主动勾选，不自动扩权。授予后服务端可保存私人学习记录、进度、复习与时长，用户可查看；查询 Key 仅代表接入应用，不代表学习用户，学习者仍需知情。取消全部勾选会撤销权限。查询 Key 加密保存，所属账号可在扫码接入时再次查看。</span></div><div id="form-error"></div></form>`,`<button class="btn" data-action="close-modal">取消</button><button class="btn primary" form="client-form" type="submit">${c?'保存配置':'创建查询客户端'}</button>`,{icon:'monitor',className:'wide'})}
 
 async function saveClient(form){const epoch=authEpoch,fd=new FormData(form),old=state.clients.find(c=>c.id===form.dataset.id);if(form.dataset.id&&!old)return formError('客户端状态已变化，请关闭并刷新后重试；没有创建新身份。');const body={...(old?clientInput(old):{slug:'client-'+(globalThis.crypto?.randomUUID?.()||Date.now().toString(36)).slice(0,16),enabled:true}),name:String(fd.get('name')).trim(),description:String(fd.get('description')).trim(),permissions:fd.getAll('permissions')};if(old)body.revision=old.revision;const out=await api('/workspace/clients'+(old?'/'+old.id:''),{method:old?'PUT':'POST',body});if(epoch!==authEpoch||!state.authenticated||!form.isConnected)return;closeModal();if(!old)keyModal({...out.client,kind:'query'},out.access_key);await refresh();if(old)toast('查询客户端配置已保存')}
 
-function clientAccess(c){const id=esc(c.id),allow=p=>c.permissions.includes(p);openModal('查询客户端 Key / 接口说明',esc(c.name),`<dl class="detail-keyvalues"><dt>客户端 ID</dt><dd class="mono">${id}</dd><dt>认证</dt><dd>Authorization: Bearer &lt;查询客户端 Key&gt;</dd><dt>状态</dt><dd>${c.enabled?'已启用':'已停用'}</dd></dl><div class="client-permission-tags">${permissionTags(c)}</div><pre class="intake-code">${allow('read')?'GET /api/v1/items\nGET /api/v1/items/{id}\nGET /api/v1/sources\nGET /api/v1/media/{id}\nGET /api/v1/catalog/collections':''}${allow('sync')?'\nGET /api/v1/changes?after=0\nGET /api/v1/catalog/collections/changes':''}${allow('read')||allow('sync')?'\nGET /api/v1/client/connection':'未授予查询权限'}</pre><div class="info-box">${icon('shield')}<span>此 Key 只读取所属用户工作区的已发布资料，不能入库、上传或管理账号，也不能代替学习用户。学习、推荐、笔记、收藏及进度须另行调用 POST /api/v1/user/auth/login，用本人用户会话访问；历史 feedback 权限不再授予个人数据访问。完整 Key 无法回读。</span></div><p><a href="/docs/user-workspaces" target="_blank" rel="noopener noreferrer">查看用户登录与工作区隔离说明</a></p>`,`<button class="btn" data-action="client-qr" data-id="${id}">扫码接入</button><button class="btn danger" data-action="rotate-client" data-id="${id}">轮换 Key</button><button class="btn" data-action="edit-client" data-id="${id}">配置权限</button><button class="btn primary" data-action="close-modal">关闭</button>`,{icon:'monitor',className:'wide'})}
+function clientAccess(c){const id=esc(c.id),allow=p=>c.permissions.includes(p);openModal('查询客户端 Key / 接口说明',esc(c.name),`<dl class="detail-keyvalues"><dt>客户端 ID</dt><dd class="mono">${id}</dd><dt>认证</dt><dd>Authorization: Bearer &lt;查询客户端 Key&gt;</dd><dt>状态</dt><dd>${c.enabled?'已启用':'已停用'}</dd></dl><div class="client-permission-tags">${permissionTags(c)}</div><pre class="intake-code">${allow('read')?'GET /api/v1/items\nGET /api/v1/items/{id}\nGET /api/v1/sources\nGET /api/v1/media/{id}\nGET /api/v1/catalog/collections':''}${allow('sync')?'\nGET /api/v1/changes?after=0\nGET /api/v1/catalog/collections/changes':''}${allow('read')||allow('sync')?'\nGET /api/v1/client/connection':'未授予查询权限'}</pre><div class="info-box">${icon('shield')}<span>此 Key 只读取所属用户工作区的已发布资料，不能入库、上传或管理账号，也不能代替学习用户。学习、推荐、笔记、收藏及进度须另行调用 POST /api/v1/user/auth/login，用本人用户会话访问；历史 feedback 权限不再授予个人数据访问。所属账号可通过扫码接入查看已加密保存的 Key；旧 Key 可能需要先粘贴补存。</span></div><p><a href="/docs/user-workspaces" target="_blank" rel="noopener noreferrer">查看用户登录与工作区隔离说明</a></p>`,`<button class="btn" data-action="client-qr" data-id="${id}">扫码接入</button><button class="btn danger" data-action="rotate-client" data-id="${id}">轮换 Key</button><button class="btn" data-action="edit-client" data-id="${id}">配置权限</button><button class="btn primary" data-action="close-modal">关闭</button>`,{icon:'monitor',className:'wide'})}
 
 function renderQuery(){return heading('数据查询','本人已发布资料的 API 调试；个人推荐与学习需要用户登录。',`<button class="btn" data-route="clients">${icon('monitor')}管理查询客户端</button>`)+renderMigrationNotice()+`<section class="panel query-panel"><form id="query-form"><div class="query-filters"><div class="field"><label for="query-q">关键词</label><input id="query-q" name="q" maxlength="150" value="${esc(queryFilters.q)}" placeholder="标题或摘要"></div><div class="field"><label for="query-kind">类型</label><select id="query-kind" name="kind"><option value="">全部类型</option>${Object.entries(TYPES).map(([k,v])=>`<option value="${k}" ${queryFilters.kind===k?'selected':''}>${v}</option>`).join('')}</select></div><div class="field"><label for="query-category">分类</label><input id="query-category" name="category" maxlength="80" value="${esc(queryFilters.category)}"></div><div class="field"><label for="query-tag">标签</label><input id="query-tag" name="tag" maxlength="80" value="${esc(queryFilters.tag)}"></div><div class="field"><label for="query-source">来源</label><select id="query-source" name="source_id"><option value="">全部来源</option>${state.sources.map(s=>`<option value="${esc(s.id)}" ${queryFilters.source_id===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div><div class="field"><label for="query-limit">每页数量</label><select id="query-limit" name="limit">${[10,20,50,100].map(n=>`<option value="${n}" ${Number(queryFilters.limit)===n?'selected':''}>${n}</option>`).join('')}</select></div>${feedbackQueryFields()}</div><div class="query-actions"><span class="muted small">使用用户会话预览公开查询结果，不等于替某个客户端验证 Key 权限。</span><button class="btn primary" type="submit" form="query-form">${icon('search')}查询资料</button></div></form><div id="query-results">${loading()}</div></section><div class="info-box" style="margin-top:18px">${icon('info')}<span>列表分页用于浏览，不是冻结快照。可靠更新使用 GET /api/v1/changes，保存 next_cursor，并按 has_more 继续补拉。登录用户可保存本人学习数据并获取规则推荐；应用 Key 只读资料，查询本身不会产生学习事件。</span></div>`+footer()}
 
 async function runQuery(form){const fd=new FormData(form);queryFilters={q:String(fd.get('q')).trim(),kind:String(fd.get('kind')),category:String(fd.get('category')).trim(),tag:String(fd.get('tag')).trim(),source_id:String(fd.get('source_id')),limit:Number(fd.get('limit')),client_id:String(fd.get('client_id')||''),exclude:fd.getAll('exclude'),exclude_since:String(fd.get('exclude_since')||'').trim()};queryPage=1;await loadQuery()}
 
-async function loadQuery(){const seq=++queryRequest,params=new URLSearchParams({limit:queryFilters.limit,offset:(queryPage-1)*queryFilters.limit});for(const key of ['q','kind','category','tag','source_id'])if(queryFilters[key])params.set(key,queryFilters[key]);const root=$('#query-results');if(!root)return;root.setAttribute('aria-busy','true');try{let endpoint='/items';if(queryFilters.client_id){endpoint='/workspace/clients/'+encodeURIComponent(queryFilters.client_id)+'/items';params.set('include_feedback','true');if(queryFilters.exclude?.length)params.set('exclude',queryFilters.exclude.join(','));if(queryFilters.exclude_since)params.set('exclude_since',queryFilters.exclude_since)}else{params.set('include_feedback','true');if(queryFilters.exclude?.length)params.set('exclude',queryFilters.exclude.join(','));if(queryFilters.exclude_since)params.set('exclude_since',queryFilters.exclude_since)}const data=await api(endpoint+'?'+params);if(seq!==queryRequest||route!=='query'||!state.authenticated)return;queryResult=data;root.innerHTML=`<div class="query-endpoint mono">GET /api/v1${esc(endpoint)}?${esc(params.toString())}${queryFilters.client_id?'（用户只读模拟该客户端反馈，不验证其 Key）':''}</div>${data.items?.length?`<div class="table-scroll"><table class="materials-table query-table"><thead><tr><th>公开资料</th><th>类型 / 分类</th><th>修订</th><th>更新时间</th><th>操作</th></tr></thead><tbody>${data.items.map(renderQueryResultRow).join('')}</tbody></table></div>`:empty('没有匹配的公开资料','待审核资料不会出现在这里；请调整筛选或先完成发布。')}<div class="pagination"><span>第 ${queryPage} 页 · 返回 ${data.items?.length||0} 条（非总量）</span><div class="page-buttons"><button class="page-button" data-action="query-page" data-value="${queryPage-1}" ${queryPage===1?'disabled':''}>上一页</button><button class="page-button" data-action="query-page" data-value="${queryPage+1}" ${!data.items?.length||data.items.length<queryFilters.limit?'disabled':''}>下一页</button></div></div><details class="query-json"><summary>查看 API 原始响应</summary><pre>${esc(JSON.stringify({data},null,2))}</pre></details>`}catch(e){if(seq===queryRequest&&route==='query'&&$('#query-results'))$('#query-results').innerHTML=empty('查询失败',esc(e.message));showError(e)}finally{if(seq===queryRequest)$('#query-results')?.removeAttribute('aria-busy')}}
+async function loadQuery(){querySelected.clear();const seq=++queryRequest,params=new URLSearchParams({limit:queryFilters.limit,offset:(queryPage-1)*queryFilters.limit});for(const key of ['q','kind','category','tag','source_id'])if(queryFilters[key])params.set(key,queryFilters[key]);const root=$('#query-results');if(!root)return;root.setAttribute('aria-busy','true');try{let endpoint='/items';if(queryFilters.client_id){endpoint='/workspace/clients/'+encodeURIComponent(queryFilters.client_id)+'/items';params.set('include_feedback','true');if(queryFilters.exclude?.length)params.set('exclude',queryFilters.exclude.join(','));if(queryFilters.exclude_since)params.set('exclude_since',queryFilters.exclude_since)}else{params.set('include_feedback','true');if(queryFilters.exclude?.length)params.set('exclude',queryFilters.exclude.join(','));if(queryFilters.exclude_since)params.set('exclude_since',queryFilters.exclude_since)}const data=await api(endpoint+'?'+params);if(seq!==queryRequest||route!=='query'||!state.authenticated)return;queryResult=data;root.innerHTML=`<div class="query-endpoint mono">GET /api/v1${esc(endpoint)}?${esc(params.toString())}${queryFilters.client_id?'（用户只读模拟该客户端反馈，不验证其 Key）':''}</div><div class="query-batch-bar"><label class="query-select-all"><input type="checkbox" data-query-select-all> 全选本页</label><span id="query-selected-count">已选 0 项</span><button type="button" class="btn small-btn danger" data-action="query-batch-delete" disabled>删除所选</button></div>${data.items?.length?`<div class="table-scroll"><table class="materials-table query-table"><thead><tr><th class="query-select-col"><input type="checkbox" data-query-select-all aria-label="全选本页"></th><th>公开资料</th><th>类型 / 分类</th><th>修订</th><th>更新时间</th><th>操作</th></tr></thead><tbody>${data.items.map(renderQueryResultRow).join('')}</tbody></table></div>`:empty('没有匹配的公开资料','待审核资料不会出现在这里；请调整筛选或先完成发布。')}<div class="pagination"><span>第 ${queryPage} 页 · 返回 ${data.items?.length||0} 条（非总量）</span><div class="page-buttons"><button class="page-button" data-action="query-page" data-value="${queryPage-1}" ${queryPage===1?'disabled':''}>上一页</button><button class="page-button" data-action="query-page" data-value="${queryPage+1}" ${!data.items?.length||data.items.length<queryFilters.limit?'disabled':''}>下一页</button></div></div><details class="query-json"><summary>查看 API 原始响应</summary><pre>${esc(JSON.stringify({data},null,2))}</pre></details>`}catch(e){if(seq===queryRequest&&route==='query'&&$('#query-results'))$('#query-results').innerHTML=empty('查询失败',esc(e.message));showError(e)}finally{if(seq===queryRequest)$('#query-results')?.removeAttribute('aria-busy')}}
 
-function renderQueryResultRow(item){return `<tr class="query-result-row" data-query-item="${esc(item.id)}" title="点击查看公开资料详情"><td><button type="button" class="material-name text-left query-title" data-action="query-detail" data-id="${esc(item.id)}" aria-haspopup="dialog" aria-label="查看《${esc(item.title)}》的公开详情">${esc(item.title)}</button><p class="material-meta">${esc(item.summary||'暂无摘要')}</p>${queryResult?.feedback?feedbackTags(queryResult.feedback[item.id]):''}</td><td>${esc(TYPES[item.kind||'article']||item.kind)}<small>${esc(item.category||'未分类')}</small></td><td class="mono">${esc(item.revision)}</td><td>${esc(dateText(item.updated_at))}</td><td><button type="button" class="btn small-btn query-detail-button" data-action="query-detail" data-id="${esc(item.id)}" aria-haspopup="dialog">${icon('eye')}查看详情</button></td></tr>`}
+function updateQueryBatch(){const counter=$('#query-selected-count');if(counter)counter.textContent=`已选 ${querySelected.size} 项`;const button=$('[data-action="query-batch-delete"]');if(button)button.disabled=querySelected.size===0}
+async function deleteQuerySelection(){
+  if(!querySelected.size)return;
+  if(!window.confirm(`删除所选 ${querySelected.size} 条资料？删除后无法恢复。`))return;
+  const items=[...querySelected.entries()].map(([id,revision])=>({id,revision}));
+  try{
+    const result=await api('/workspace/items/batch-delete',{method:'POST',body:{items}});
+    const failed=Array.isArray(result.failed)?result.failed.length:0;
+    toast(`已删除 ${result.deleted||0} 条${failed?`，${failed} 条失败（可能无权限或已变更）`:''}`);
+    querySelected.clear();
+    await loadQuery();
+  }catch(error){toast(error.message,true)}
+}
+
+function renderQueryResultRow(item){return `<tr class="query-result-row" data-query-item="${esc(item.id)}" title="点击查看公开资料详情"><td class="query-select-col"><input type="checkbox" data-query-select data-id="${esc(item.id)}" data-revision="${Number(item.revision)||0}" aria-label="选择《${esc(item.title)}》"></td><td><button type="button" class="material-name text-left query-title" data-action="query-detail" data-id="${esc(item.id)}" aria-haspopup="dialog" aria-label="查看《${esc(item.title)}》的公开详情">${esc(item.title)}</button><p class="material-meta">${esc(item.summary||'暂无摘要')}</p>${queryResult?.feedback?feedbackTags(queryResult.feedback[item.id]):''}</td><td>${esc(TYPES[item.kind||'article']||item.kind)}<small>${esc(item.category||'未分类')}</small></td><td class="mono">${esc(item.revision)}</td><td>${esc(dateText(item.updated_at))}</td><td><button type="button" class="btn small-btn query-detail-button" data-action="query-detail" data-id="${esc(item.id)}" aria-haspopup="dialog">${icon('eye')}查看详情</button></td></tr>`}
 
 async function queryDetail(id){
  if(!id||route!=='query'||!state.authenticated)return;
@@ -401,20 +435,20 @@ async function handleAction(b){const {action,id,value}=b.dataset;if(state.role==
  case 'toggle-client':{const c=state.clients.find(c=>c.id===id);await api('/workspace/clients/'+id,{method:'PUT',body:{...clientInput(c),enabled:!c.enabled,revision:c.revision}});await refresh();toast(c.enabled?'查询客户端已停用':'查询客户端已启用');break}
  case 'rotate-client':{const c=state.clients.find(c=>c.id===id);if(!c)return toast('客户端状态已变化，请刷新后重试。',true);confirmDialog('轮换查询客户端 Key？','旧查询 Key 立即失效，不影响任何录入端或其他客户端。','确认轮换',async()=>{const epoch=authEpoch,dialog=$('.dialog');const out=await api('/workspace/clients/'+id+'/key',{method:'POST',body:{revision:c.revision}});if(epoch!==authEpoch||!state.authenticated||!dialog?.isConnected)return;closeModal();keyModal({...out.client,kind:'query'},out.access_key);await refresh()},true);break}
  case 'catalog-new':await catalogEditor();break;case 'catalog-edit':await catalogEditor(id);break;case 'catalog-page':catalogPage=Math.max(1,Number(value)||1);await loadCatalog();break;case 'catalog-publish':catalogMutation(id,'publish');break;case 'catalog-unpublish':catalogMutation(id,'unpublish');break;case 'catalog-delete':catalogMutation(id,'delete');break;case 'catalog-search':await catalogSearch();break;case 'catalog-chapter-add':{const list=$('#catalog-chapters');if(list.children.length>=100)return formError('最多添加 100 章。');list.insertAdjacentHTML('beforeend',catalogChapterRow());break}case 'catalog-chapter-remove':b.closest('.catalog-chapter')?.remove();break;case 'catalog-chapter-up':{const row=b.closest('.catalog-chapter');if(row?.previousElementSibling)row.parentElement.insertBefore(row,row.previousElementSibling);break}case 'catalog-chapter-down':{const row=b.closest('.catalog-chapter');if(row?.nextElementSibling)row.parentElement.insertBefore(row.nextElementSibling,row);break}
- case 'query-detail':await queryDetail(id);break;case 'query-page':queryPage=Math.max(1,Number(value)||1);await loadQuery();break;case 'intake-page':intakePage=Math.max(1,Number(value)||1);await loadIntakes();break;
+ case 'query-detail':await queryDetail(id);break;case 'query-batch-delete':await deleteQuerySelection();break;case 'query-page':queryPage=Math.max(1,Number(value)||1);await loadQuery();break;case 'intake-page':intakePage=Math.max(1,Number(value)||1);await loadIntakes();break;
  case 'reveal-migration-key':{const input=b.previousElementSibling;input.type=input.type==='password'?'text':'password';break}
- case 'new-source':sourceModal();break;case 'new-rss-source':sourceModal(null,false,'rss');break;case 'new-ai-source':sourceModal(null,true,'ai');break;case 'ai-skill':aiSkillModal(id);break;case 'manage-sources':closeModal();await navigate('sources');break;case 'new-client':clientModal();break;case 'edit-source':{const s=sourceById(id);if(!s)return toast('录入端状态已变化，请刷新。',true);sourceModal(s);}break;case 'source-access':sourceAccess(sourceById(id));break;case 'toggle-source':{const s=sourceById(id);await api('/workspace/sources/'+id,{method:'PUT',body:{...sourceInput(s),enabled:!s.enabled,revision:s.revision}});await refresh();toast(s.name+(!s.enabled?'已启用':'已停用'));break}
+ case 'runtime-refresh':await loadAgentRuntime();break;case 'runtime-save':await saveAgentRuntime();break;case 'runtime-start':await startAgentRuntime();break;case 'runtime-stop':await stopAgentRuntime();break;case 'runtime-restart':await restartAgentRuntime();break;case 'runtime-test':await testAgentRuntimeConnection();break;case 'runtime-models':await loadRuntimeModels();break;case 'download-agent':await downloadAgentBinary();break;case 'deploy-agent':deployAgentModal();break;case 'deploy-models':await loadDeployModels();break;case 'deploy-submit':{const form=$('#modal-root form#deploy-form');if(form)await submitAgentDeploy(form);break;}case 'new-source':sourceModal();break;case 'new-rss-source':sourceModal(null,false,'rss');break;case 'new-ai-source':sourceModal(null,true,'ai');break;case 'ai-skill':aiSkillModal(id);break;case 'manage-sources':closeModal();await navigate('sources');break;case 'new-client':clientModal();break;case 'edit-source':{const s=sourceById(id);if(!s)return toast('录入端状态已变化，请刷新。',true);sourceModal(s);}break;case 'source-access':sourceAccess(sourceById(id));break;case 'toggle-source':{const s=sourceById(id);await api('/workspace/sources/'+id,{method:'PUT',body:{...sourceInput(s),enabled:!s.enabled,revision:s.revision}});await refresh();toast(s.name+(!s.enabled?'已启用':'已停用'));break}
  case 'sync-source':{try{const out=await api('/workspace/sources/'+id+'/refresh',{method:'POST',body:{}});await refresh();toast(`采集完成：新增 ${out.created||0}，更新 ${out.updated||0}，未变更 ${out.unchanged||0}`)}catch(e){if(state.authenticated)await refresh();throw e}break}
  case 'rotate-source':{const s=sourceById(id);confirmDialog('轮换来源密钥？','旧密钥立即失效。请在轮换后及时更新客户端配置。','确认轮换',async()=>{const epoch=authEpoch,dialog=$('.dialog');const out=await api('/workspace/sources/'+id+'/key',{method:'POST',body:{revision:s.revision}});if(epoch!==authEpoch||!state.authenticated||!dialog?.isConnected)return;closeModal();keyModal(out.source,out.access_key);await refresh()},true);break}
- case 'client-feedback':await clientFeedbackModal(id,0);break;case 'feedback-page':await clientFeedbackModal(id,Number(value)||0);break;case 'client-learning':await clientLearningModal(id,0);break;case 'client-learning-page':await clientLearningModal(id,Number(value)||0);break;case 'client-learning-events':await clientLearningEventsModal(id,Number(value)||0);break;case 'client-learning-records':await clientLearningRecordsModal(id,value,Number(b.dataset.offset)||0);break;case 'client-qr':clientQrModal(state.clients.find(c=>c.id===id));break;case 'generate-client-qr':await generateClientQR();break;case 'download-client-qr':await downloadClientQR();break;
- case 'reveal-key':{const input=$('#one-time-key');input.type=input.type==='password'?'text':'password';break}case 'copy-key':{const input=$('#one-time-key');if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(input.value);else{input.type='text';input.select();if(!document.execCommand('copy'))throw new Error('复制不可用，请手动选中并安全保存。')}toast('密钥已复制，请安全保存');break}
+ case 'client-feedback':await clientFeedbackModal(id,0);break;case 'feedback-page':await clientFeedbackModal(id,Number(value)||0);break;case 'client-learning':await clientLearningModal(id,0);break;case 'client-learning-page':await clientLearningModal(id,Number(value)||0);break;case 'client-learning-events':await clientLearningEventsModal(id,Number(value)||0);break;case 'client-learning-records':await clientLearningRecordsModal(id,value,Number(b.dataset.offset)||0);break;case 'client-qr':await clientQrModal(state.clients.find(c=>c.id===id));break;case 'remember-client-key':await rememberClientKey();break;case 'generate-client-qr':await generateClientQR();break;case 'download-client-qr':await downloadClientQR();break;
+ case 'reveal-key':case 'reveal-qr-key':{const input=$(action==='reveal-key'?'#one-time-key':'#client-qr-key');if(input)input.type=input.type==='password'?'text':'password';break}case 'copy-key':case 'copy-qr-key':{const input=$(action==='copy-key'?'#one-time-key':'#client-qr-key');if(!input?.value)return toast('当前没有可复制的 Key。',true);if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(input.value);else{input.type='text';input.select();if(!document.execCommand('copy'))throw new Error('复制不可用，请手动选中并安全保存。')}toast('密钥已复制，请安全保存');break}
  case 'home-retry':await homeView.load();break;case 'settings':settingsModal();break;case 'setting-toggle':b.classList.toggle('on');b.setAttribute('aria-checked',String(b.classList.contains('on')));break;case 'logout':if(route==='roadmaps'&&!leaveRoadmaps('logout'))return;await api('/user/auth/logout',{method:'POST',body:{}});wzAuthSync.notify();cache.clear();selected.clear();showLogin('你已安全退出工作空间。');break;
  case 'help':helpModal();break;case 'notifications':notificationsModal();break;case 'review-list':filters={status:'pending',type:'all',category:'all',query:'',sort:'desc'};page=1;await navigate('library');break;case 'workspace':openModal('温知学习空间','真实数据，由服务端持久保存。',`<div class="info-box">${icon('layers')}<span>资料：${state.summary.total} 份<br>接入来源：${state.sources.filter(s=>!s.system).length} 个<br>附件占用：${formatBytes(state.summary.asset_bytes)}<br>服务版本：0.2.0</span></div>`,undefined,{icon:'layers',className:'compact'});break;
  case 'export':await exportCSV();break;case 'open-nav':document.body.classList.add('mobile-open');break;case 'close-nav':document.body.classList.remove('mobile-open');break;
 }}
 document.addEventListener('click',async event=>{const el=event.target;if(!(el instanceof Element))return;if(el.matches('[data-overlay="modal"]'))return requestCloseModal();if(el.matches('[data-overlay="drawer"]'))return closeDrawer();const link=el.closest('[data-route]');if(link){event.preventDefault();try{await navigate(link.dataset.route)}catch(e){showError(e)}return}const button=el.closest('[data-action]');if(button){if(button.disabled)return;const action=button.dataset.action;button.disabled=true;try{await handleAction(button)}catch(e){showError(e);if($('#form-error'))formError(e.message)}finally{if(button.isConnected)button.disabled=false}return}if(!el.closest('.context-menu'))closeMenu();const queryRow=el.closest('[data-query-item]');if(queryRow&&!el.closest('input,label,button,a,select,textarea,summary')&&!window.getSelection()?.toString()){queryRow.querySelector('.query-title')?.focus({preventScroll:true});await queryDetail(queryRow.dataset.queryItem);return}const row=el.closest('[data-item]');if(row&&!el.closest('input,label,button,a'))try{await openDrawer(row.dataset.item)}catch(e){showError(e)}});
-document.addEventListener('input',event=>{const el=event.target;if(el.id==='client-qr-url'||el.matches('[data-connection-key]')){const panel=$('#client-qr-panel');clearClientQR(panel);if(panel){panel.querySelector('#client-qr-confirm').checked=false;panel.querySelector('#client-qr-url-hint').textContent=clientQrAddressHint(panel.querySelector('#client-qr-url').value)}}if(el.id==='library-search'){filters.query=el.value;page=1;selected.clear();clearTimeout(searchTimer);searchTimer=setTimeout(()=>loadItems(),220)}});
-document.addEventListener('change',event=>{const el=event.target;if(el.id==='client-qr-confirm')clearClientQR();if(el.matches('[data-select]')){const item=getItem(el.dataset.select);if(el.checked)selected.set(item.id,item);else selected.delete(item.id);updateResults()}if(el.id==='select-all'){for(const i of state.items){if(el.checked)selected.set(i.id,i);else selected.delete(i.id)}updateResults()}if(el.id==='type-filter'||el.id==='category-filter'){filters[el.id==='type-filter'?'type':'category']=el.value;page=1;selected.clear();loadItems()}if(el.id==='ai-source-select')aiSkillModal(el.value);if(el.id==='file-input')handleFiles(el.files);if(el.id==='material-type')$('#article-field').classList.toggle('hide',el.value!=='article');if(el.id==='source-kind'){const rss=el.value==='rss';$('#source-url-field').classList.toggle('hide',!rss);$('#source-url').required=rss;$('#rss-options').classList.toggle('hide',!rss);$('#rss-options').disabled=!rss;$('#client-permissions').classList.toggle('hide',rss);$('#client-permissions').disabled=rss;$('#integration-field').classList.toggle('hide',rss);$('#source-integration').disabled=rss}if(el.id==='permission-preset'){const preset=PERMISSION_PRESETS[el.value];if(preset)document.querySelectorAll('#client-permissions input[name=permissions]').forEach(input=>{input.checked=preset.includes(input.value)})}if(el.name==='permissions'&&$('#permission-preset'))$('#permission-preset').value='custom';if(el.id==='receipt-source'){intakeSource=el.value;intakePage=1;loadIntakes()}});
+document.addEventListener('input',event=>{const el=event.target;if(el.id==='client-qr-url'||el.matches('[data-connection-key]')){const panel=$('#client-qr-panel');clearClientQR(panel);if(panel){panel.querySelector('#client-qr-confirm').checked=false;panel.querySelector('#client-qr-url-hint').textContent=clientQrAddressHint(panel.querySelector('#client-qr-url').value);if(el.id==='client-qr-key')panel.querySelector('#client-key-status').textContent='输入不会轮换 Key；如需下次回显，请验证并保存此 Key。'}}if(el.id==='library-search'){filters.query=el.value;page=1;selected.clear();clearTimeout(searchTimer);searchTimer=setTimeout(()=>loadItems(),220)}});
+document.addEventListener('change',event=>{const el=event.target;if(el.id==='client-qr-confirm')clearClientQR();if(el.matches('[data-select]')){const item=getItem(el.dataset.select);if(el.checked)selected.set(item.id,item);else selected.delete(item.id);updateResults()}if(el.matches('[data-query-select]')){const id=el.dataset.id;if(el.checked)querySelected.set(id,Number(el.dataset.revision)||0);else querySelected.delete(id);updateQueryBatch();return}if(el.matches('[data-query-select-all]')){document.querySelectorAll('[data-query-select]').forEach(box=>{box.checked=el.checked;const id=box.dataset.id;if(el.checked)querySelected.set(id,Number(box.dataset.revision)||0);else querySelected.delete(id)});updateQueryBatch();return}if(el.id==='select-all'){for(const i of state.items){if(el.checked)selected.set(i.id,i);else selected.delete(i.id)}updateResults()}if(el.id==='type-filter'||el.id==='category-filter'){filters[el.id==='type-filter'?'type':'category']=el.value;page=1;selected.clear();loadItems()}if(el.id==='ai-source-select')aiSkillModal(el.value);if(el.id==='file-input')handleFiles(el.files);if(el.id==='material-type')$('#article-field').classList.toggle('hide',el.value!=='article');if(el.id==='source-kind'){const rss=el.value==='rss';$('#source-url-field').classList.toggle('hide',!rss);$('#source-url').required=rss;$('#rss-options').classList.toggle('hide',!rss);$('#rss-options').disabled=!rss;$('#client-permissions').classList.toggle('hide',rss);$('#client-permissions').disabled=rss;$('#integration-field').classList.toggle('hide',rss);$('#source-integration').disabled=rss}if(el.id==='permission-preset'){const preset=PERMISSION_PRESETS[el.value];if(preset)document.querySelectorAll('#client-permissions input[name=permissions]').forEach(input=>{input.checked=preset.includes(input.value)})}if(el.name==='permissions'&&$('#permission-preset'))$('#permission-preset').value='custom';if(el.id==='receipt-source'){intakeSource=el.value;intakePage=1;loadIntakes()}});
 document.addEventListener('submit',async event=>{const form=event.target;if(!['login-form','admin-user-form','upload-form','collect-form','source-form','client-form','query-form','migration-form','settings-form','catalog-form'].includes(form.id))return;event.preventDefault();const buttons=[...document.querySelectorAll(`button[form="${form.id}"],#${form.id} button[type="submit"]`)];if(form.dataset.submitting==='true'||buttons.some(b=>b.disabled))return;form.dataset.submitting='true';const labels=buttons.map(b=>b.innerHTML);buttons.forEach(b=>{b.disabled=true;b.innerHTML='<span class="loader" aria-hidden="true"></span>'+(form.id==='query-form'?'正在查询…':'正在保存…')});try{if(form.id==='login-form'){const fd=new FormData(form);const login=await api('/auth/login',{method:'POST',body:{email:String(fd.get('email')||'').trim(),password:String(fd.get('password')||'')},quiet:true});wzAuthSync.notify();$('#login-password').value='';if(!['admin','user'].includes(login.role))throw new APIError('无法确认登录状态，请重试。',0);const info=await api('/user/auth/session',{quiet:true});await enterUser(info);return}if(form.id==='admin-user-form'){if(state.role==='admin')return await adminUsersView.submit(form);return}if(form.id==='upload-form')return await saveUpload(form);if(form.id==='collect-form')return await saveLink(form);if(form.id==='source-form')return await saveSource(form);if(form.id==='client-form')return await saveClient(form);if(form.id==='catalog-form')return await saveCatalog(form);if(form.id==='query-form')return await runQuery(form);if(form.id==='migration-form')return await saveMigration();if(form.id==='settings-form'){const fd=new FormData(form);await api('/workspace/settings',{method:'PUT',body:{name:String(fd.get('name')).trim(),compact:$('#setting-compact').classList.contains('on'),revision:state.settings.revision}});closeModal();await refresh();toast('数据服务设置已保存')}}catch(e){if(form.id==='login-form'&&$('#login-password'))$('#login-password').value='';if(form.id==='login-form'&&$('#login-error'))$('#login-error').innerHTML=`<div class="form-error">${esc(e.message)}</div>`;else{formError(e.message);showError(e)}}finally{if(form.isConnected)delete form.dataset.submitting;buttons.forEach((b,n)=>{if(b.isConnected){b.disabled=false;b.innerHTML=labels[n]}})}});
 document.addEventListener('keydown',event=>{if(event.key==='Enter'&&event.target.id==='catalog-search'){event.preventDefault();catalogSearch().catch(showError);return}if(event.key==='Escape'){if($('#modal-root').children.length)requestCloseModal();else if($('#context-root').children.length)closeMenu();else if($('#drawer-root').children.length)closeDrawer();else document.body.classList.remove('mobile-open');return}if(event.key==='/'&&state.authenticated&&!event.ctrlKey&&!event.metaKey&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)&&!$('#modal-root').children.length&&!$('#drawer-root').children.length){event.preventDefault();if(matchMedia('(max-width:700px)').matches){navigate('library').then(()=>$('#library-search')?.focus()).catch(showError)}else $('#global-search').focus()}if(event.target.id==='global-search'&&event.key==='Enter'){event.preventDefault();filters={status:'all',type:'all',category:'all',query:event.target.value,sort:'desc'};page=1;navigate('library').then(()=>$('#library-search')?.focus()).catch(showError)}if(event.target.id==='dropzone'&&(event.key==='Enter'||event.key===' ')){event.preventDefault();$('#file-input').click()}if(event.key==='Tab'){const region=$('#modal-root .dialog')||$('#drawer-root .drawer');if(region){const focusable=[...region.querySelectorAll('button:not(:disabled),input:not([type=file]):not(:disabled),select:not(:disabled),textarea,a[href],[tabindex="0"]')].filter(x=>x.getClientRects().length);const first=focusable[0],last=focusable.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus()}}}});
 for(const name of ['dragenter','dragover','dragleave','drop'])document.addEventListener(name,event=>{const zone=event.target instanceof Element?event.target.closest('#dropzone'):null;if(!zone)return;event.preventDefault();zone.classList.toggle('dragging',name==='dragenter'||name==='dragover');if(name==='drop')handleFiles(event.dataTransfer.files)});
@@ -422,6 +456,351 @@ window.addEventListener('hashchange',()=>navigate(resolveRoute(location.hash.sli
 let identityCheckSerial=0;
 function revalidateActiveIdentity(){if(!state.authenticated)return;const serial=++identityCheckSerial,epoch=authEpoch;document.body.classList.add('identity-check');api('/user/auth/session').then(session=>{if(serial!==identityCheckSerial||epoch!==authEpoch)return;if(session.user?.id!==state.user?.id||session.role!==state.role){showLogin('登录状态已变化，请重新登录。');return}document.body.classList.remove('identity-check')}).catch(()=>{if(serial===identityCheckSerial&&epoch===authEpoch&&state.authenticated)showLogin('无法确认当前身份，请重新登录。')})}
 wzAuthSync.subscribe(revalidateActiveIdentity);window.addEventListener('focus',revalidateActiveIdentity);
-async function enterUser(session){if(!session?.user||!['admin','user'].includes(session.role)||(session.role==='admin'&&!session.administrator))throw new APIError('无法确认登录状态，请重试。',0);authEpoch++;adminUsersView.reset();state.authenticated=true;state.role=session.role;state.admin=session.role==='admin'?session.administrator:null;state.user=session.user;state.maxUpload=session.max_upload_bytes;state.store=session.store;if(route==='users'&&state.role!=='admin')route='home';history.replaceState(null,'','#'+route);document.body.classList.toggle('role-admin',state.role==='admin');document.body.classList.remove('unauthenticated');$('#login-root').innerHTML='';await refresh()}
+async function enterUser(session){if(!session?.user||!['admin','user'].includes(session.role)||(session.role==='admin'&&!session.administrator))throw new APIError('无法确认登录状态，请重试。',0);authEpoch++;adminUsersView.reset();agentAccessView.reset();state.authenticated=true;state.role=session.role;state.admin=session.role==='admin'?session.administrator:null;state.user=session.user;state.maxUpload=session.max_upload_bytes;state.store=session.store;if(state.role!=='admin'&&route==='users')route='home';history.replaceState(null,'','#'+route);document.body.classList.toggle('role-admin',state.role==='admin');document.body.classList.remove('unauthenticated');$('#login-root').innerHTML='';await refresh()}
 async function boot(){document.body.classList.add('unauthenticated');hydrate();try{let session;try{session=await api('/user/auth/session',{quiet:true})}catch(e){if(e.status!==401)throw e}if(session)await enterUser(session);else showLogin()}catch(e){state.authenticated=false;showLogin('无法读取工作空间：'+e.message)}}
 boot();
+
+function sourceRows(kind){return state.sources.filter(s=>!s.system&&s.kind===kind&&(!s.migrated_client_id||permissionsOf(s).length))}
+function renderRssSources(){
+  const rows=sourceRows('rss');
+  return heading('RSS 订阅','订阅公开 Feed，服务端按间隔抓取并入库。',`<button class="btn primary" data-action="new-rss-source">${icon('rss')}添加订阅</button>`)
+    +`<div class="panel task-list">${rows.length?`<table class="task-table"><thead><tr><th>订阅</th><th>地址</th><th>状态</th><th>上次采集</th><th>操作</th></tr></thead><tbody>${rows.map(s=>`<tr>
+      <td data-label="订阅"><strong>${esc(s.name)}</strong><small>${esc(s.description||'RSS / Atom 订阅')}</small></td>
+      <td data-label="地址"><small>${esc(s.feed_url||'—')}</small></td>
+      <td data-label="状态"><span class="task-badge ${s.enabled?'ok':'muted'}">${s.enabled?'已启用':'已停用'}</span></td>
+      <td data-label="上次采集"><small>${s.last_fetched_at?dateText(s.last_fetched_at):'尚未采集'}</small></td>
+      <td class="task-actions"><button class="text-btn" data-action="sync-source" data-id="${esc(s.id)}" ${!s.enabled?'disabled':''}>立即采集</button><button class="text-btn" data-action="edit-source" data-id="${esc(s.id)}">配置</button><button class="switch ${s.enabled?'on':''}" role="switch" aria-checked="${s.enabled}" aria-label="${esc(s.name)}启用状态" data-action="toggle-source" data-id="${esc(s.id)}"></button></td></tr>`).join('')}</tbody></table>`:empty('还没有 RSS 订阅','添加一个 RSS/Atom 地址开始采集。')}</div>`
+    +`<p class="task-boundary">${icon('shield')}RSS 采集与 Agent 接入互不影响；停用来源不会下架已有资料。</p>`+footer();
+}
+function renderAgentAccess(){
+  const rows=sourceRows('manual');
+  if(state.role!=='admin'){
+    return heading('Agent 接入','使用你自己运行的采集端：创建接入身份，领取你派发的任务，并把资料写回你的工作区。',`<button class="btn" data-agent-action="download-binary">${icon('download')}下载程序</button>`,'BYO AGENT')
+      +`<div class="section-banner">${icon('code')}<span><b>自己配置接入：</b>创建身份后复制 agent.env，填写服务端地址、Agent 密钥和你自己的模型配置，与程序放在同一目录后运行 wzstudy-agent.exe run。</span></div>`
+      +agentAccessView.section()
+      +`<div class="access-boundaries"><div class="access-columns"><article><h3>你的采集端 · 数据隔离</h3><p>只能领取你派发的任务，只能写入你工作区的来源；不能读取资料库或其他账户的数据。</p></article><article><h3>内置采集端 · 仅管理员</h3><p>服务端托管的程序、模型密钥、一键部署与程序发布仅管理员可用；普通账户需要自行运行并配置 Agent。</p></article></div></div>`
+      +footer();
+  }
+  const runtimePanel=`<section class="panel agent-runtime-panel" id="agent-runtime-panel"><div class="runtime-head"><div><h2>服务端部署</h2><p>程序目录默认安装目录\agent，工作目录默认安装目录\agent\work，均可修改。</p></div><button class="text-btn" data-action="runtime-refresh">刷新状态</button></div><div id="agent-runtime-body"><p class="task-hint">正在读取运行时状态…</p></div></section>`;
+
+  return heading('Agent 接入','下载采集端或生成一键部署包，采集端领取任务后把资料推送到绑定来源。',`<button class="btn" data-action="download-agent">${icon('download')}下载程序</button><button class="btn primary" data-action="deploy-agent">${icon('plus')}一键部署</button>`,rows.length+' 个录入端')
+    +runtimePanel
+    +`<div class="section-banner">${icon('code')}<span><b>三步接入：</b>一键部署下载压缩包 → 填写模型密钥 → 启动后自动领取任务。部署包内的采集端密钥只生成一次，请妥善保管。</span></div>`
+    +agentAccessView.section()
+    +`<div class="panel task-list">${rows.length?`<table class="task-table"><thead><tr><th>录入端</th><th>接入方式</th><th>权限</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows.map(s=>`<tr>
+      <td data-label="录入端"><strong>${esc(s.name)}</strong><small>${esc(s.description||'Agent 录入来源')}</small></td>
+      <td data-label="接入方式"><small>${esc(INTEGRATIONS[s.integration]||'Agent 录入')}</small></td>
+      <td data-label="权限"><div class="client-permission-tags">${permissionTags(s)}</div></td>
+      <td data-label="状态"><span class="task-badge ${s.enabled?'ok':'muted'}">${s.enabled?'已启用':'已停用'}</span></td>
+      <td class="task-actions"><button class="text-btn" data-action="source-access" data-id="${esc(s.id)}">接入说明</button><button class="text-btn" data-action="edit-source" data-id="${esc(s.id)}">配置</button><button class="switch ${s.enabled?'on':''}" role="switch" aria-checked="${s.enabled}" aria-label="${esc(s.name)}启用状态" data-action="toggle-source" data-id="${esc(s.id)}"></button></td></tr>`).join('')}</tbody></table>`:empty('还没有 Agent 录入端','点击“一键部署”创建采集端并下载配置包。')}</div>`
+    +`<div class="access-boundaries"><div class="access-columns"><article><h3>采集端 · 任务领取</h3><p>采集端只领取服务端指派的任务，不能读取资料库；任务绑定来源后才能写入。</p></article><article><h3>管理员 · 内置能力</h3><p>管理员可使用服务端托管采集端、模型密钥、一键部署与程序发布；这些能力不会下放给普通账户。</p></article></div></div>`+footer();
+}
+function deployAgentModal(){
+  openModal('一键部署采集端','选择模型供应商并填写密钥，下载解压后即可直接启动。',`<form id="deploy-form" class="task-form" novalidate>
+    <label class="task-field">模型供应商<select id="deploy-provider" name="provider"><option value="deepseek" selected>DeepSeek</option><option value="openai">OpenAI</option><option value="qwen">通义千问</option><option value="custom">OpenAI 兼容</option></select></label>
+    <div class="task-field"><label for="deploy-model">模型名称</label>
+      <div class="task-field-row">
+        <div class="deploy-model-combo">
+          <input id="deploy-model" name="model" role="combobox" aria-autocomplete="none" aria-expanded="false" aria-controls="deploy-model-options" maxlength="120" value="deepseek-chat" placeholder="选择或手动输入模型名称" autocomplete="off">
+          <button type="button" class="btn small-btn" data-action="deploy-model-toggle" aria-label="选择模型" aria-controls="deploy-model-options" aria-expanded="false">▾</button>
+          <div class="runtime-model-menu" id="deploy-model-options" role="listbox" aria-label="可用模型" hidden></div>
+        </div>
+        <button type="button" class="btn small-btn" data-action="deploy-models">查询模型</button>
+      </div>
+    </div>
+    <label class="task-field">API Key<input name="api_key" type="password" autocomplete="off" maxlength="500" placeholder="粘贴模型密钥（查询模型时需要）"></label>
+    <label class="task-field" id="deploy-base-url-field" style="display:none">Base URL<input name="base_url" maxlength="500" placeholder="https://example.com/v1"></label>
+    <p class="task-hint">${icon('shield')}模型配置会写入部署包的 <code>agent.env</code>；密钥只随压缩包下载，不会保存到服务端。留空 API Key 也可先下载，稍后自行填写。</p>
+    <div class="info-box">${icon('code')}<span><b>三步启动：</b>下载解压 → （如需要）修改 <code>agent.env</code> → 运行 <code>start-agent.cmd</code>。</span></div>
+  </form>`,`<button class="btn" data-action="close-modal">取消</button><button class="btn primary" data-action="deploy-submit">生成并下载</button>`,{icon:'download',className:'task-dialog'});
+}
+async function submitAgentDeploy(form){
+  if(!form)return;
+  const data=new FormData(form);
+  const model={provider:String(data.get('provider')||'deepseek'),model:String(data.get('model')||'').trim(),api_key:String(data.get('api_key')||'').trim(),base_url:String(data.get('base_url')||'').trim()};
+  if(!model.model){toast('请填写模型名称。',true);return}
+  if(model.provider==='custom'&&!model.base_url){toast('OpenAI 兼容服务需要填写 Base URL。',true);return}
+  const button=$('#modal-root [data-action="deploy-submit"]');
+  if(button)button.disabled=true;
+  try{
+    const response=await fetch('/api/v1/admin/agent/deployments',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',...(state.user?{'X-WzStudy-User':state.user.id}:{})},body:JSON.stringify({model})});
+    if(!response.ok){let message='部署包生成失败。';try{const json=await response.json();message=json.error?.message||message}catch{}throw new APIError(message,response.status)}
+    const blob=await response.blob(),url=URL.createObjectURL(blob),anchor=document.createElement('a');
+    anchor.href=url;anchor.download='wzstudy-agent.zip';document.body.appendChild(anchor);anchor.click();anchor.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),5000);
+    toast('部署包已生成，解压后可直接启动。');closeModal();await refresh();
+  }catch(error){toast(error.message,true)}finally{if(button&&button.isConnected)button.disabled=false}
+}
+async function downloadAgentBinary(){
+  try{
+    const response=await fetch('/api/v1/admin/agent/binary',{credentials:'same-origin'});
+    if(!response.ok){let message='当前服务端未内置采集端程序。';try{const json=await response.json();message=json.error?.message||message}catch{}throw new APIError(message,response.status)}
+    const blob=await response.blob(),url=URL.createObjectURL(blob),anchor=document.createElement('a');
+    anchor.href=url;anchor.download='wzstudy-agent.exe';document.body.appendChild(anchor);anchor.click();anchor.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),5000);
+  }catch(error){toast(error.message,true)}
+}
+
+const DEPLOY_MODEL_PRESETS={deepseek:{base_url:'https://api.deepseek.com/v1',model:'deepseek-chat'},openai:{base_url:'https://api.openai.com/v1',model:'gpt-4o-mini'},qwen:{base_url:'https://dashscope.aliyuncs.com/compatible-mode/v1',model:'qwen-plus'},custom:{base_url:'',model:''}};
+document.addEventListener('change',event=>{const select=event.target;if(select.id!=='deploy-provider')return;const form=select.closest('form'),preset=DEPLOY_MODEL_PRESETS[select.value]||DEPLOY_MODEL_PRESETS.deepseek,model=form?.querySelector('[name="model"]'),base=form?.querySelector('[name="base_url"]'),field=form?.querySelector('#deploy-base-url-field');if(model&&preset.model)model.value=preset.model;if(base)base.value=preset.base_url;if(field)field.style.display=select.value==='custom'?'':'none';resetDeployModels(form);});
+document.addEventListener('submit',event=>{const form=event.target;if(form.id!=='deploy-form')return;event.preventDefault();submitAgentDeploy(form);});
+
+function setDeployModelMenu(form,open){
+  const menu=form?.querySelector('#deploy-model-options');if(!menu)return;
+  menu.hidden=!open;
+  form.querySelectorAll('#deploy-model,[data-action="deploy-model-toggle"]').forEach(el=>el.setAttribute('aria-expanded',String(open)));
+  if(!open)form.querySelector('#deploy-model')?.removeAttribute('aria-activedescendant');
+}
+function renderDeployModels(form){
+  const menu=form?.querySelector('#deploy-model-options');if(!menu)return;
+  const models=form.deployModelOptions||[];
+  menu.innerHTML=models.length?models.map((id,index)=>`<button type="button" role="option" tabindex="-1" id="deploy-option-${index}" aria-selected="false" data-deploy-model="${esc(id)}">${esc(id)}</button>`).join(''):'<p class="task-hint">没有可用模型，请先查询或手动填写。</p>';
+  form.deployModelIndex=-1;
+}
+function resetDeployModels(form){
+  if(!form)return;
+  form.deployModelRequest=Symbol();form.deployModelOptions=[];
+  renderDeployModels(form);setDeployModelMenu(form,false);
+}
+function selectDeployModel(form,option){
+  const input=form?.querySelector('#deploy-model');if(!input||!option)return;
+  input.value=option.dataset.deployModel;setDeployModelMenu(form,false);input.focus();
+}
+document.addEventListener('click',event=>{
+  const form=$('#deploy-form');if(!form)return;
+  const option=event.target.closest('[data-deploy-model]');
+  if(option&&form.contains(option)){selectDeployModel(form,option);return;}
+  if(event.target.closest('[data-action="deploy-model-toggle"]')){
+    renderDeployModels(form);setDeployModelMenu(form,form.querySelector('#deploy-model-options').hidden);return;
+  }
+  if(!event.target.closest('.deploy-model-combo'))setDeployModelMenu(form,false);
+});
+document.addEventListener('input',event=>{
+  const form=event.target.closest('#deploy-form');if(!form)return;
+  if(['api_key','base_url'].includes(event.target.name))resetDeployModels(form);
+  if(event.target.id==='deploy-model')setDeployModelMenu(form,false);
+});
+// Capture Escape before the global dialog handler so it closes the list first.
+document.addEventListener('keydown',event=>{
+  const form=event.target.closest('#deploy-form'),menu=form?.querySelector('#deploy-model-options');
+  if(!menu)return;
+  const options=[...menu.querySelectorAll('[data-deploy-model]')];
+  if(event.key==='Escape'&&!menu.hidden){event.preventDefault();event.stopImmediatePropagation();setDeployModelMenu(form,false);form.querySelector('#deploy-model').focus();return;}
+  if(event.key==='Tab'){setDeployModelMenu(form,false);return;}
+  if(event.target.id!=='deploy-model')return;
+  if(['ArrowDown','ArrowUp'].includes(event.key)){
+    event.preventDefault();setDeployModelMenu(form,true);if(!options.length)return;
+    const index=form.deployModelIndex??-1;
+    form.deployModelIndex=event.key==='ArrowDown'?(index+1)%options.length:(index<=0?options.length:index)-1;
+    options.forEach((option,i)=>option.setAttribute('aria-selected',String(i===form.deployModelIndex)));
+    const active=options[form.deployModelIndex];event.target.setAttribute('aria-activedescendant',active.id);active.scrollIntoView({block:'nearest'});
+  }else if(event.key==='Enter'&&!menu.hidden){event.preventDefault();event.stopImmediatePropagation();selectDeployModel(form,options[form.deployModelIndex]);}
+},true);
+async function loadDeployModels(){
+  const form=$('#modal-root form#deploy-form');
+  if(!form)return;
+  const data=new FormData(form),epoch=authEpoch,request=Symbol();
+  const body={provider:String(data.get('provider')||'deepseek'),base_url:String(data.get('base_url')||'').trim(),api_key:String(data.get('api_key')||'').trim()};
+  resetDeployModels(form);form.deployModelRequest=request;
+  const current=()=>form.isConnected&&authEpoch===epoch&&form.deployModelRequest===request;
+  const button=form.querySelector('[data-action="deploy-models"]');
+  if(button){button.disabled=true;button.textContent='查询中…'}
+  try{
+    const result=await api('/admin/agent/models',{method:'POST',body});if(!current())return;
+    const models=Array.isArray(result.models)?result.models.filter(id=>typeof id==='string'&&id):[];
+    form.deployModelOptions=models;renderDeployModels(form);
+    const input=form.querySelector('[name="model"]');
+    if(input&&!input.value&&models.length)input.value=models[0];
+    setDeployModelMenu(form,!!models.length);
+    toast(models.length?`已获取 ${models.length} 个模型，点击列表或右侧箭头选择。`:'模型服务未返回可用模型，可手动填写。');
+  }catch(error){if(current())toast(error.message,true)}
+  finally{if(button&&button.isConnected){button.disabled=false;button.textContent='查询模型'}}
+}
+
+function runtimeLogTime(value){
+  const text=String(value||'');
+  const matched=text.match(/T(\d{2}:\d{2}:\d{2})/);
+  if(matched)return matched[1];
+  const date=new Date(text);
+  return Number.isNaN(date.getTime())?'':date.toLocaleTimeString('zh-CN',{hour12:false});
+}
+function runtimeLogFields(entry){
+  const hidden=['time','level','msg','message','source'];
+  return Object.entries(entry).filter(([key,value])=>!hidden.includes(key)&&value!==null&&value!==undefined&&value!=='').map(([key,value])=>{
+    let text=typeof value==='string'?value:JSON.stringify(value);
+    if(text===undefined)text=String(value);
+    const short=text.length>160?`${text.slice(0,160)}…`:text;
+    return `<span class="runtime-log-field" title="${esc(`${key}：${text}`)}"><b>${esc(key)}</b>${esc(short)}</span>`;
+  }).join('');
+}
+function runtimeLogEntry(line){
+  let entry=null;
+  try{entry=JSON.parse(line)}catch{entry=null}
+  if(!entry||typeof entry!=='object'||Array.isArray(entry)){
+    return `<details class="runtime-log-item"><summary><span class="runtime-log-level raw">原文</span><span class="runtime-log-msg">${esc(line)}</span><span class="runtime-log-json-toggle"><span class="when-closed">查看</span><span class="when-open">收起</span></span></summary><pre class="runtime-log-json">${esc(line)}</pre></details>`;
+  }
+  const levelName=String(entry.level||'info').trim().toLowerCase();
+  const level=levelName==='warning'?'warn':levelName;
+  const levelClass=['info','warn','error','debug'].includes(level)?level:'info';
+  const stamp=runtimeLogTime(entry.time);
+  const fields=runtimeLogFields(entry);
+  const message=String(entry.msg??entry.message??'').trim()||'（无消息）';
+  return `<details class="runtime-log-item"><summary>${stamp?`<time class="runtime-log-time" title="${esc(entry.time)}">${esc(stamp)}</time>`:''}<span class="runtime-log-level ${levelClass}">${esc(levelClass==='warn'?'WARN':levelClass.toUpperCase())}</span><span class="runtime-log-msg">${esc(message)}</span>${fields?`<span class="runtime-log-fields">${fields}</span>`:''}<span class="runtime-log-json-toggle"><span class="when-closed">JSON</span><span class="when-open">收起</span></span></summary><pre class="runtime-log-json">${esc(JSON.stringify(entry,null,2))}</pre></details>`;
+}
+function runtimeMarkup(status){
+  const installDir=status?.install_dir||status?.default_install_dir||'';
+  const workDir=status?.work_dir||status?.default_work_dir||'';
+  const provider=status?.model_provider||'deepseek';
+  const modelName=status?.model_name||'';
+  const baseURL=status?.model_base_url||'';
+  const hasKey=!!status?.has_model_api_key;
+  return `<div class="runtime-grid"><label class="task-field">程序目录<input id="runtime-installdir" value="${esc(installDir)}" placeholder="默认：安装目录\\agent"></label><label class="task-field">工作目录<input id="runtime-workdir" value="${esc(workDir)}" placeholder="默认：安装目录\\agent\\work"></label><label class="runtime-check"><input type="checkbox" id="runtime-autostart" ${status?.auto_start?'checked':''}> 服务端启动时自动运行</label></div>
+    <h3 class="task-detail-title">AI 模型</h3>
+    <div class="runtime-grid"><label class="task-field">模型供应商<select id="runtime-provider"><option value="deepseek" ${provider==='deepseek'?'selected':''}>DeepSeek</option><option value="openai" ${provider==='openai'?'selected':''}>OpenAI</option><option value="qwen" ${provider==='qwen'?'selected':''}>通义千问</option><option value="custom" ${provider==='custom'?'selected':''}>OpenAI 兼容</option></select></label><label class="task-field">模型名称<div class="task-field-row runtime-combo"><input id="runtime-model" maxlength="120" value="${esc(modelName)}" placeholder="deepseek-chat" autocomplete="off"><button type="button" class="btn small-btn" data-action="runtime-model-toggle" aria-label="选择模型">▾</button><button type="button" class="btn small-btn" data-action="runtime-models">查询模型</button><div class="runtime-model-menu" id="runtime-model-menu" hidden></div></div></label><label class="task-field">API Key<input id="runtime-apikey" type="password" autocomplete="off" maxlength="500" placeholder="${hasKey?'已配置，留空保持不变':'粘贴模型密钥'}"></label><label class="task-field">Base URL<input id="runtime-baseurl" maxlength="500" value="${esc(baseURL)}" placeholder="https://api.deepseek.com/v1"></label></div>
+    <label class="runtime-check"><input type="checkbox" id="runtime-clear-key"> 清除已保存的 API Key</label>
+    <p class="task-hint">测试连接会使用当前表单配置发起一次极短的模型调用，可能产生少量 Token 费用；不会保存配置或执行采集任务。保存配置会重启内置 Agent，正在执行的任务可能中断并等待租约到期后重试。</p>
+    <p id="runtime-test-result" class="task-hint" role="status" aria-live="polite" hidden></p>
+    <div id="runtime-live">${runtimeLiveMarkup(status)}</div>`;
+}
+function runtimeLiveMarkup(status){
+  const running=!!status?.running;
+  const logs=Array.isArray(status?.logs)?status.logs.slice(-20):[];
+  return `<div class="runtime-actions"><button class="btn" data-action="runtime-test" ${runtimeBusy||runtimeTesting?'disabled':''}>${runtimeTesting?'测试中…':'测试连接'}</button><button class="btn" data-action="runtime-save" ${runtimeBusy||runtimeTesting?'disabled':''}>保存并重启</button><button class="btn primary" data-action="runtime-start" ${running||runtimeBusy?'disabled':''}>启动采集端</button><button class="btn" data-action="runtime-restart" ${runtimeBusy?'disabled':''}>重启内置 Agent</button><button class="btn" data-action="runtime-stop" ${!running||runtimeBusy?'disabled':''}>停止</button><span class="task-badge ${running?'ok':'muted'}">${running?'运行中':'已停止'}</span>${status?.pid?`<small>PID ${status.pid}</small>`:''}</div>
+    <p class="task-hint danger-text" ${status?.last_error?'':'hidden'}>${esc(status?.last_error||'')}</p>
+    <div class="runtime-log-head"><span>运行日志</span><small>${logs.length?`最近 ${logs.length} 条 · 点击任意日志查看原始 JSON`:'等待采集端输出'}</small></div>
+    <div class="runtime-log" role="log">${logs.length?logs.map(runtimeLogEntry).join(''):'<p class="runtime-log-empty">暂无日志。</p>'}</div>`;
+}
+let runtimeRefreshTimer=null,runtimeRequest=0,runtimeBusy=false,runtimeTesting=false;
+async function loadAgentRuntime(liveOnly=false){
+  clearTimeout(runtimeRefreshTimer);
+  const body=$('#agent-runtime-body');
+  if(!body||route!=='agent-access'||!state.authenticated||state.role!=='admin')return;
+  const request=++runtimeRequest,epoch=authEpoch;
+  const current=()=>request===runtimeRequest&&epoch===authEpoch&&body.isConnected&&route==='agent-access'&&state.authenticated&&state.role==='admin';
+  try{
+    const status=await api('/admin/agent/runtime');
+    if(!current())return;
+    const live=$('#runtime-live',body);
+    if(liveOnly&&live){
+      // Never replace the form: polling must preserve unsaved settings and keys.
+      const template=document.createElement('template');
+      template.innerHTML=runtimeLiveMarkup(status);
+      [...template.content.children].forEach((next,index)=>{
+        const previous=live.children[index];
+        // Keep expanded JSON and keyboard focus intact while reading logs.
+        if(index===3&&(previous?.contains(document.activeElement)||previous?.querySelector('details[open]')))return;
+        if(previous&&previous.outerHTML!==next.outerHTML)previous.replaceWith(next);
+      });
+    }else body.innerHTML=runtimeMarkup(status);
+    body.removeAttribute('title');
+  }catch(error){
+    if(current()){
+      if(liveOnly)body.title='状态刷新失败：'+error.message;
+      else body.innerHTML=`<p class="task-hint">读取失败：${esc(error.message)}</p>`;
+    }
+  }finally{
+    if(current())runtimeRefreshTimer=setTimeout(()=>loadAgentRuntime(true),3000);
+  }
+}
+function runtimeModelInput(){
+  return {provider:String($('#runtime-provider')?.value||'deepseek'),model:String($('#runtime-model')?.value||'').trim(),base_url:String($('#runtime-baseurl')?.value||'').trim(),api_key:String($('#runtime-apikey')?.value||'').trim(),clear_api_key:!!$('#runtime-clear-key')?.checked};
+}
+function setRuntimeButtonsBusy(){
+  for(const button of document.querySelectorAll('#runtime-live button'))button.disabled=true;
+}
+async function testAgentRuntimeConnection(){
+  if(runtimeTesting||runtimeBusy)return;
+  const model=runtimeModelInput();
+  if(!model.model){toast('请填写模型名称。',true);return}
+  const result=$('#runtime-test-result'),epoch=authEpoch;
+  runtimeTesting=true;
+  setRuntimeButtonsBusy();
+  const button=$('[data-action="runtime-test"]');
+  if(button)button.textContent='测试中…';
+  if(result){result.hidden=false;result.className='task-hint';result.textContent='正在测试模型接口…'}
+  try{
+    const status=await api('/admin/agent/runtime/test-connection',{method:'POST',body:{...model,use_saved_key:!model.clear_api_key}});
+    if(epoch===authEpoch&&result?.isConnected){result.textContent=`连接成功 · ${status.model} · ${status.latency_ms} ms（仅验证本次表单配置，尚未保存）`;toast('模型连接测试成功。')}
+  }catch(error){
+    if(epoch===authEpoch&&result?.isConnected){result.className='task-hint danger-text';result.textContent=error.message;toast(error.message,true)}
+  }finally{runtimeTesting=false;await loadAgentRuntime(true)}
+}
+async function saveAgentRuntime(){
+  if(runtimeBusy||runtimeTesting)return;
+  const installDir=String($('#runtime-installdir')?.value||'').trim();
+  const workDir=String($('#runtime-workdir')?.value||'').trim();
+  const autoStart=!!$('#runtime-autostart')?.checked;
+  const model=runtimeModelInput();
+  if(!installDir){toast('请填写程序目录。',true);return}
+  if(!workDir){toast('请填写工作目录。',true);return}
+  runtimeBusy=true;++runtimeRequest;clearTimeout(runtimeRefreshTimer);setRuntimeButtonsBusy();
+  let saved=false;
+  try{await api('/admin/agent/runtime',{method:'PUT',body:{install_dir:installDir,work_dir:workDir,auto_start:autoStart,model,restart:true}});saved=true;toast('配置已保存，内置 Agent 已重新启动。')}
+  catch(error){toast(error.message,true)}
+  finally{runtimeBusy=false;await loadAgentRuntime(!saved)}
+}
+async function runtimeProcessAction(action,message){
+  if(runtimeBusy)return;
+  runtimeBusy=true;++runtimeRequest;clearTimeout(runtimeRefreshTimer);setRuntimeButtonsBusy();
+  try{await api('/admin/agent/runtime/'+action,{method:'POST',body:{}});toast(message)}
+  catch(error){toast(error.message,true)}
+  finally{runtimeBusy=false;await loadAgentRuntime(true)}
+}
+async function startAgentRuntime(){await runtimeProcessAction('start','采集端已启动。')}
+async function stopAgentRuntime(){await runtimeProcessAction('stop','采集端已停止。')}
+async function restartAgentRuntime(){await runtimeProcessAction('restart','内置 Agent 已使用保存的配置重新启动。')}
+
+async function loadRuntimeModels(){
+  const provider=String($('#runtime-provider')?.value||'deepseek');
+  const baseURL=String($('#runtime-baseurl')?.value||'').trim();
+  const apiKey=String($('#runtime-apikey')?.value||'').trim();
+  const button=$('[data-action="runtime-models"]');
+  if(button){button.disabled=true;button.textContent='查询中…'}
+  try{
+    const result=await api('/admin/agent/models',{method:'POST',body:{provider,base_url:baseURL,api_key:apiKey,use_saved_key:true}});
+    const models=Array.isArray(result.models)?result.models:[];
+    runtimeModelOptions=models;
+    renderRuntimeModelMenu();
+    const input=$('#runtime-model');
+    if(input&&!input.value&&models.length)input.value=models[0];
+    const menu=$('#runtime-model-menu');
+    if(menu)menu.hidden=!models.length;
+    toast(models.length?`已获取 ${models.length} 个模型，点右侧箭头选择。`:'模型服务未返回可用模型，可手动填写。');
+  }catch(error){toast(error.message,true)}
+  finally{if(button&&button.isConnected){button.disabled=false;button.textContent='查询模型'}}
+}
+document.addEventListener('change',event=>{
+  const select=event.target;
+  if(select.id!=='runtime-provider')return;
+  const preset=DEPLOY_MODEL_PRESETS[select.value]||DEPLOY_MODEL_PRESETS.deepseek;
+  const base=$('#runtime-baseurl'),model=$('#runtime-model');
+  if(base&&preset.base_url)base.value=preset.base_url;
+  if(model&&preset.model)model.value=preset.model;
+  runtimeModelOptions=[];
+  renderRuntimeModelMenu();
+});
+
+let runtimeModelOptions=[];
+function renderRuntimeModelMenu(){
+  const menu=$('#runtime-model-menu');
+  if(!menu)return;
+  menu.innerHTML=runtimeModelOptions.length?runtimeModelOptions.map(id=>`<button type="button" data-runtime-model="${esc(id)}">${esc(id)}</button>`).join(''):'<p class="task-hint">没有可用模型，请先查询或手动填写。</p>';
+}
+document.addEventListener('click',event=>{
+  const option=event.target.closest('[data-runtime-model]');
+  if(option){
+    const input=$('#runtime-model');
+    if(input)input.value=option.dataset.runtimeModel;
+    const menu=$('#runtime-model-menu');
+    if(menu)menu.hidden=true;
+    return;
+  }
+  const toggle=event.target.closest('[data-action="runtime-model-toggle"]');
+  if(toggle){
+    const menu=$('#runtime-model-menu');
+    if(menu)menu.hidden=!menu.hidden;
+    return;
+  }
+  const menu=$('#runtime-model-menu');
+  if(menu&&!menu.hidden&&!event.target.closest('.runtime-combo')&&!event.target.closest('#runtime-model-menu'))menu.hidden=true;
+});

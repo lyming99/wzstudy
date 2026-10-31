@@ -71,7 +71,13 @@ func (w *Worker) execute(parent context.Context, task *serverapi.Task) {
 	go w.heartbeat(taskCtx, task, cancel, &remoteCancel)
 
 	emit := func(events []serverapi.EventInput) error {
-		return w.Client.Events(taskCtx, task.ID, task.Attempts, events)
+		ctx := taskCtx
+		if taskCtx.Err() != nil {
+			var done context.CancelFunc
+			ctx, done = context.WithTimeout(context.WithoutCancel(parent), 5*time.Second)
+			defer done()
+		}
+		return w.Client.Events(ctx, task.ID, task.Attempts, events)
 	}
 	outcome := w.Runner.Run(taskCtx, task, emit)
 
@@ -82,6 +88,7 @@ func (w *Worker) execute(parent context.Context, task *serverapi.Task) {
 	case remoteCancel.Load():
 		outcome.Status = serverapi.StatusCancelled
 		outcome.Summary = "任务被管理员取消"
+		outcome.Error = nil
 	case parent.Err() != nil:
 		// Local shutdown or operator interrupt: return the lease instead of
 		// recording a terminal failure so another attempt can run.
@@ -90,9 +97,10 @@ func (w *Worker) execute(parent context.Context, task *serverapi.Task) {
 		}
 		w.Logger.Info("task released", "task_id", task.ID)
 		return
-	case outcome.Status == serverapi.StatusCancelled:
+	case taskCtx.Err() == context.DeadlineExceeded:
 		outcome.Status = serverapi.StatusFailed
-		outcome.Error = &serverapi.TaskError{Code: "timeout", Message: "任务超时或上下文结束"}
+		outcome.Summary = "任务达到时间限制，已入库结果保留，未完成部分未继续采集"
+		outcome.Error = &serverapi.TaskError{Code: "timeout", Message: "任务达到时间限制，已停止；已入库结果保留"}
 	}
 	if outcome.Status == "" {
 		outcome.Status = serverapi.StatusFailed

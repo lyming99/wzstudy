@@ -30,22 +30,77 @@ go test ./internal/study ./internal/httpapi ./internal/config -count=1
 | `TestAgentEndpointsAreHiddenWhenDisabled` | 功能关闭时 404 |
 | `TestAgentEnabledByDefault`（config） | 未设置 `AGENT_ENABLED` 时默认开启；显式 `false` 才关闭 |
 | `TestAgentCancelSignalReachesAgent` | 取消信号与取消后拒绝入库 |
-| `TestOpenAPICoversAllBusinessRoutes` | 19 个新操作全部有 OpenAPI 文档 |
+| `TestOpenAPICoversAllBusinessRoutes` | 所有业务路由都有 OpenAPI 文档 |
 
-### 管理后台任务板块
+### 所有账户的任务与 Agent 接入
 
 ```powershell
-go test ./internal/httpapi -run 'TestWorkspaceTaskBoard' -count=1
+go test ./internal/httpapi -run 'TestWorkspaceTaskBoard|TestWorkspaceAgent' -count=1
 ```
 
 结果：`ok`。
 
 | 用例 | 断言 |
 |---|---|
-| `TestWorkspaceTaskBoardAssetsAreEmbedded` | 页面包含任务导航、`tasks.css` 与 `tasks.js`；脚本先于 `app.js` 加载；`app.js` 注册 `tasks:tasksView.render`；`tasks.js` 覆盖派发、取消、重试及四个数据接口 |
-| `TestWorkspaceTaskBoardIsAdministratorOnly` | 任务导航位于管理员导航组，普通用户不可见 |
+| `TestWorkspaceTaskBoardAssetsAreEmbedded` | 页面包含任务与 Agent 导航、`tasks.css`、`tasks.js`、`agent-access.js`；脚本先于 `app.js` 加载；`tasks.js` 覆盖派发、取消、重试、模板和工作区/管理员两套接口 |
+| `TestWorkspaceAgentBoardsAreAvailableToEveryAccount` | 「Agent 接入」「收集任务」位于普通账户可见区域；用户管理仍仅管理员可见 |
+| `TestWorkspaceAgentAccessIsTenantScopedAndBuiltinsStayAdminOnly` | 普通账户可创建自己的采集端、任务和模板；另一账户看不到且不能取消；Agent Key 只领取本工作区任务；密钥创建后可在所属工作区再次查看，改名不会丢失，轮换后返回新密钥；可生成含 `agent.env`、程序和启动脚本的 ZIP，并记住供应商/模型/Base URL（不含模型 API Key）；错误密钥、跨账户查看/打包被拒绝；`/admin/agent/*` 对普通账户返回 401；管理员仍可使用内置运行时 |
+| `TestDeleteAgentRequiresRevisionAndNoActiveTasks`（study） | 版本不一致返回冲突；跨工作区不可见；有未结束任务时拒绝删除；取消任务后可删除；删除后密钥失效且标识可复用 |
+| `TestWorkspaceAgentDeletionIsTenantScopedAndBlocksActiveTasks` | 另一账户删除返回 404；旧 revision 返回 409；有任务时返回 `409 agent_in_use`；取消任务后删除成功；列表与读取均为空；已删除身份的密钥返回 401 |
 | `TestSourceDialogUsesAgentIntegration` | 录入端来源类型显示「Agent 录入」，接入方式默认 agent |
 | `TestManualSourceAcceptsAgentIntegration`（study） | 服务端接受 `integration=agent`，未知值仍拒绝 |
+
+### 程序发布管理
+
+```powershell
+go test ./internal/study -run TestAgentRelease
+go test ./internal/httpapi -run TestAgentRelease
+```
+
+| 用例 | 断言 |
+|---|---|
+| `TestAgentReleaseLifecycle`（study） | 创建/列表/删除；同版本+平台+架构冲突；不同架构可共存 |
+| `TestAgentReleaseValidation`（study） | 版本、平台、架构、扩展名、大小、哈希、说明长度校验；路径穿越被裁剪为 basename |
+| `TestAgentReleasePublishLifecycle`（httpapi） | 上传写盘、列表、下载内容一致、删除同时移除文件 |
+| `TestAgentReleaseRejectsInvalidUploadAndAnonymous` | 匿名 401；非法扩展名与版本 400 |
+
+### 一键部署与一体化打包
+
+```powershell
+go test ./internal/agentbundle -run TestBuildWith
+go test ./internal/httpapi -run TestAgentDeployment
+```
+
+| 用例 | 断言 |
+|---|---|
+| `TestBuildWithProducesDeploymentArchive` | zip 含 agent.exe、agent.env、启动脚本、README、技能；配置写入服务端地址、密钥与模型供应商/模型/API Key |
+| `TestBuildWithRejectsInvalidInput` | 空二进制、非 `wzag_` 密钥、空地址被拒绝 |
+| `TestAgentDeploymentCreatesReadyArchive` | 管理员调用后返回 zip；zip 内 agent.env 预填 openai 地址、密钥与默认模型；身份已创建 |
+| `TestAgentDeploymentRejectsInvalidModel` | 未知供应商、非 http(s) Base URL、超长模型名返回 400 |
+
+### 服务端部署模式
+
+```powershell
+go test ./internal/agentruntime ./internal/study ./internal/httpapi -run TestAgentRuntime
+```
+
+| 用例 | 断言 |
+|---|---|
+| `TestAgentRuntimeSettingsPersist`（study） | 工作路径与自动启动设置可保存、读取 |
+| `TestValidateWorkDir` | 空路径、缺少 exe 或 agent.env 的目录被拒绝 |
+| `TestManagerConfigurationAndState` | 未配置启动报错；保存后状态正确；停止未运行进程报错；默认路径为 `<install>/agent` 与 `<install>/agent/work` |
+| `TestAgentRuntimeRequiresManager` | 未注入运行时的服务端返回 503 |
+| `TestAgentRuntimeConfigureAndStart` | 配置保存成功；非法路径 400；占位程序启动失败返回 500 |
+
+实际联调：在 `D:\app\wzstudy-agent` 配置运行时并启动，状态返回 `running=true`、PID，日志出现 `agent started`，服务健康检查 200。
+| `TestAgentDeploymentReportsMissingBundle` | 未内嵌时返回 503（构建含 agent 时跳过） |
+| `TestWorkspaceTaskBoardAssetsAreEmbedded` | 导航包含 `rss`、`agent-access`；app.js 注册新页面与部署接口 |
+
+一体化包 `dist/wzstudy-full-v0.4.0-windows-amd64.zip`（19.8 MB）已检查：包含 `wzstudy.exe`、`wzstudy-migrate.exe`、启动脚本、文档、`agent/wzstudy-agent.exe`、`agent/agent.env.example`、`agent/skills/`。
+
+发布包启动依赖也已验证：解压后 `scripts/local-service-lifecycle.ps1`、`local-env.ps1`、`local-postgres-state.ps1`、`docker-compose-local-postgres.yml` 均存在且可被 dot-source 加载；`dist/wzstudy.exe` 与 `dist/wzstudy-migrate.exe` 可供 `start-postgres-local.ps1` 的发布模式使用。启动脚本会优先查找 `dist/wzstudy.exe`，并兼容旧的 `dist/wzstudy-v*-windows-amd64.exe` 命名。
+
+E2E 脚本额外执行：上传 9.9.9 程序包 → 列表包含 → 下载内容一致 → 删除后列表为空。
 
 ### 采集端
 

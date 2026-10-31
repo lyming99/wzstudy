@@ -10,7 +10,7 @@
 - 用户创建的 Source Key 仅有本来源 `ingest/upload`；用户创建的 Client Key 仅在所属工作区 `read/sync`，不能作为个人学习身份。
 - 系统管理员、旧全局 `READ_API_KEY`、没有所有者的历史 Key 都不能读取所有用户资料。历史无所有者数据保留但不自动认领。
 - 同一用户跨设备登录共享本人资料和学习记录；账号停用会同时阻止其所有用户会话、来源与查询客户端访问。更多迁移与客户端接入说明见 `USER_WORKSPACES.md`。
-- 完整 Key 只在创建/轮换时显示；服务端仅存哈希，不能放入 URL、日志或网页持久存储。Cookie 写请求要求本站 Origin，生产必须 HTTPS。
+- 录入来源 Key 仅创建/轮换时返回，服务端只保存哈希；查询客户端 Key 用哈希认证，并额外加密保存供所属用户再次查看。查询 Key 不进入列表/普通详情、URL、日志或浏览器持久存储；旧版只有哈希的 Key 需提供原值补存或显式轮换。加密配置及备份风险见 `CLIENT_QR.md`。Cookie 写请求要求本站 Origin，生产必须 HTTPS。
 
 成功响应为 `{ "data": ... }`，失败为 `{ "error": { "code": "...", "message": "..." } }`。JSON 拒绝未知字段，所有者不能由输入指定。
 
@@ -58,7 +58,9 @@ GET  /workspace/clients
 POST /workspace/clients
 GET  /workspace/clients/{id}
 PUT  /workspace/clients/{id}
-POST /workspace/clients/{id}/key
+GET  /workspace/clients/{id}/key  # 本人查看已加密保存的 Key；旧 Key 可能不可用
+PUT  /workspace/clients/{id}/key  # 验证并补存已有 Key，不轮换
+POST /workspace/clients/{id}/key  # 轮换
 ```
 
 创建示例：
@@ -209,7 +211,7 @@ POST /workspace/identity-migration
 
 ## 客户端二维码接入
 
-“查询客户端”列表提供扫码入口；新建或显式轮换成功的一次性 Key 弹窗也可生成。二维码在浏览器本地编码，不调用外部服务。历史 Key 不能回读：已有客户端可手动粘贴已保存的 Key，或明确确认轮换。打开扫码弹窗、生成图片或校验都不修改凭据。
+“查询客户端”列表提供扫码入口；新建或显式轮换成功的 Key 弹窗也可生成。二维码在浏览器本地编码，不调用外部服务。新 Key 以密文保存，所属账号可再次查看；旧版只有哈希的 Key 可由用户粘贴原值并验证补存，若已遗失才需明确确认轮换。打开扫码弹窗、生成图片或校验都不轮换凭据。
 
 载荷为最大 1200 UTF-8 字节的 JSON，严格六字段：`type="wzstudy.query_client"`、整数 `version=1`、`base_url`（HTTP(S) 服务 origin）、UUID `client_id`、`name`、`access_key`。不要把 Key 放进 URL，二维码持有者等同于持有 Key。
 

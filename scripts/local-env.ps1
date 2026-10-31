@@ -1,6 +1,6 @@
 # Local launcher configuration is entirely in .env. The helpers do not echo
 # values and keep plaintext temporary files private to the current Windows user.
-$script:LocalEnvKeys = @('DATABASE_URL','POSTGRES_PASSWORD','ADMIN_API_KEY','READ_API_KEY',
+$script:LocalEnvKeys = @('DATABASE_URL','POSTGRES_PASSWORD','ADMIN_API_KEY','READ_API_KEY','CLIENT_KEY_ENCRYPTION_KEY',
     'WZSTUDY_LOCAL_INSTANCE_ID','WZSTUDY_LOCAL_VOLUME_STATE',
     'SYSTEM_ADMIN_EMAIL','SYSTEM_ADMIN_PASSWORD','SYSTEM_ADMIN_DISPLAY_NAME','SYSTEM_ADMIN_USERNAME',
     'BOOTSTRAP_ADMIN_EMAIL','BOOTSTRAP_ADMIN_PASSWORD','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_USERNAME')
@@ -34,7 +34,7 @@ function Read-LocalEnvSnapshot([string]$Path, [switch]$ProcessOnly) {
         if ($value.Length -ge 2 -and (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'")))) {
             $value = $value.Substring(1, $value.Length - 2)
         }
-        if ($name -notmatch 'PASSWORD$' -and $name -notin @('ADMIN_API_KEY','READ_API_KEY')) { $value = $value.Trim() }
+        if ($name -notmatch 'PASSWORD$' -and $name -notin @('ADMIN_API_KEY','READ_API_KEY','CLIENT_KEY_ENCRYPTION_KEY')) { $value = $value.Trim() }
         $values[$name] = $value
     }
     $newline = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }

@@ -14,7 +14,7 @@
 .\start-local.ps1
 ```
 
-`start-postgres-local.ps1` 和 `start-postgres-local.cmd` 仍是兼容入口。启动器使用项目根目录 `.env` 保存配置，并创建或复用本项目专属 Docker PostgreSQL 数据卷；数据库就绪、迁移成功后才启动 API。数据库默认监听 `127.0.0.1:15432`，服务默认监听 `127.0.0.1:8091`；自动选择其他空闲端口时以终端显示的工作台地址为准。服务在前台运行，Ctrl+C 仅停止 API。此模式仅适用于可信本机开发；Docker 管理者可以读取容器环境中的数据库密码。
+`start-postgres-local.ps1` 和 `start-postgres-local.cmd` 仍是兼容入口。启动器使用项目根目录 `.env` 保存配置，并创建或复用本项目专属 Docker PostgreSQL 数据卷；数据库就绪、迁移成功后才启动 API。数据库默认监听 `127.0.0.1:15432`，服务默认监听 `0.0.0.0:8091`，可信局域网设备可直接访问；需要仅本机访问时使用 `-Address 127.0.0.1:8091`。自动选择其他空闲端口时以终端显示的工作台地址为准。服务在前台运行，Ctrl+C 仅停止 API。此模式仅适用于可信网络开发；Docker 管理者可以读取容器环境中的数据库密码。
 
 首次使用空数据库时，可在 `.env` 同时设置 `SYSTEM_ADMIN_EMAIL` 和 `SYSTEM_ADMIN_PASSWORD`；只设置其中一项会拒绝初始化，有密码时也可通过 `-AdministratorEmail` 指定邮箱。未设置两项时，默认使用 `admin@wzstudy.local` 和随机生成的密码，写入 `.env`。密码保留原始空白，至少 8、最多 128 个 UTF-8 字节；`.env` 值的成对外层引号会去除，不做变量或转义展开。已有管理员始终保留，修改密码配置不会重置它；如果配置的管理员邮箱与已有账号不一致，服务会拒绝启动，不自动转移权限或覆盖账号。已有部署未配置邮箱时，使用之前保存的管理员邮箱作为兼容回退。
 
@@ -47,15 +47,15 @@ DATA_DIR=.local/postgres-local/data
 
 `-Check` 只解析附件路径和命令行端口，不解析或校验 `DATABASE_URL`、不读取 PostgreSQL 凭据文件、不输出 `.env` 其他字段，也不启动 Docker 或连接数据库。显式端口占用时安全退出；保存的数据库端口不能被启动参数悄然改写。若已登记的数据库卷或凭据丢失，启动器拒绝创建替代，需先恢复原数据。`python scripts/verify_postgres_launcher.py` 只使用临时项目和模拟 Docker；`python scripts/verify_postgres_admin_env.py` 使用单独的临时项目和真实本地 Docker PostgreSQL 验证配置与登录，并在归属校验通过后清理测试容器和数据卷。
 
-默认只允许本机访问。要在可信局域网供手机扫码，先停止现有 API（不要在上传或入库时操作），再显式启动：
+默认监听所有 IPv4 网卡，可信局域网内的设备可以直接访问。如需只允许本机访问，先停止现有 API（不要在上传或入库时操作），再显式绑定回环地址：
 
 ```powershell
-.\start-local.ps1 -Lan
-# 使用其他 API 端口：.\start-local.ps1 -Lan -ApiPort 8092
-# 只预览参数，不启动服务或测试网络：.\start-local.ps1 -Lan -Check
+.\start-local.ps1 -Address 127.0.0.1:8091
+# 使用其他 API 端口并只允许本机：.\start-local.ps1 -Address 127.0.0.1:8092
+# 只预览参数，不启动服务或测试网络：.\start-local.ps1 -Check
 ```
 
-`-Lan` 请求 API 监听所有 IPv4 网卡（`0.0.0.0`）；系统可能使用 IPv6 双栈通配套接字，也可能允许 IPv6 访问，请同时检查 IPv4/IPv6 的网络与防火墙边界。启动信息会列出活动网卡的候选 IPv4；根据手机与电脑所连接的网络选择实际可达的地址。二维码中的服务地址填写例如 `http://192.168.1.10:8091`，不要使用 `0.0.0.0`、`127.0.0.1` 或 `/workspace` 路径。也可用 `-Address '192.168.1.10:8091'` 只绑定一个指定的本机 IPv4；`-Address` 不能与 `-Lan` 或 `-ApiPort` 同时使用。数据库仍只监听本机。
+默认绑定 `0.0.0.0:8091`（所有 IPv4 网卡）；系统可能使用 IPv6 双栈通配套接字，也可能允许 IPv6 访问，请同时检查 IPv4/IPv6 的网络与防火墙边界。启动信息会列出活动网卡的候选 IPv4；根据手机与电脑所连接的网络选择实际可达的地址。二维码中的服务地址填写例如 `http://192.168.1.10:8091`，不要使用 `0.0.0.0`、`127.0.0.1` 或 `/workspace` 路径。也可用 `-Address '192.168.1.10:8091'` 只绑定一个指定的本机 IPv4；`-Address` 不能与 `-ApiPort` 同时使用。`-Lan` 仍可作为兼容参数传入，等同于默认行为。数据库仍只监听本机。
 
 启动器不会修改 Windows 防火墙；如手机不能连接，请检查当前网络配置、受信网络的防火墙入站规则和 Wi-Fi 客户端隔离。局域网模式会扩大 API 暴露范围，HTTP 明文传输密码和查询 Key，仅在可信网络临时使用，正式服务请配置 HTTPS，不要直接暴露到公网。
 
@@ -92,11 +92,12 @@ go run ./cmd/api
 | 变量 | 默认值 / 规则 |
 | --- | --- |
 | `APP_ENV` | `development`；另支持 `test`、`production` |
-| `HTTP_ADDR` | 服务自身默认 `0.0.0.0:8091`；本机 PostgreSQL 启动器默认设置为 `127.0.0.1:8091` |
+| `HTTP_ADDR` | 服务自身默认 `0.0.0.0:8091`；本机 PostgreSQL 启动器默认设置为 `0.0.0.0:8091`，可用 `-Address 127.0.0.1:8091` 仅本机访问 |
 | `STORE` | 服务默认 `postgres`；本地启动脚本强制使用 `postgres` |
 | `DATA_DIR` | 服务默认 `data`；本地启动从 `.env`、进程环境或参数解析，默认 `.local/postgres-local/data`，存放媒体附件而非 PostgreSQL 数据 |
 | `DATABASE_URL` | 手动 PostgreSQL 模式必填；本机启动器可选，只允许本机 Docker 连接地址 |
-| `ADMIN_API_KEY` | 32–256 字符；仅 Bearer 管理 API 自动化，不用于浏览器登录 |
+| `ADMIN_API_KEY` | 32–256 字符；用于 Bearer 管理 API 自动化，不用于浏览器登录；未配置独立查询 Key 加密密钥时也用于派生加密密钥 |
+| `CLIENT_KEY_ENCRYPTION_KEY` | 可选，32–256 字符的稳定随机秘密；用于加密保存的查询客户端 Key，未设置时从 `ADMIN_API_KEY` 派生。须安全备份，不要随意更换；更换配置会使旧密文无法回读但不影响 Key 认证，详见 `CLIENT_QR.md` |
 | `SYSTEM_ADMIN_EMAIL` | 首次初始化管理员的邮箱；之后可省略，同邮箱不改密码，不同邮箱拒绝 |
 | `SYSTEM_ADMIN_PASSWORD` | 首次初始化密码，8–128 UTF-8 字节；原始空白保留，仅持久化 Argon2id 哈希 |
 | `SYSTEM_ADMIN_DISPLAY_NAME` | 可选，默认“温知管理员” |

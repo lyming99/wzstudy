@@ -52,7 +52,7 @@ func (l *SkillLoader) Handle(_ context.Context, call tool.Call) (tool.Result, er
 func FinishDefinition() tool.Definition {
 	return tool.Definition{
 		Name:        "finish_task",
-		Description: "结束本次采集任务并给出结论。已入库的内容不会被撤销；配额用尽或没有更多可采集内容时调用。",
+		Description: "结束本次收集任务并给出结论。已入库的内容不会被撤销；配额用尽或没有更多可采集内容时调用。",
 		Parameters: tool.Object(map[string]any{
 			"summary": tool.String("本次采集的结论：采了什么、入库多少、遗留什么问题"),
 		}, "summary"),

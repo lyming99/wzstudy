@@ -21,6 +21,7 @@ type Config struct {
 	DatabaseURL            string
 	AdminKey               string
 	ReadKey                string
+	ClientKeyEncryptionKey string `json:"-"`
 	PollEnabled            bool
 	CORSOrigins            []string
 	AgentEnabled           bool
@@ -47,6 +48,10 @@ func FromEnv(get func(string) string) (c Config, err error) {
 	}
 	if len(c.AdminKey) < 32 || len(c.AdminKey) > 256 || len(c.ReadKey) < 32 || len(c.ReadKey) > 256 || c.AdminKey == c.ReadKey || strings.TrimSpace(c.AdminKey) != c.AdminKey || strings.TrimSpace(c.ReadKey) != c.ReadKey {
 		return c, errors.New("ADMIN_API_KEY and READ_API_KEY must be distinct 32-256 character secrets without surrounding whitespace")
+	}
+	c.ClientKeyEncryptionKey = get("CLIENT_KEY_ENCRYPTION_KEY")
+	if c.ClientKeyEncryptionKey != "" && (len(c.ClientKeyEncryptionKey) < 32 || len(c.ClientKeyEncryptionKey) > 256 || strings.TrimSpace(c.ClientKeyEncryptionKey) != c.ClientKeyEncryptionKey) {
+		return c, errors.New("CLIENT_KEY_ENCRYPTION_KEY must be a 32-256 character secret without surrounding whitespace")
 	}
 	if c.Store != "postgres" && c.Store != "memory" && c.Store != "file" {
 		return c, errors.New("STORE must be postgres, file or memory")

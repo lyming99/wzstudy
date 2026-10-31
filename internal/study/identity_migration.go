@@ -131,6 +131,7 @@ func (s *Service) MigrateIdentities(ctx context.Context, choices []IdentityMigra
 			clientID := uuid.NewString()
 			client := Client{OwnerID: source.OwnerID, ID: clientID, Slug: "migrated-" + strings.ReplaceAll(clientID, "-", ""), Name: source.Name, Description: source.Description, Enabled: source.Enabled, Permissions: slices.Clone(entry.Query), Revision: 1, CreatedAt: now, UpdatedAt: now, LegacySourceID: source.ID}
 			clientHash := source.KeyHash
+			clientCiphertext := ""
 			if entry.RequiresKeyChoice {
 				key, e := NewKey()
 				if e != nil {
@@ -139,6 +140,10 @@ func (s *Service) MigrateIdentities(ctx context.Context, choices []IdentityMigra
 				if byID[source.ID].KeepKey == "ingest" {
 					key = strings.Replace(key, "wzsk_", "wzck_", 1)
 					clientHash = HashKey(key)
+					clientCiphertext, e = s.sealClientKey(client, key)
+					if e != nil {
+						return e
+					}
 					out.NewKeys = append(out.NewKeys, MigrationNewKey{IdentityType: "client", ID: client.ID, Name: client.Name, AccessKey: key})
 				} else {
 					source.KeyHash = HashKey(key)
@@ -149,7 +154,7 @@ func (s *Service) MigrateIdentities(ctx context.Context, choices []IdentityMigra
 				// retire its source credential; the old key belongs only to Client.
 				source.KeyHash = ""
 			}
-			if e = saveClient(tx, client, clientHash); e != nil {
+			if e = saveClient(tx, client, clientHash, clientCiphertext); e != nil {
 				return e
 			}
 			source.Permissions = slices.Clone(entry.Ingest)

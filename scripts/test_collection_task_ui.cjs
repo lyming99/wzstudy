@@ -1,0 +1,20 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const vm=require('node:vm');
+const source=fs.readFileSync('internal/adminui/tasks.js','utf8');
+const start=source.indexOf('  const splitList =');
+const end=source.indexOf('  async function submitDispatch',start);
+const sandbox={TextEncoder};vm.createContext(sandbox);
+vm.runInContext(source.slice(start,end)+'\nthis.config=formConfig;',sandbox);
+function config(type,timeout,policy){return sandbox.config(new Map(Object.entries({content_type:type,timeout_seconds:timeout,duplicate_policy:policy,max_items:'10',max_rounds:'100',max_tool_calls:'100'})))}
+assert.equal(config('video','').budget.timeout_seconds,1800);
+assert.equal(config('audio','').budget.timeout_seconds,1800);
+assert.equal(config('article','').budget.timeout_seconds,300);
+assert.equal(config('video','120').budget.timeout_seconds,120);
+assert.equal(config('video','').constraints.duplicate_policy,'skip');
+assert.equal(config('video','','update').constraints.duplicate_policy,'update');
+assert.ok(source.includes('跳过已有或已删除内容'));
+assert.ok(source.includes('stats.items_skipped'));
+assert.ok(source.includes('event.text || event.summary'));
+console.log('collection UI defaults, explicit budget and duplicate policy: passed');

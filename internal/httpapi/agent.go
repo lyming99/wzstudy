@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -34,7 +35,11 @@ func (s *Server) requireAgent(next http.Handler) http.Handler {
 		}
 		agent, err := s.service.AgentForKey(r.Context(), key, study.PermissionTaskClaim)
 		if err != nil {
-			s.fail(w, err)
+			if errors.Is(err, study.ErrUnauthorized) {
+				failure(w, http.StatusUnauthorized, "unauthorized", "采集端身份或密钥无效：身份可能已删除或密钥已轮换，请更新 agent.env 中的 WZSTUDY_AGENT_KEY（不是模型 API Key）")
+			} else {
+				s.fail(w, err)
+			}
 			return
 		}
 		ctx := study.WithWorkspace(r.Context(), agent.OwnerID)
@@ -56,12 +61,38 @@ func (s *Server) withAdminWorkspace(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request) {	agent := agentFromRequest(r)
+func (s *Server) agentStatus(w http.ResponseWriter, r *http.Request) {
+	agent := agentFromRequest(r)
 	success(w, 200, map[string]any{
 		"agent":         agent,
 		"server_time":   time.Now().UTC(),
 		"lease_seconds": s.cfg.AgentLeaseSeconds,
 	})
+}
+
+func (s *Server) agentUpload(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.service.AgentForKey(r.Context(), bearer(r), study.PermissionIngest); err != nil {
+		s.fail(w, err)
+		return
+	}
+	assets, cleanup, err := s.readUploads(w, r)
+	if err != nil {
+		cleanup()
+		s.uploadFailure(w, err)
+		return
+	}
+	if len(assets) != 1 {
+		cleanup()
+		s.fail(w, study.ErrInvalid)
+		return
+	}
+	asset := assets[0]
+	if err := s.service.RegisterUploadedAsset(r.Context(), asset); err != nil {
+		cleanup()
+		s.fail(w, err)
+		return
+	}
+	success(w, 201, asset)
 }
 
 func (s *Server) agentClaim(w http.ResponseWriter, r *http.Request) {
@@ -79,7 +110,7 @@ func (s *Server) agentClaim(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, study.ErrInvalid)
 		return
 	}
-	if err := s.service.TouchAgent(r.Context(), agent.ID, in.Version, in.Hostname); err != nil && err != study.ErrNotFound {
+	if err := s.service.TouchAgent(r.Context(), agent.ID, in.Version, in.Hostname, bearer(r)); err != nil && err != study.ErrNotFound {
 		s.fail(w, err)
 		return
 	}
@@ -161,6 +192,10 @@ func (s *Server) agentPushItems(w http.ResponseWriter, r *http.Request) {
 	}
 	receipt, err := s.service.IngestAgentTaskItems(r.Context(), agent.ID, chi.URLParam(r, "id"), in.Attempt, in.Items)
 	if err != nil {
+		if errors.Is(err, study.ErrContentType) {
+			failure(w, 400, "content_type_mismatch", "任务要求的数据类型与提交内容不匹配：视频/音频任务必须包含对应的媒体文件")
+			return
+		}
 		s.fail(w, err)
 		return
 	}

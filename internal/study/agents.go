@@ -45,10 +45,20 @@ type AgentInput struct {
 	Permissions []string `json:"permissions"`
 }
 
+// AgentPackageProfile remembers non-secret model settings for redeployment.
+// The model API key is deliberately excluded and must be entered again.
+type AgentPackageProfile struct {
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+	BaseURL  string `json:"base_url,omitempty"`
+}
+
 type agentRecord struct {
-	Agent  Agent `json:"agent"`
-	Secret struct {
+	Agent   Agent               `json:"agent"`
+	Package AgentPackageProfile `json:"package,omitempty"`
+	Secret  struct {
 		KeyHash string `json:"key_hash"`
+		Key     string `json:"key,omitempty"`
 	} `json:"internal"`
 }
 
@@ -76,7 +86,7 @@ func newAgentKey() (string, error) {
 	return strings.Replace(key, "wzsk_", "wzag_", 1), err
 }
 
-func saveAgent(tx Tx, v Agent, hash string) error {
+func saveAgent(tx Tx, v Agent, hash, key string) error {
 	records, err := recordsAs[agentRecord](tx, "agent")
 	if err != nil {
 		return err
@@ -87,7 +97,14 @@ func saveAgent(tx Tx, v Agent, hash string) error {
 		}
 	}
 	r := agentRecord{Agent: cloneAgent(v)}
+	for _, other := range records {
+		if other.Agent.ID == v.ID {
+			r.Package = other.Package
+			break
+		}
+	}
 	r.Secret.KeyHash = hash
+	r.Secret.Key = key
 	return recordSave(tx, "agent", v.ID, r)
 }
 
@@ -132,7 +149,7 @@ func (s *Service) CreateAgent(ctx context.Context, in AgentInput) (out Agent, ke
 	enabled := in.Enabled == nil || *in.Enabled
 	now := s.Now()
 	out = Agent{OwnerID: WorkspaceUserID(ctx), ID: uuid.NewString(), Slug: in.Slug, Name: in.Name, Description: in.Description, Enabled: enabled, Permissions: slices.Clone(permissions), Revision: 1, CreatedAt: now, UpdatedAt: now}
-	err = s.Store.Update(ctx, func(tx Tx) error { return saveAgent(tx, out, HashKey(key)) })
+	err = s.Store.Update(ctx, func(tx Tx) error { return saveAgent(tx, out, HashKey(key), key) })
 	if err != nil {
 		key = ""
 	}
@@ -166,7 +183,7 @@ func (s *Service) UpdateAgent(ctx context.Context, id string, revision int64, in
 		v.Revision++
 		v.UpdatedAt = s.Now()
 		out = cloneAgent(v)
-		return saveAgent(tx, v, r.Secret.KeyHash)
+		return saveAgent(tx, v, r.Secret.KeyHash, r.Secret.Key)
 	})
 	return
 }
@@ -187,7 +204,7 @@ func (s *Service) RotateAgentKey(ctx context.Context, id string, revision int64)
 		r.Agent.Revision++
 		r.Agent.UpdatedAt = s.Now()
 		out = cloneAgent(r.Agent)
-		return saveAgent(tx, r.Agent, HashKey(key))
+		return saveAgent(tx, r.Agent, HashKey(key), key)
 	})
 	if err != nil {
 		key = ""
@@ -195,9 +212,39 @@ func (s *Service) RotateAgentKey(ctx context.Context, id string, revision int64)
 	return
 }
 
+// DeleteAgent removes one identity from the current workspace. Active tasks that
+// are assigned to or already held by the identity block deletion, so a task can
+// never be stranded with a missing worker. The key stops authenticating as soon
+// as the record is gone.
+func (s *Service) DeleteAgent(ctx context.Context, id string, revision int64) error {
+	return s.Store.Update(ctx, func(tx Tx) error {
+		r, err := recordAs[agentRecord](tx, "agent", id)
+		if err != nil {
+			return err
+		}
+		if r.Agent.Revision != revision {
+			return ErrConflict
+		}
+		tasks, err := recordsAs[CollectionTask](tx, "agent_task")
+		if err != nil {
+			return err
+		}
+		for _, task := range tasks {
+			if task.AssignedAgentID != id && task.AgentID != id {
+				continue
+			}
+			switch task.Status {
+			case TaskStatusPending, TaskStatusClaimed, TaskStatusRunning:
+				return ErrAgentInUse
+			}
+		}
+		return tx.DeleteRecord("agent", id)
+	})
+}
+
 // TouchAgent records liveness without bumping the revision, so a high-frequency
 // heartbeat can never invalidate an administrator's edit. Writes are throttled.
-func (s *Service) TouchAgent(ctx context.Context, id, version, hostname string) error {
+func (s *Service) TouchAgent(ctx context.Context, id, version, hostname, key string) error {
 	version, hostname = strings.TrimSpace(version), strings.TrimSpace(hostname)
 	if len(version) > 64 || len(hostname) > 200 || strings.ContainsAny(version+hostname, "\r\n\x00") {
 		version, hostname = "", ""
@@ -207,8 +254,15 @@ func (s *Service) TouchAgent(ctx context.Context, id, version, hostname string) 
 		if err != nil {
 			return err
 		}
+		backfilled := false
+		if r.Secret.Key == "" && key != "" && EqualKey(r.Secret.KeyHash, key) {
+			// Older records only kept a hash. The first authenticated claim can
+			// safely restore the readable copy without rotating the key.
+			r.Secret.Key = key
+			backfilled = true
+		}
 		now := s.Now()
-		if r.Agent.LastSeenAt != nil && now.Sub(*r.Agent.LastSeenAt) < 30*time.Second && r.Agent.Version == version && r.Agent.Hostname == hostname {
+		if !backfilled && r.Agent.LastSeenAt != nil && now.Sub(*r.Agent.LastSeenAt) < 30*time.Second && r.Agent.Version == version && r.Agent.Hostname == hostname {
 			return nil
 		}
 		r.Agent.LastSeenAt = &now
@@ -218,7 +272,7 @@ func (s *Service) TouchAgent(ctx context.Context, id, version, hostname string) 
 		if hostname != "" {
 			r.Agent.Hostname = hostname
 		}
-		return saveAgent(tx, r.Agent, r.Secret.KeyHash)
+		return saveAgent(tx, r.Agent, r.Secret.KeyHash, r.Secret.Key)
 	})
 }
 
@@ -247,5 +301,79 @@ func agentAccess(tx Tx, key, permission string) (Agent, error) {
 
 func (s *Service) AgentForKey(ctx context.Context, key, permission string) (out Agent, err error) {
 	err = s.Store.View(ctx, func(tx Tx) error { var e error; out, e = agentAccess(tx, key, permission); return e })
+	return
+}
+
+func (s *Service) AgentPackageProfile(ctx context.Context, id string) (out AgentPackageProfile, err error) {
+	err = s.Store.View(ctx, func(tx Tx) error {
+		record, e := recordAs[agentRecord](tx, "agent", id)
+		if e != nil {
+			return e
+		}
+		out = record.Package
+		return nil
+	})
+	return
+}
+
+// RememberAgentPackage stores only non-secret package defaults. The model API
+// key never enters this record.
+func (s *Service) RememberAgentPackage(ctx context.Context, id string, profile AgentPackageProfile) error {
+	profile.Provider = strings.TrimSpace(profile.Provider)
+	profile.Model = strings.TrimSpace(profile.Model)
+	profile.BaseURL = strings.TrimSpace(profile.BaseURL)
+	if len(profile.Provider) > 40 || len(profile.Model) > 120 || len(profile.BaseURL) > 500 ||
+		strings.ContainsAny(profile.Provider+profile.Model+profile.BaseURL, "\r\n\x00") {
+		return ErrInvalid
+	}
+	return s.Store.Update(ctx, func(tx Tx) error {
+		record, e := recordAs[agentRecord](tx, "agent", id)
+		if e != nil {
+			return e
+		}
+		record.Package = profile
+		return recordSave(tx, "agent", id, record)
+	})
+}
+
+// AgentSecret returns the readable key for one identity in the current
+// workspace. Records created before readable keys were retained return an empty
+// string; the caller should rotate once to make the key viewable again.
+func (s *Service) AgentSecret(ctx context.Context, id string) (out string, err error) {
+	err = s.Store.View(ctx, func(tx Tx) error {
+		record, e := recordAs[agentRecord](tx, "agent", id)
+		if e != nil {
+			return e
+		}
+		out = record.Secret.Key
+		if out != "" && !EqualKey(record.Secret.KeyHash, out) {
+			out = ""
+		}
+		return nil
+	})
+	return
+}
+
+// VerifyAgentKey checks a one-time key against one identity inside the current
+// workspace. It is used for packaging an existing identity without granting any
+// task or ingestion permission and without storing the plaintext key.
+func (s *Service) VerifyAgentKey(ctx context.Context, id, key string) (out Agent, err error) {
+	if strings.TrimSpace(key) == "" {
+		return out, ErrUnauthorized
+	}
+	err = s.Store.View(ctx, func(tx Tx) error {
+		record, e := recordAs[agentRecord](tx, "agent", id)
+		if e != nil {
+			return e
+		}
+		if !EqualKey(record.Secret.KeyHash, key) {
+			return ErrUnauthorized
+		}
+		if !record.Agent.Enabled {
+			return ErrDisabled
+		}
+		out = cloneAgent(record.Agent)
+		return nil
+	})
 	return
 }

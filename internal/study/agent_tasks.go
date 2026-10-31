@@ -18,6 +18,8 @@ var (
 	ErrQuota         = errors.New("item_quota_exceeded")
 	ErrTaskCancelled = errors.New("task_cancelled")
 	ErrDomain        = errors.New("domain_not_allowed")
+	ErrContentType   = errors.New("content_type_mismatch")
+	ErrAgentInUse    = errors.New("agent_in_use")
 )
 
 const (
@@ -38,6 +40,10 @@ const (
 	maximumTaskTitleBytes   = 200
 	maximumTaskSummaryBytes = 8000
 	maximumTaskErrorBytes   = 2000
+	defaultTaskRounds       = 100
+	defaultTaskToolCalls    = 100
+	maximumTaskRounds       = 1000
+	maximumTaskToolCalls    = 1000
 )
 
 // AgentPolicy bounds collection task execution. Values are server-owned so an
@@ -94,11 +100,13 @@ func (s *Service) agentPolicy() AgentPolicy {
 }
 
 type TaskConstraints struct {
-	MaxItems     int      `json:"max_items"`
-	Language     string   `json:"language,omitempty"`
-	Category     string   `json:"category,omitempty"`
-	Tags         []string `json:"tags,omitempty"`
-	AllowDomains []string `json:"allow_domains,omitempty"`
+	MaxItems        int      `json:"max_items"`
+	DuplicatePolicy string   `json:"duplicate_policy,omitempty"`
+	Language        string   `json:"language,omitempty"`
+	Category        string   `json:"category,omitempty"`
+	ContentType     string   `json:"content_type,omitempty"`
+	Tags            []string `json:"tags,omitempty"`
+	AllowDomains    []string `json:"allow_domains,omitempty"`
 }
 
 type TaskBudget struct {
@@ -111,6 +119,7 @@ type TaskStats struct {
 	ItemsCreated   int   `json:"items_created"`
 	ItemsUpdated   int   `json:"items_updated"`
 	ItemsUnchanged int   `json:"items_unchanged"`
+	ItemsSkipped   int   `json:"items_skipped"`
 	Rounds         int   `json:"rounds"`
 	ToolCalls      int   `json:"tool_calls"`
 	DurationMS     int64 `json:"duration_ms"`
@@ -200,7 +209,7 @@ func normalizeTaskInput(in CollectionTaskInput, policy AgentPolicy) (CollectionT
 	in.Goal = strings.TrimSpace(in.Goal)
 	in.Title = strings.TrimSpace(in.Title)
 	in.AgentID = strings.TrimSpace(in.AgentID)
-	if in.SourceID == "" || in.Goal == "" || !validText(in.Goal, maximumTaskGoalBytes) {
+	if in.Goal == "" || !validText(in.Goal, maximumTaskGoalBytes) {
 		return in, ErrInvalid
 	}
 	if in.Title == "" {
@@ -209,23 +218,66 @@ func normalizeTaskInput(in CollectionTaskInput, policy AgentPolicy) (CollectionT
 	if !validText(in.Title, maximumTaskTitleBytes) {
 		return in, ErrInvalid
 	}
-	if in.Constraints.MaxItems == 0 {
-		in.Constraints.MaxItems = policy.DefaultMaxItems
+	constraints, err := normalizeTaskConstraints(in.Constraints, policy)
+	if err != nil {
+		return in, err
 	}
-	if in.Constraints.MaxItems < 1 || in.Constraints.MaxItems > policy.MaxItems {
+	in.Constraints = constraints
+	if in.Budget.TimeoutSeconds == 0 && (constraints.ContentType == "video" || constraints.ContentType == "audio") {
+		in.Budget.TimeoutSeconds = min(1800, policy.MaxTimeoutSeconds)
+	}
+	budget, err := normalizeTaskBudget(in.Budget, policy)
+	if err != nil {
+		return in, err
+	}
+	in.Budget = budget
+	if in.Priority < -10 || in.Priority > 10 {
 		return in, ErrInvalid
 	}
-	in.Constraints.Language = strings.TrimSpace(in.Constraints.Language)
-	in.Constraints.Category = strings.TrimSpace(in.Constraints.Category)
-	if !validText(in.Constraints.Language, 35) || !validText(in.Constraints.Category, 200) {
+	if in.MaxAttempts == 0 {
+		in.MaxAttempts = 3
+	}
+	if in.MaxAttempts < 1 || in.MaxAttempts > 10 {
 		return in, ErrInvalid
 	}
-	if len(in.Constraints.Tags) > 20 {
+	if in.AgentID != "" && uuid.Validate(in.AgentID) != nil {
 		return in, ErrInvalid
 	}
-	tags := make([]string, 0, len(in.Constraints.Tags))
+	return in, nil
+}
+
+// normalizeTaskConstraints is shared by one-off tasks and saved templates so a
+// template can never store limits that task creation would reject.
+func normalizeTaskConstraints(in TaskConstraints, policy AgentPolicy) (TaskConstraints, error) {
+	if in.DuplicatePolicy == "" {
+		in.DuplicatePolicy = "skip"
+	}
+	if in.DuplicatePolicy != "skip" && in.DuplicatePolicy != "update" {
+		return in, ErrInvalid
+	}
+	if in.MaxItems == 0 {
+		in.MaxItems = policy.DefaultMaxItems
+	}
+	if in.MaxItems < 1 || in.MaxItems > policy.MaxItems {
+		return in, ErrInvalid
+	}
+	in.Language = strings.TrimSpace(in.Language)
+	in.Category = strings.TrimSpace(in.Category)
+	in.ContentType = strings.ToLower(strings.TrimSpace(in.ContentType))
+	switch in.ContentType {
+	case "", "article", "video", "audio", "carousel":
+	default:
+		return in, ErrInvalid
+	}
+	if !validText(in.Language, 35) || !validText(in.Category, 200) {
+		return in, ErrInvalid
+	}
+	if len(in.Tags) > 20 {
+		return in, ErrInvalid
+	}
+	tags := make([]string, 0, len(in.Tags))
 	seen := map[string]bool{}
-	for _, tag := range in.Constraints.Tags {
+	for _, tag := range in.Tags {
 		tag = strings.TrimSpace(tag)
 		if tag == "" || !validText(tag, 80) {
 			return in, ErrInvalid
@@ -236,13 +288,13 @@ func normalizeTaskInput(in CollectionTaskInput, policy AgentPolicy) (CollectionT
 		}
 	}
 	sort.Strings(tags)
-	in.Constraints.Tags = tags
-	if len(in.Constraints.AllowDomains) > 20 {
+	in.Tags = tags
+	if len(in.AllowDomains) > 20 {
 		return in, ErrInvalid
 	}
-	domains := make([]string, 0, len(in.Constraints.AllowDomains))
+	domains := make([]string, 0, len(in.AllowDomains))
 	seenDomain := map[string]bool{}
-	for _, domain := range in.Constraints.AllowDomains {
+	for _, domain := range in.AllowDomains {
 		domain = strings.ToLower(strings.TrimSpace(domain))
 		domain = strings.TrimPrefix(domain, ".")
 		if domain == "" || !validHostPattern(domain) {
@@ -254,30 +306,22 @@ func normalizeTaskInput(in CollectionTaskInput, policy AgentPolicy) (CollectionT
 		}
 	}
 	sort.Strings(domains)
-	in.Constraints.AllowDomains = domains
-	if in.Budget.MaxRounds == 0 {
-		in.Budget.MaxRounds = 8
+	in.AllowDomains = domains
+	return in, nil
+}
+
+func normalizeTaskBudget(in TaskBudget, policy AgentPolicy) (TaskBudget, error) {
+	if in.MaxRounds == 0 {
+		in.MaxRounds = defaultTaskRounds
 	}
-	if in.Budget.MaxToolCalls == 0 {
-		in.Budget.MaxToolCalls = 24
+	if in.MaxToolCalls == 0 {
+		in.MaxToolCalls = defaultTaskToolCalls
 	}
-	if in.Budget.TimeoutSeconds == 0 {
-		in.Budget.TimeoutSeconds = 300
+	if in.TimeoutSeconds == 0 {
+		in.TimeoutSeconds = 300
 	}
-	if in.Budget.MaxRounds < 1 || in.Budget.MaxRounds > 32 || in.Budget.MaxToolCalls < 1 || in.Budget.MaxToolCalls > 128 ||
-		in.Budget.TimeoutSeconds < 30 || in.Budget.TimeoutSeconds > policy.MaxTimeoutSeconds {
-		return in, ErrInvalid
-	}
-	if in.Priority < -10 || in.Priority > 10 {
-		return in, ErrInvalid
-	}
-	if in.MaxAttempts == 0 {
-		in.MaxAttempts = 3
-	}
-	if in.MaxAttempts < 1 || in.MaxAttempts > 10 {
-		return in, ErrInvalid
-	}
-	if in.AgentID != "" && uuid.Validate(in.AgentID) != nil {
+	if in.MaxRounds < 1 || in.MaxRounds > maximumTaskRounds || in.MaxToolCalls < 1 || in.MaxToolCalls > maximumTaskToolCalls ||
+		in.TimeoutSeconds < 30 || in.TimeoutSeconds > policy.MaxTimeoutSeconds {
 		return in, ErrInvalid
 	}
 	return in, nil
@@ -320,6 +364,13 @@ func (s *Service) CreateCollectionTask(ctx context.Context, in CollectionTaskInp
 	in, err = normalizeTaskInput(in, policy)
 	if err != nil {
 		return
+	}
+	if in.SourceID == "" {
+		source, e := s.EnsureAgentCollectionSource(ctx)
+		if e != nil {
+			return out, e
+		}
+		in.SourceID = source.ID
 	}
 	err = s.Store.Update(ctx, func(tx Tx) error {
 		source, e := tx.Source(in.SourceID)
@@ -657,23 +708,57 @@ func (s *Service) IngestAgentTaskItems(ctx context.Context, agentID, taskID stri
 		}
 		used := task.Stats.ItemsCreated + task.Stats.ItemsUpdated + task.Stats.ItemsUnchanged
 		remaining := task.Constraints.MaxItems - used
-		if remaining <= 0 || len(items) > remaining {
+		if remaining <= 0 {
 			return ErrQuota
 		}
 		if e := validateTaskDomains(task.Constraints.AllowDomains, items); e != nil {
 			return e
 		}
-		result, e := s.ingest(tx, source, items, "agent", task.ID)
+		skipped := 0
+		if task.Constraints.DuplicatePolicy != "update" {
+			items, skipped, e = filterCollectionDuplicates(tx, task.SourceID, items)
+			if e != nil {
+				return e
+			}
+		}
+		if len(items) > remaining {
+			return ErrQuota
+		}
+		// Resolve uploaded assets from the registry before checking the task's
+		// content type. The client may submit only asset IDs; MIME and size are
+		// server-owned and must come from the registered upload, not the agent.
+		for index := range items {
+			for n, asset := range items[index].Assets {
+				if stored, e := recordAs[Asset](tx, "asset", asset.ID); e == nil {
+					items[index].Assets[n] = stored
+				}
+			}
+		}
+		if e := validateTaskContentType(task.Constraints.ContentType, items); e != nil {
+			return e
+		}
+		var result IngestResult
+		var receipt IntakeReceipt
+		if len(items) == 0 {
+			receipt, e = s.recordIntake(tx, source, result, "agent", task.ID)
+		} else {
+			result, e = s.ingest(tx, source, items, "agent", task.ID)
+			if e == nil {
+				receipt, e = recordAs[IntakeReceipt](tx, "intake", result.ReceiptID)
+			}
+		}
 		if e != nil {
 			return e
 		}
-		receipt, e := recordAs[IntakeReceipt](tx, "intake", result.ReceiptID)
+		receipt.Skipped = skipped
+		e = recordSave(tx, "intake", receipt.ID, receipt)
 		if e != nil {
 			return e
 		}
 		task.Stats.ItemsCreated += result.Created
 		task.Stats.ItemsUpdated += result.Updated
 		task.Stats.ItemsUnchanged += result.Unchanged
+		task.Stats.ItemsSkipped += skipped
 		task.UpdatedAt = now
 		lease := now.Add(time.Duration(policy.LeaseSeconds) * time.Second)
 		task.LeaseExpiresAt = &lease

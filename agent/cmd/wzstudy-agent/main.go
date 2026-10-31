@@ -45,7 +45,7 @@ func usage() {
 	fmt.Fprintf(os.Stderr, `wzstudy-agent %s
 
 用法：
-  wzstudy-agent run       常驻运行，循环领取服务端指派的采集任务
+  wzstudy-agent run       常驻运行，循环领取服务端指派的收集任务
   wzstudy-agent once      领取并执行一个任务后退出（适合容器 job / cron）
   wzstudy-agent doctor    校验配置、服务端连通性与采集端权限，不写入数据
   wzstudy-agent version   打印版本
@@ -98,6 +98,12 @@ func load() (config.Config, *slog.Logger, *serverapi.Client, *loop.Runner, error
 			registry.Register(fetcher.Definition(), fetcher.Handle)
 			ingestor := collect.NewIngestor(client, task, attempt, stats)
 			registry.Register(ingestor.Definition(), ingestor.Handle)
+			checker := collect.NewDuplicateChecker(client, task)
+			registry.Register(checker.Definition(), checker.Handle)
+			downloader := collect.NewDownloader(cfg.YtDlpPath, cfg.MediaMaxBytes, logger)
+			registry.Register(downloader.Definition(), downloader.Handle)
+			uploader := collect.NewUploader(client)
+			registry.Register(uploader.Definition(), uploader.Handle)
 			loader := collect.NewSkillLoader(catalog)
 			registry.Register(loader.Definition(), loader.Handle)
 			registry.Register(collect.FinishDefinition(), collect.FinishHandler(control))

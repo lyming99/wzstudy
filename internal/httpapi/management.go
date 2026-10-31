@@ -96,6 +96,36 @@ func (s *Server) deleteItem(w http.ResponseWriter, r *http.Request) {
 	}
 	success(w, 200, map[string]bool{"deleted": true})
 }
+func (s *Server) batchDeleteItems(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Items []struct {
+			ID       string `json:"id"`
+			Revision int64  `json:"revision"`
+		} `json:"items"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if len(in.Items) == 0 || len(in.Items) > 100 {
+		s.fail(w, study.ErrInvalid)
+		return
+	}
+	deleted := 0
+	failed := make([]map[string]string, 0)
+	for _, item := range in.Items {
+		if item.ID == "" {
+			failed = append(failed, map[string]string{"id": item.ID, "error": "missing id"})
+			continue
+		}
+		if err := s.service.DeleteItem(r.Context(), item.ID, item.Revision); err != nil {
+			failed = append(failed, map[string]string{"id": item.ID, "error": err.Error()})
+			continue
+		}
+		deleted++
+	}
+	success(w, 200, map[string]any{"deleted": deleted, "failed": failed})
+}
+
 func strictMetadata(raw string, v any) error {
 	if len(raw) > 1<<20 || !utf8.ValidString(raw) || !strings.HasPrefix(strings.TrimSpace(raw), "{") {
 		return study.ErrInvalid

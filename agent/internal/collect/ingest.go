@@ -46,6 +46,15 @@ func (i *Ingestor) Definition() tool.Definition {
 			"tags":         map[string]any{"type": "array", "maxItems": 20, "items": map[string]any{"type": "string", "maxLength": 80}},
 			"published_at": map[string]any{"type": "string", "format": "date-time", "description": "原始发布时间，未知就省略"},
 			"kind":         map[string]any{"type": "string", "enum": []string{"article", "audio", "video", "carousel"}},
+			"assets": map[string]any{
+				"type": "array", "maxItems": 20,
+				"items": tool.Object(map[string]any{
+					"id":   tool.String("upload_asset 返回的资产 ID"),
+					"name": tool.String("文件名"),
+					"mime": tool.String("MIME 类型，例如 video/mp4"),
+					"size": tool.Integer("字节数", 1, 1<<30),
+				}, "id"),
+			},
 		},
 		"required":             []string{"external_id", "title"},
 		"additionalProperties": false,
@@ -76,7 +85,7 @@ func (i *Ingestor) Handle(ctx context.Context, call tool.Call) (tool.Result, err
 	if remaining <= 0 {
 		return tool.Result{Content: "任务条目配额已用完，请调用 finish_task 结束。", Summary: "quota reached", IsError: true}, nil
 	}
-	if len(args.Items) > remaining {
+	if len(args.Items) > remaining && i.task.Constraints.DuplicatePolicy == "update" {
 		return tool.Result{}, fmt.Errorf("本次推送 %d 条，但任务只剩 %d 条配额", len(args.Items), remaining)
 	}
 	receipt, err := i.client.PushItems(ctx, i.task.ID, i.attempt, args.Items)
@@ -87,22 +96,24 @@ func (i *Ingestor) Handle(ctx context.Context, call tool.Call) (tool.Result, err
 	i.stats.ItemsCreated += receipt.Created
 	i.stats.ItemsUpdated += receipt.Updated
 	i.stats.ItemsUnchanged += receipt.Unchanged
+	i.stats.ItemsSkipped += receipt.Skipped
 	i.mu.Unlock()
 	encoded, err := json.Marshal(map[string]any{
 		"receipt_id": receipt.ID,
 		"created":    receipt.Created,
 		"updated":    receipt.Updated,
 		"unchanged":  receipt.Unchanged,
+		"skipped":    receipt.Skipped,
 		"published":  receipt.Published,
 		"items":      receipt.Items,
-		"quota_left": remaining - len(args.Items),
+		"quota_left": remaining - receipt.Created - receipt.Updated - receipt.Unchanged,
 	})
 	if err != nil {
 		return tool.Result{}, err
 	}
 	return tool.Result{
 		Content: string(encoded),
-		Summary: fmt.Sprintf("入库 %d 条（新增 %d，更新 %d）", len(args.Items), receipt.Created, receipt.Updated),
+		Summary: fmt.Sprintf("入库新增 %d，更新 %d，跳过重复 %d", receipt.Created, receipt.Updated, receipt.Skipped),
 		Metadata: map[string]any{
 			"created": receipt.Created, "updated": receipt.Updated, "unchanged": receipt.Unchanged,
 		},

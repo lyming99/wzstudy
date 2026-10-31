@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 	"wzstudy/internal/accountui"
 	"wzstudy/internal/adminui"
+	"wzstudy/internal/agentruntime"
 	"wzstudy/internal/learnui"
 
 	"github.com/go-chi/chi/v5"
@@ -36,16 +37,34 @@ type Server struct {
 	service       *study.Service
 	worker        *feed.Worker
 	logger        *slog.Logger
+	runtime       *agentruntime.Manager
 }
 
-func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger *slog.Logger) http.Handler {
+// Option customizes optional server capabilities without changing every caller.
+type Option func(*Server)
+
+func WithAgentRuntime(manager *agentruntime.Manager) Option {
+	return func(s *Server) { s.runtime = manager }
+}
+
+func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger *slog.Logger, options ...Option) http.Handler {
 	if cfg.DataDir == "" {
 		cfg.DataDir = "data"
 	}
 	if cfg.MaxUploadBytes <= 0 {
 		cfg.MaxUploadBytes = 200 << 20
 	}
+	vaultKey := cfg.ClientKeyEncryptionKey
+	if vaultKey == "" {
+		vaultKey = cfg.AdminKey
+	}
+	service.ConfigureClientKeyVault(vaultKey)
 	s := &Server{loginBuckets: map[string]loginBucket{}, passwordSlots: make(chan struct{}, 2), sessions: map[string]time.Time{}, cfg: cfg, service: service, worker: worker, logger: logger}
+	for _, option := range options {
+		if option != nil {
+			option(s)
+		}
+	}
 	r := chi.NewRouter()
 	r.Use(s.middleware)
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) { failure(w, 404, "not_found", "接口不存在") })
@@ -165,10 +184,12 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 		r.Route("/agent", func(r chi.Router) {
 			r.Use(s.requireAgent)
 			r.Get("/status", s.agentStatus)
+			r.Post("/uploads", s.agentUpload)
 			r.Post("/tasks/claim", s.agentClaim)
 			r.Post("/tasks/{id}/heartbeat", s.agentHeartbeat)
 			r.Post("/tasks/{id}/events", s.agentEvents)
 			r.Post("/tasks/{id}/items", s.agentPushItems)
+			r.Post("/tasks/{id}/duplicates", s.agentCheckDuplicates)
 			r.Post("/tasks/{id}/complete", s.agentComplete)
 			r.Post("/tasks/{id}/release", s.agentRelease)
 		})
@@ -185,17 +206,66 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 				r.Get("/agents/{id}", s.adminAgent)
 				r.Put("/agents/{id}", s.adminUpdateAgent)
 				r.Post("/agents/{id}/key", s.adminRotateAgentKey)
+				r.Get("/agents/{id}/key", s.agentSecret)
+				r.Post("/agents/{id}/package", s.agentPackage)
+				r.Post("/agents/{id}/delete", s.adminDeleteAgent)
 				r.Get("/tasks", s.adminCollectionTasks)
 				r.Post("/tasks", s.adminCreateCollectionTask)
+				r.Get("/task-templates", s.adminAgentTaskTemplates)
+				r.Post("/task-templates", s.adminCreateAgentTaskTemplate)
+				r.Post("/task-templates/{id}/delete", s.adminDeleteAgentTaskTemplate)
 				r.Get("/tasks/{id}", s.adminCollectionTask)
 				r.Get("/tasks/{id}/events", s.adminCollectionTaskEvents)
 				r.Post("/tasks/{id}/cancel", s.adminCancelCollectionTask)
 				r.Post("/tasks/{id}/retry", s.adminRetryCollectionTask)
+				r.Post("/tasks/{id}/delete", s.adminDeleteCollectionTask)
+				r.Get("/releases", s.adminAgentReleases)
+				r.Post("/releases", s.adminUploadAgentRelease)
+				r.Get("/releases/{id}/download", s.adminDownloadAgentRelease)
+				r.Post("/releases/{id}/delete", s.adminDeleteAgentRelease)
+				r.Get("/binary", s.adminAgentBinary)
+				r.Post("/deployments", s.adminCreateAgentDeployment)
+				r.Post("/models", s.adminAgentModels)
+				r.Get("/runtime", s.adminAgentRuntime)
+				r.Put("/runtime", s.adminUpdateAgentRuntime)
+				r.Post("/runtime/start", s.adminStartAgentRuntime)
+				r.Post("/runtime/stop", s.adminStopAgentRuntime)
+				r.Post("/runtime/restart", s.adminRestartAgentRuntime)
+				r.Post("/runtime/test-connection", s.adminTestAgentModel)
 			})
 		})
 		r.Route("/workspace", func(r chi.Router) {
 			r.Use(s.requireUser)
 			r.Get("/workspace", s.workspace)
+			// Agent collection is a per-user workspace capability. These handlers
+			// are the same workspace-scoped implementations used by the
+			// administrator console, but here the owner is always the signed-in
+			// user session. Built-in runtime, model credentials, one-click
+			// deployment and release management stay under /admin/agent below.
+			r.Route("/agent", func(r chi.Router) {
+				r.Get("/status", s.adminAgentStatus)
+				r.Get("/agents", s.adminAgents)
+				r.Post("/agents", s.adminCreateAgent)
+				r.Get("/agents/{id}", s.adminAgent)
+				r.Put("/agents/{id}", s.adminUpdateAgent)
+				r.Post("/agents/{id}/key", s.adminRotateAgentKey)
+				r.Get("/agents/{id}/key", s.agentSecret)
+				r.Post("/agents/{id}/package", s.agentPackage)
+				r.Post("/agents/{id}/delete", s.adminDeleteAgent)
+				r.Get("/tasks", s.adminCollectionTasks)
+				r.Post("/tasks", s.adminCreateCollectionTask)
+				r.Get("/task-templates", s.adminAgentTaskTemplates)
+				r.Post("/task-templates", s.adminCreateAgentTaskTemplate)
+				r.Post("/task-templates/{id}/delete", s.adminDeleteAgentTaskTemplate)
+				r.Get("/tasks/{id}", s.adminCollectionTask)
+				r.Get("/tasks/{id}/events", s.adminCollectionTaskEvents)
+				r.Post("/tasks/{id}/cancel", s.adminCancelCollectionTask)
+				r.Post("/tasks/{id}/retry", s.adminRetryCollectionTask)
+				r.Post("/tasks/{id}/delete", s.adminDeleteCollectionTask)
+				// The client executable contains no server credentials. Each user
+				// still has to configure their own agent.env and model provider.
+				r.Get("/binary", s.adminAgentBinary)
+			})
 			r.Get("/roadmaps", s.learningRoadmaps)
 			r.Post("/roadmaps", s.saveLearningRoadmap)
 			r.Get("/roadmaps/{id}", s.learningRoadmap)
@@ -218,6 +288,8 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 			r.Get("/clients/{id}/learning/items/{item_id}/records", s.adminClientLearningRecords)
 			r.Get("/clients/{id}/items", s.adminClientItems)
 			r.Put("/clients/{id}", s.updateClient)
+			r.Get("/clients/{id}/key", s.clientSecret)
+			r.Put("/clients/{id}/key", s.rememberClientKey)
 			r.Post("/clients/{id}/key", s.rotateClientKey)
 			r.Get("/identity-migration", s.previewIdentityMigration)
 			r.Post("/identity-migration", s.migrateIdentities)
@@ -228,6 +300,7 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 			r.Put("/items/{id}", s.saveItem)
 			r.Post("/items/{id}/submit", s.submitItem)
 			r.Post("/items/{id}/delete", s.deleteItem)
+			r.Post("/items/batch-delete", s.batchDeleteItems)
 			r.Get("/sources", s.sources)
 			r.Post("/sources", s.createSource)
 			r.Get("/sources/{id}", s.source)
@@ -272,15 +345,17 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 	case errors.Is(err, study.ErrBusy):
 		failure(w, 409, "source_busy", "该数据源正在采集或尚未到采集时间")
 	case errors.Is(err, study.ErrTaskClaimed):
-		failure(w, 409, "task_claimed", "该采集任务已被其他采集端领取")
+		failure(w, 409, "task_claimed", "该收集任务已被其他采集端领取")
 	case errors.Is(err, study.ErrLeaseExpired):
-		failure(w, 409, "lease_expired", "采集任务租约已过期，任务已回到待领取状态")
+		failure(w, 409, "lease_expired", "收集任务租约已过期，任务已回到待领取状态")
 	case errors.Is(err, study.ErrTaskCancelled):
-		failure(w, 409, "task_cancelled", "采集任务已被管理员取消")
+		failure(w, 409, "task_cancelled", "收集任务已被管理员取消")
 	case errors.Is(err, study.ErrQuota):
 		failure(w, 413, "item_quota_exceeded", "超过任务条目配额或事件上报上限")
 	case errors.Is(err, study.ErrDomain):
 		failure(w, 403, "domain_not_allowed", "条目链接不在任务允许的域名范围内")
+	case errors.Is(err, study.ErrAgentInUse):
+		failure(w, 409, "agent_in_use", "该采集端还有未结束的任务，请先取消或删除这些任务后再删除身份")
 	case errors.Is(err, context.DeadlineExceeded):
 		failure(w, 504, "timeout", "处理超时，请查询当前状态后再决定是否重试")
 	default:

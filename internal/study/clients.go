@@ -36,7 +36,8 @@ type ClientInput struct {
 type clientRecord struct {
 	Client Client `json:"client"`
 	Secret struct {
-		KeyHash string `json:"key_hash"`
+		KeyHash       string `json:"key_hash"`
+		KeyCiphertext string `json:"key_ciphertext,omitempty"`
 	} `json:"internal"`
 }
 
@@ -87,7 +88,7 @@ func newClientKey() (string, error) {
 	return strings.Replace(key, "wzsk_", "wzck_", 1), err
 }
 
-func saveClient(tx Tx, v Client, hash string) error {
+func saveClient(tx Tx, v Client, hash, ciphertext string) error {
 	records, err := recordsAs[clientRecord](tx, "client")
 	if err != nil {
 		return err
@@ -99,6 +100,7 @@ func saveClient(tx Tx, v Client, hash string) error {
 	}
 	r := clientRecord{Client: cloneClient(v)}
 	r.Secret.KeyHash = hash
+	r.Secret.KeyCiphertext = ciphertext
 	return recordSave(tx, "client", v.ID, r)
 }
 
@@ -143,7 +145,12 @@ func (s *Service) CreateClient(ctx context.Context, in ClientInput) (out Client,
 	enabled := in.Enabled == nil || *in.Enabled
 	now := s.Now()
 	out = Client{OwnerID: WorkspaceUserID(ctx), ID: uuid.NewString(), Slug: in.Slug, Name: in.Name, Description: in.Description, Enabled: enabled, Permissions: slices.Clone(permissions), Revision: 1, CreatedAt: now, UpdatedAt: now}
-	err = s.Store.Update(ctx, func(tx Tx) error { return saveClient(tx, out, HashKey(key)) })
+	ciphertext, sealErr := s.sealClientKey(out, key)
+	if sealErr != nil {
+		key, err = "", sealErr
+		return
+	}
+	err = s.Store.Update(ctx, func(tx Tx) error { return saveClient(tx, out, HashKey(key), ciphertext) })
 	if err != nil {
 		key = ""
 	}
@@ -177,7 +184,7 @@ func (s *Service) UpdateClient(ctx context.Context, id string, revision int64, i
 		v.Revision++
 		v.UpdatedAt = s.Now()
 		out = cloneClient(v)
-		return saveClient(tx, v, r.Secret.KeyHash)
+		return saveClient(tx, v, r.Secret.KeyHash, r.Secret.KeyCiphertext)
 	})
 	return
 }
@@ -198,7 +205,11 @@ func (s *Service) RotateClientKey(ctx context.Context, id string, revision int64
 		r.Client.Revision++
 		r.Client.UpdatedAt = s.Now()
 		out = cloneClient(r.Client)
-		return saveClient(tx, r.Client, HashKey(key))
+		ciphertext, e := s.sealClientKey(r.Client, key)
+		if e != nil {
+			return e
+		}
+		return saveClient(tx, r.Client, HashKey(key), ciphertext)
 	})
 	if err != nil {
 		key = ""

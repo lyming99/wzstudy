@@ -6,9 +6,10 @@
 
 | 身份 | 可以操作 | 不可以操作 |
 |---|---|---|
-| 管理员用户会话 | 本人工作区的全部普通功能；额外创建、修改、停用/启用用户及重置用户密码 | 直接读取、修改其他用户的私人资料与学习记录 |
-| 管理员 `ADMIN_API_KEY` | 用户账号管理自动化 | 代替用户会话读写个人资料或学习数据 |
-| 普通用户会话 | 自己的资料录入、发布/下架、附件、来源、查询客户端、合集、路线图、学习与个人设置 | 操作其他用户数据、管理用户或授予管理员角色 |
+| 管理员用户会话 | 本人工作区的全部普通功能；额外使用服务端托管的内置 Agent、模型密钥、一键部署与程序发布；创建、修改、停用/启用用户及重置用户密码 | 直接读取、修改其他用户的私人资料与学习记录 |
+| 管理员 `ADMIN_API_KEY` | 用户账号管理自动化；管理员个人工作区的内置 Agent 管理 | 代替用户会话读写个人资料或学习数据 |
+| 普通用户会话 | 自己的资料录入、发布/下架、附件、来源、查询客户端、合集、路线图、学习与个人设置；创建自己的 Agent 身份、派发/取消/重试任务 | 操作其他用户数据、管理用户、使用服务端托管的内置 Agent 或程序发布 |
+| 用户创建的 Agent Key | 领取所属用户工作区的任务、在任务绑定的来源内入库 | 读取资料库、访问其他工作区、代替用户会话、使用内置运行时 |
 | 用户创建的录入来源 Key | 该来源的状态、JSON 入库和授权后的文件上传 | 读取资料库、访问其他来源、管理账号、代替学习用户 |
 | 用户创建的查询客户端 Key | 所属用户工作区内的已发布资料、媒体和授权后的增量同步 | 录入/上传、读取草稿、读写私人学习记录、跨用户查询 |
 | 旧全局 `READ_API_KEY` | 无隐式工作区访问权 | 不能读取全局资料或冒充用户 |
@@ -18,6 +19,7 @@
 ## 共用工作台与兼容入口
 
 - `/workspace/` 是共用工作台。所有账号通过同一邮箱密码表单登录，无需选择身份；每个账号都能使用自己的资料工作区。服务端核验管理员邮箱和密码后额外授予用户管理权限，管理员首页同时显示个人资料概览与用户管理入口。普通用户看不到管理视图；服务端始终独立校验管理权限，不依赖前端隐藏菜单。原有 `/workspace/#library`、`/workspace/#roadmaps` 和 `/workspace/#users` 等有权限的深层链接仍可直接打开。
+- 「Agent 服务 → Agent 接入 / 收集任务」对所有账号开放，但权限不同：普通账户只能创建并连接自己运行的采集端，使用 `/api/v1/workspace/agent/*`；服务端托管的内置采集端、模型密钥、一键部署和程序发布只对管理员开放，仍位于 `/api/v1/admin/agent/*`。两类接口都绑定当前会话的工作区，Agent 只能领取本工作区任务并写入任务绑定的来源。
 - `/admin/`：保留为原有管理员账号管理兼容入口。
 - `/learn/`：所有账号的个人学习页面。和资料工作台共享用户登录，可查看自己的已发布资料，保存喜欢、收藏、笔记、草稿、进度和复习状态。
 
@@ -53,9 +55,27 @@ GET  /workspace/sources
 POST /workspace/sources
 GET  /workspace/clients
 POST /workspace/clients
+GET  /workspace/clients/{id}/key      # 查看本人已加密保存的查询 Key
+PUT  /workspace/clients/{id}/key      # 验证并补存已有 Key，不轮换
+POST /workspace/clients/{id}/key      # 显式轮换，旧 Key 失效
+
+GET  /workspace/agent/status          # 模块开关、租约与本人任务计数
+GET  /workspace/agent/agents          # 本人采集端身份
+POST /workspace/agent/agents          # 创建身份，密钥只返回一次
+GET  /workspace/agent/agents/{id}/key # 查看可再次使用的 Agent 密钥
+POST /workspace/agent/agents/{id}/key # 轮换密钥
+POST /workspace/agent/agents/{id}/package # 生成含程序和配置的 ZIP 包
+GET  /workspace/agent/tasks           # 本人任务
+POST /workspace/agent/tasks           # 派发任务
+GET  /workspace/agent/tasks/{id}/events
+POST /workspace/agent/tasks/{id}/cancel
+POST /workspace/agent/tasks/{id}/retry
+GET  /workspace/agent/binary          # 下载程序，自行填写 agent.env
 ```
 
-原 `/api/v1/admin` 下的资料、来源、客户端、设置、合集和路线图接口已迁移到 `/api/v1/workspace`，接受普通用户或管理员的本人用户会话。**没有保留跨用户读写资料的兼容后门。** 原管理员目录下只保留用户管理。
+普通账户调用 `/workspace/agent/*`；服务端托管 Agent、模型密钥、一键部署与程序发布仍只接受管理员，对应接口位于 `/admin/agent/*`。
+
+原 `/api/v1/admin` 下的资料、来源、客户端、设置、合集和路线图接口已迁移到 `/api/v1/workspace`，接受普通用户或管理员的本人用户会话。**没有保留跨用户读写资料的兼容后门。** 原管理员目录下只保留用户管理，以及服务端托管 Agent、模型密钥、一键部署和程序发布等管理员内置能力。
 
 创建用户示例（管理员认证）：
 

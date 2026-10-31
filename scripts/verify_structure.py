@@ -164,13 +164,14 @@ try {
         initial = run('start-local.ps1', '-Check')
         assert Path(initial['project_root']) == project
         assert Path(initial['data_directory']) == project / '.local/postgres-local/data'
-        assert initial['address'] == '127.0.0.1:8091' and initial['store'] == 'postgres'
+        assert initial['address'] == '0.0.0.0:8091' and initial['store'] == 'postgres'
         entries = ['start-local.ps1', 'start-postgres-local.ps1', 'scripts/start-local.ps1',
                    'scripts/start-dev.ps1', 'scripts/restart-local.ps1', 'internal/start-local.ps1']
         for entry in entries:
             config = run(entry, '-Check')
             assert config['store'] == 'postgres' and config['data_directory'] == initial['data_directory'], entry
             assert run(entry, '-Check', '-Address', '0.0.0.0:8092')['address'] == '0.0.0.0:8092', entry
+            assert run(entry, '-Check', '-Address', '127.0.0.1:8091')['address'] == '127.0.0.1:8091', entry
             lan = run(entry, '-Check', '-Lan')
             assert lan['address'] == '0.0.0.0:8091' and lan['database_host'] == '127.0.0.1', entry
             assert 'either -Lan or -Address' in run(

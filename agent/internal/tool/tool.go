@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"unicode/utf8"
 )
 
 type Definition struct {
@@ -69,6 +70,9 @@ func (r *Registry) Execute(ctx context.Context, call Call) (result Result) {
 		message := err.Error()
 		if len(message) > 500 {
 			message = message[:500]
+			for len(message) > 0 && !utf8.ValidString(message) {
+				message = message[:len(message)-1]
+			}
 		}
 		return Result{Content: "工具执行失败：" + message, Summary: "tool error", IsError: true}
 	}

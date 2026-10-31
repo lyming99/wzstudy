@@ -29,7 +29,9 @@ $ComposeFile = Join-Path $Root 'scripts\docker-compose-local-postgres.yml'
 $ExplicitDatabasePort = $PSBoundParameters.ContainsKey('DatabasePort')
 $ExplicitApiPort = $PSBoundParameters.ContainsKey('ApiPort') -or $PSBoundParameters.ContainsKey('Address')
 $ExplicitAdminEmail = $PSBoundParameters.ContainsKey('AdministratorEmail')
-$ApiHost = if ($Lan) { '0.0.0.0' } else { '127.0.0.1' }
+# Listen on all IPv4 adapters by default so trusted LAN devices can reach the
+# workspace. Use -Address 127.0.0.1:<port> for loopback-only access.
+$ApiHost = '0.0.0.0'
 if ($Lan -and $PSBoundParameters.ContainsKey('Address')) {
     throw 'Use either -Lan or -Address, not both.'
 }
@@ -93,7 +95,12 @@ $Go = Get-Command go -ErrorAction SilentlyContinue
 $SourceAvailable = Test-Path -LiteralPath (Join-Path $Root 'go.mod') -PathType Leaf
 $BuildFromSource = $SourceAvailable -and $null -ne $Go -and -not $SkipBuild
 $PackagedMigration = Join-Path $Root 'dist\wzstudy-migrate.exe'
-$PackagedApi = Join-Path $Root 'dist\wzstudy-v0.3.0-windows-amd64.exe'
+$PackagedApi = Join-Path $Root 'dist\wzstudy.exe'
+if (-not (Test-Path -LiteralPath $PackagedApi -PathType Leaf)) {
+    $legacyApi = Get-ChildItem -LiteralPath (Join-Path $Root 'dist') -Filter 'wzstudy-v*-windows-amd64.exe' -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending | Select-Object -First 1
+    if ($null -ne $legacyApi) { $PackagedApi = $legacyApi.FullName }
+}
 if (-not $BuildFromSource -and (-not (Test-Path -LiteralPath $PackagedMigration -PathType Leaf) -or -not (Test-Path -LiteralPath $PackagedApi -PathType Leaf))) {
     throw 'Go 1.25+ and the source project, or both packaged API and migration executables, are required. PostgreSQL is mandatory; no file-mode service was started.'
 }
@@ -295,7 +302,7 @@ $ResolvedAdmin = $null
 $DatabaseSettings = $null
 $EnvSnapshot = $null
 $AdminNames = @('SYSTEM_ADMIN_EMAIL','SYSTEM_ADMIN_PASSWORD','SYSTEM_ADMIN_DISPLAY_NAME','SYSTEM_ADMIN_USERNAME','BOOTSTRAP_ADMIN_EMAIL','BOOTSTRAP_ADMIN_PASSWORD','BOOTSTRAP_ADMIN_DISPLAY_NAME','BOOTSTRAP_ADMIN_USERNAME')
-$Names = @('APP_ENV','STORE','HTTP_ADDR','DATA_DIR','DATABASE_URL','POSTGRES_PASSWORD','ADMIN_API_KEY','READ_API_KEY','POLL_ENABLED','CORS_ORIGINS','WZSTUDY_LOCAL_INSTANCE_ID','WZSTUDY_LOCAL_VOLUME_STATE','WZSTUDY_LOCAL_PG_PASSWORD','WZSTUDY_LOCAL_PG_PORT','WZSTUDY_LOCAL_PG_VOLUME','WZSTUDY_LOCAL_PG_USER','WZSTUDY_LOCAL_PG_DATABASE') + $AdminNames
+$Names = @('APP_ENV','STORE','HTTP_ADDR','DATA_DIR','DATABASE_URL','POSTGRES_PASSWORD','ADMIN_API_KEY','READ_API_KEY','CLIENT_KEY_ENCRYPTION_KEY','POLL_ENABLED','CORS_ORIGINS','WZSTUDY_LOCAL_INSTANCE_ID','WZSTUDY_LOCAL_VOLUME_STATE','WZSTUDY_LOCAL_PG_PASSWORD','WZSTUDY_LOCAL_PG_PORT','WZSTUDY_LOCAL_PG_VOLUME','WZSTUDY_LOCAL_PG_USER','WZSTUDY_LOCAL_PG_DATABASE') + $AdminNames
 $Previous = @{}
 foreach ($name in $Names) { $Previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
 try {
@@ -322,7 +329,7 @@ try {
     }
     # Child processes do not inherit administrator bootstrap credentials.
     foreach ($name in $AdminNames) { [Environment]::SetEnvironmentVariable($name, $null, 'Process') }
-    foreach ($name in @('DATABASE_URL','POSTGRES_PASSWORD','ADMIN_API_KEY','READ_API_KEY')) { [Environment]::SetEnvironmentVariable($name, $null, 'Process') }
+    foreach ($name in @('DATABASE_URL','POSTGRES_PASSWORD','ADMIN_API_KEY','READ_API_KEY','CLIENT_KEY_ENCRYPTION_KEY')) { [Environment]::SetEnvironmentVariable($name, $null, 'Process') }
     Assert-LocalDockerEndpoint
     if ((Invoke-Docker @('version', '--format', '{{.Server.Version}}')).Code -ne 0) { throw 'Docker engine is not running. Start Docker Desktop and try again.' }
     if ((Invoke-Docker @('compose', 'version', '--short')).Code -ne 0) { throw 'Docker Compose v2 is required.' }
@@ -375,6 +382,7 @@ try {
     $env:DATABASE_URL = $Credentials.database_url
     $env:ADMIN_API_KEY = $Credentials.admin_api_key
     $env:READ_API_KEY = $Credentials.read_api_key
+    [Environment]::SetEnvironmentVariable('CLIENT_KEY_ENCRYPTION_KEY', [string]$EnvSnapshot.Values['CLIENT_KEY_ENCRYPTION_KEY'], 'Process')
     $env:STORE = 'postgres'
     $env:APP_ENV = 'development'
     $env:HTTP_ADDR = "${ApiHost}:$ApiPort"

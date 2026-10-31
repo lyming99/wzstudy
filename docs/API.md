@@ -128,7 +128,8 @@ GET  /client/learning/items/{item_id}/stats
 ```text
 GET/POST /workspace/clients
 GET/PUT  /workspace/clients/{id}
-POST     /workspace/clients/{id}/key
+GET/PUT  /workspace/clients/{id}/key  # 查看或验证补存本人查询 Key，不轮换
+POST     /workspace/clients/{id}/key  # 显式轮换
 GET/POST /workspace/identity-migration
 ```
 
@@ -271,9 +272,33 @@ PublicItem 字段为 `id`、`source_id`、`revision`、全部 Content 字段、`
 
 旧的推送计划、收件箱、SSE 及专题管理路由已移除并返回 404。历史资料、附件和变更游标保留，不清空客户端缓存；旧工作空间的推送/专题记录不再读取或执行；遗留 `inbox` 授权被忽略且不会转换为阅读权限。旧查询或混合 Source 须显式迁入 Client 后才能用原 Key 查询。
 
+## Agent 采集（用户自带）
+
+普通账户使用用户会话访问 `/workspace/agent/*`，管理员使用 `/admin/agent/*`；两者都绑定当前工作区，任务、事件、模板、采集端身份和入库资料不能跨账户读取。
+
+```text
+GET/POST /workspace/agent/agents
+GET/PUT  /workspace/agent/agents/{id}
+GET      /workspace/agent/agents/{id}/key
+POST     /workspace/agent/agents/{id}/key
+POST     /workspace/agent/agents/{id}/package
+POST     /workspace/agent/agents/{id}/delete
+GET/POST /workspace/agent/tasks
+GET      /workspace/agent/tasks/{id}
+GET      /workspace/agent/tasks/{id}/events
+POST     /workspace/agent/tasks/{id}/cancel
+POST     /workspace/agent/tasks/{id}/retry
+POST     /workspace/agent/tasks/{id}/delete
+GET/POST /workspace/agent/task-templates
+POST     /workspace/agent/task-templates/{id}/delete
+GET      /workspace/agent/binary
+```
+
+采集端仍使用 `/agent/*` 和一次性 `wzag_` 密钥。普通账户只能连接自己运行的采集端，并自行填写模型供应商与密钥；服务端托管运行时、模型密钥、一键部署和程序发布仅管理员可用。
+
 ## 8. 错误码
 
-400 invalid_request/invalid_json；401 unauthorized；403 permission_denied/source_disabled/origin_denied；404 not_found；405 method_not_allowed；409 conflict/source_busy；413 payload_too_large；415 unsupported_media_type；500 internal_error；502 feed_fetch_failed；503 not_ready/polling_unavailable；504 timeout。
+400 invalid_request/invalid_json；401 unauthorized；403 permission_denied/source_disabled/origin_denied；404 not_found；405 method_not_allowed；409 conflict/source_busy/agent_in_use；413 payload_too_large；415 unsupported_media_type；500 internal_error；502 feed_fetch_failed；503 not_ready/polling_unavailable；504 timeout。
 
 超时/断线不能证明服务端没有提交。接入依赖 external_id+内容哈希重试；管理更新先刷新 revision，不要盲目重放旧 revision。
 

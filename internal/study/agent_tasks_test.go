@@ -91,11 +91,79 @@ func TestCollectionTaskRequiresIngestSource(t *testing.T) {
 	if task.Status != TaskStatusPending || task.Constraints.MaxItems != service.AgentPolicy.DefaultMaxItems {
 		t.Fatalf("unexpected task defaults: %+v", task)
 	}
-	if task.Budget.TimeoutSeconds != 300 || task.Budget.MaxRounds != 8 || task.MaxAttempts != 3 {
+	if task.Budget.TimeoutSeconds != 300 || task.Budget.MaxRounds != 100 || task.Budget.MaxToolCalls != 100 || task.MaxAttempts != 3 {
 		t.Fatalf("unexpected budget defaults: %+v", task.Budget)
 	}
 	if _, err := service.CreateCollectionTask(ctx, CollectionTaskInput{SourceID: source.ID, Goal: "collect", Constraints: TaskConstraints{MaxItems: 1000}}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("quota above policy must be rejected: %v", err)
+	}
+}
+
+func TestCollectionTaskBudgetBounds(t *testing.T) {
+	service, ctx, _ := agentFixture(t)
+	source := agentSource(t, service, ctx)
+	task, err := service.CreateCollectionTask(ctx, CollectionTaskInput{
+		SourceID: source.ID,
+		Goal:     "collect",
+		Budget:   TaskBudget{MaxRounds: 1000, MaxToolCalls: 1000, TimeoutSeconds: 300},
+	})
+	if err != nil {
+		t.Fatalf("maximum budget must be accepted: %v", err)
+	}
+	if task.Budget.MaxRounds != 1000 || task.Budget.MaxToolCalls != 1000 {
+		t.Fatalf("maximum budget was altered: %+v", task.Budget)
+	}
+	for _, budget := range []TaskBudget{
+		{MaxRounds: 1001, MaxToolCalls: 100, TimeoutSeconds: 300},
+		{MaxRounds: 100, MaxToolCalls: 1001, TimeoutSeconds: 300},
+	} {
+		if _, err := service.CreateCollectionTask(ctx, CollectionTaskInput{SourceID: source.ID, Goal: "collect", Budget: budget}); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("budget above maximum must be rejected: %+v: %v", budget, err)
+		}
+	}
+}
+
+func TestAgentUploadedVideoAssetBindsOnIngest(t *testing.T) {
+	service, ctx, _ := agentFixture(t)
+	source := agentSource(t, service, ctx)
+	agent, _ := agentIdentity(t, service, ctx)
+	if _, err := service.CreateCollectionTask(ctx, CollectionTaskInput{
+		SourceID:    source.ID,
+		Goal:        "collect a video",
+		Constraints: TaskConstraints{ContentType: "video"},
+	}); err != nil {
+		t.Fatalf("create video task: %v", err)
+	}
+	claimed, ok, err := service.ClaimAgentTask(ctx, agent.ID, 1)
+	if err != nil || !ok {
+		t.Fatalf("claim task: ok=%v err=%v", ok, err)
+	}
+	asset := Asset{ID: uuid.NewString(), Name: "video.mp4", MIME: "video/mp4", Size: 1024, CreatedAt: service.Now()}
+	if err := service.RegisterUploadedAsset(ctx, asset); err != nil {
+		t.Fatalf("register uploaded asset: %v", err)
+	}
+	receipt, err := service.IngestAgentTaskItems(ctx, agent.ID, claimed.ID, claimed.Attempts, []Content{{
+		Kind:       "video",
+		ExternalID: "bv-uploaded-video",
+		Title:      "uploaded video",
+		Assets:     []Asset{{ID: asset.ID}},
+	}})
+	if err != nil {
+		t.Fatalf("ingest uploaded video: %v", err)
+	}
+	if receipt.Created != 1 {
+		t.Fatalf("unexpected receipt: %+v", receipt)
+	}
+	var stored Asset
+	if err := service.Store.View(ctx, func(tx Tx) error {
+		var e error
+		stored, e = recordAs[Asset](tx, "asset", asset.ID)
+		return e
+	}); err != nil {
+		t.Fatalf("read registered asset: %v", err)
+	}
+	if stored.SourceID != source.ID {
+		t.Fatalf("asset was not bound to the task source: %+v", stored)
 	}
 }
 
@@ -191,7 +259,7 @@ func TestAgentTaskItemsQuotaDomainsAndIdempotency(t *testing.T) {
 	task, err := service.CreateCollectionTask(ctx, CollectionTaskInput{
 		SourceID:    source.ID,
 		Goal:        "collect",
-		Constraints: TaskConstraints{MaxItems: 2, AllowDomains: []string{"example.com"}},
+		Constraints: TaskConstraints{MaxItems: 2, DuplicatePolicy: "update", AllowDomains: []string{"example.com"}},
 	})
 	if err != nil {
 		t.Fatal(err)

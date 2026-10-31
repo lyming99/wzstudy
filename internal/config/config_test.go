@@ -41,7 +41,7 @@ func TestConfig(t *testing.T) {
 			}
 		})
 	}
-	for _, test := range []struct{ k, v string }{{"APP_ENV", "production"}, {"ADMIN_API_KEY", "short"}, {"READ_API_KEY", base["ADMIN_API_KEY"]}, {"POLL_ENABLED", "maybe"}, {"CORS_ORIGINS", "*"}, {"CORS_ORIGINS", "https://example.com/"}, {"STORE", "sqlite"}} {
+	for _, test := range []struct{ k, v string }{{"APP_ENV", "production"}, {"ADMIN_API_KEY", "short"}, {"READ_API_KEY", base["ADMIN_API_KEY"]}, {"CLIENT_KEY_ENCRYPTION_KEY", "short"}, {"CLIENT_KEY_ENCRYPTION_KEY", " " + strings.Repeat("x", 32)}, {"POLL_ENABLED", "maybe"}, {"CORS_ORIGINS", "*"}, {"CORS_ORIGINS", "https://example.com/"}, {"STORE", "sqlite"}} {
 		m := map[string]string{}
 		for k, v := range base {
 			m[k] = v
@@ -50,6 +50,10 @@ func TestConfig(t *testing.T) {
 		if _, e := load(m); e == nil {
 			t.Fatalf("accepted invalid %s=%s", test.k, test.v)
 		}
+	}
+	base["CLIENT_KEY_ENCRYPTION_KEY"] = strings.Repeat("v", 40)
+	if c, e := load(base); e != nil || c.ClientKeyEncryptionKey != base["CLIENT_KEY_ENCRYPTION_KEY"] {
+		t.Fatal("explicit client key vault configuration was not preserved", e)
 	}
 	base["CORS_ORIGINS"] = "https://study.example.com,http://localhost:3000"
 	if _, e := load(base); e != nil {

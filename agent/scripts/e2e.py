@@ -7,6 +7,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 AGENT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -232,6 +233,32 @@ def main():
         print("published items:", titles)
         if "E2E 示例文章" not in titles:
             raise RuntimeError("ingested item was not published")
+
+        boundary = "----wzstudy" + uuid.uuid4().hex
+        chunks = []
+        for key, value in {"version": "9.9.9", "platform": "windows", "arch": "amd64", "notes": "e2e release"}.items():
+            chunks.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'.encode())
+        chunks.append(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="e2e-agent.exe"\r\nContent-Type: application/octet-stream\r\n\r\n'.encode())
+        chunks.append(b"E2E-AGENT-BINARY")
+        chunks.append(f"\r\n--{boundary}--\r\n".encode())
+        upload = urllib.request.Request(SERVER + "/api/v1/admin/agent/releases", data=b"".join(chunks), method="POST")
+        upload.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+        upload.add_header("Origin", SERVER)
+        with opener.open(upload, timeout=20) as response:
+            release = json.loads(response.read())["data"]
+        if release["version"] != "9.9.9" or release["size"] != len(b"E2E-AGENT-BINARY"):
+            raise RuntimeError(f"unexpected release: {release}")
+        status, release_list = call("GET", "/api/v1/admin/agent/releases")
+        if not any(item["id"] == release["id"] for item in release_list["data"]):
+            raise RuntimeError("release list is missing the uploaded package")
+        with opener.open(SERVER + f"/api/v1/admin/agent/releases/{release['id']}/download", timeout=20) as response:
+            if response.read() != b"E2E-AGENT-BINARY":
+                raise RuntimeError("downloaded package differs from the upload")
+        call("POST", f"/api/v1/admin/agent/releases/{release['id']}/delete", {})
+        status, release_list = call("GET", "/api/v1/admin/agent/releases")
+        if any(item["id"] == release["id"] for item in release_list["data"]):
+            raise RuntimeError("release was not deleted")
+        print("release management OK")
 
         print("E2E OK")
         return 0

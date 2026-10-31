@@ -14,19 +14,21 @@ import (
 // Config is the complete agent-side configuration. Model credentials never
 // leave this process; the server only sees collection tasks and materials.
 type Config struct {
-	ServerURL   string
-	AgentKey    string
-	ModelBase   string
-	ModelKey    string
-	Model       string
-	SkillsDir   string
-	WorkDir     string
-	PollEvery   time.Duration
-	WaitSeconds int
-	MaxFetch    int64
-	AllowLocal  bool
-	LogLevel    string
-	Version     string
+	ServerURL     string
+	AgentKey      string
+	ModelBase     string
+	ModelKey      string
+	Model         string
+	SkillsDir     string
+	WorkDir       string
+	PollEvery     time.Duration
+	WaitSeconds   int
+	MaxFetch      int64
+	MediaMaxBytes int64
+	YtDlpPath     string
+	AllowLocal    bool
+	LogLevel      string
+	Version       string
 }
 
 func Load() (Config, error) {
@@ -96,6 +98,7 @@ func FromEnv(get func(string) string) (c Config, err error) {
 		WorkDir:   value("AGENT_WORK_DIR", ".state"),
 		LogLevel:  strings.ToLower(value("AGENT_LOG_LEVEL", "info")),
 		Version:   value("AGENT_VERSION", "0.1.0"),
+		YtDlpPath: strings.TrimSpace(get("AGENT_YTDLP_PATH")),
 	}
 	if c.ServerURL == "" || c.AgentKey == "" || c.Model == "" {
 		return c, errors.New("WZSTUDY_SERVER_URL, WZSTUDY_AGENT_KEY and AGENT_MODEL are required")
@@ -127,6 +130,16 @@ func FromEnv(get func(string) string) (c Config, err error) {
 		return c, fmt.Errorf("AGENT_MAX_FETCH_BYTES: %w", err)
 	}
 	c.MaxFetch = int64(maxFetch)
+	mediaMax, err := integer(value("AGENT_MEDIA_MAX_BYTES", "209715200"), 1<<20, 1<<30)
+	if err != nil {
+		return c, fmt.Errorf("AGENT_MEDIA_MAX_BYTES: %w", err)
+	}
+	c.MediaMaxBytes = int64(mediaMax)
+	if c.YtDlpPath != "" {
+		if c.YtDlpPath, err = filepath.Abs(c.YtDlpPath); err != nil {
+			return c, errors.New("AGENT_YTDLP_PATH must be a valid path")
+		}
+	}
 	c.AllowLocal, err = strconv.ParseBool(value("AGENT_ALLOW_PRIVATE_NETWORK", "false"))
 	if err != nil {
 		return c, errors.New("AGENT_ALLOW_PRIVATE_NETWORK must be a boolean")
