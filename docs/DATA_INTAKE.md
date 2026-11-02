@@ -51,8 +51,10 @@ python skills/wzstudy-push/scripts/wzstudy_push.py --config <私有来源配置>
 
 - 默认只提供 `wzstudy_ingest_status`、`wzstudy_ingest_items`。
 - 启动时显式设置 `--allow-root` 后才提供 `wzstudy_upload_files`；解析后的文件路径必须在允许目录内。
+- 启动时显式配置**独立的用户会话令牌**（`--workspace-config` 或 `WZSTUDY_USER_TOKEN`）后才提供合集管理（`wzstudy_catalog_list/get/save/delete`）与路线图管理（`wzstudy_roadmap_list/get/save/delete`）。这两组工具复用 `/workspace/catalog/collections`、`/workspace/roadmaps`，只作用于该用户自己的工作区；来源 Key 或查询 Client Key 不能替代用户身份，未配置时工具清单与旧版本一致。
+- 合集与路线图写入遵循同一规则：新建 `revision=0`，更新/删除须带最新 revision，409 表示冲突需重新读取；保存合集立即生效，删除只移除编排关系，不删除资料或个人学习进度。
 - 不提供资料查询、审核、身份管理、任意 HTTP、任意文件读取或外链下载工具。
-- 工具参数不能覆盖 endpoint/source_id/source_key/config；密钥仅在进程启动时从明确配置加载。
+- 工具参数不能覆盖 endpoint/source_id/source_key/user_token/config；密钥仅在进程启动时从明确配置加载。
 - 一个工具调用最多提交一个 100 条/4 MiB 的原子批次；支持离线 dry_run。
 - stdio 支持现代按请求元数据及旧版初始化流程；具体支持范围、运行方式与协议参考见 `mcp/wzstudy_ingest/README.md`。
 

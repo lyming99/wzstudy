@@ -107,6 +107,7 @@ when_to_use: 对接 WzStudy API、理解采集 Agent 工具与任务协议，或
 | 本人工作区/来源/查询端 | `/workspace/workspace`、`/workspace/sources`、`/workspace/clients`、`/workspace/intakes` | 用户会话；创建、修改、查看密钥要单独授权 |
 | 草稿/发布/下架/整理 | `/workspace/items`、`/workspace/items/{id}`、`/submit`、`/publish`、`/unpublish`、`/workspace/items/organize` | 用户会话；先读取最新 revision，不擅自发布或删除 |
 | 合集/学习路线 | `/catalog/collections`、`/workspace/catalog/collections`、`/workspace/roadmaps` | 查询与编辑使用不同身份；目录合集保存即生效，旧发布/下架接口已退役 |
+| MCP 合集/路线管理 | `/workspace/catalog/collections`、`/workspace/roadmaps`（工具 `wzstudy_catalog_*`、`wzstudy_roadmap_*`） | 仅当 MCP 适配器显式配置用户会话令牌；来源 Key 不能替代，未配置时不注册这些工具 |
 | 个人学习/反馈 | `/client/learning/capabilities`、`/client/learning/events`、`/client/feedback`、`/client/learning/modes/items` | 用户会话，或符合权限的独立 Client；先探测能力，不伪造阅读/复习/时长 |
 | 共享渠道 | `/workspace/channel`、`/channels`、`/channels/{channel_id}/items` | 用户登录；渠道授权不共享私人学习数据 |
 | 采集端/任务/模板 | `/workspace/agent/agents`、`/workspace/agent/tasks`、`/workspace/agent/task-templates` | 用户会话，不能用 Agent Key 管理自己 |

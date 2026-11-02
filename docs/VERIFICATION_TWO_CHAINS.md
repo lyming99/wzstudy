@@ -47,7 +47,7 @@
 | `python scripts/verify_two_chains.py` | 13 组通过：两入口、两种 Key、查询筛选、回执、审核隔离、撤权/轮换、移动布局、状态丢失不误新建、迟到 Key 响应隔离、MCP 实际录入/上传、显式迁移及重启恢复 |
 | `python scripts/verify_live.py` | 24 组通过：真实音视频/轮播上传播放、资料维护、公开快照隔离、筛选分页、回执、退役接口、权限、CSV、响应式布局及重启持久化 |
 | `python scripts/verify_intake.py` | 10 组通过：辅助手动录入、RSS 配置、来源切换、最小权限 Skill 配置、真实 Skill 检查/预检/幂等入库及策略提示 |
-| MCP 离线单测 | 8 个测试通过，覆盖现代发现、声明的旧版初始化、参数与凭据边界、通知不写入、版本校验、允许目录、不确定写入不重试 |
+| MCP 离线单测 | 18 个测试通过，覆盖现代发现、声明的旧版初始化、参数与凭据边界、通知不写入、版本校验、允许目录、不确定写入不重试，以及合集/路线图管理工具的注册开关、分页与查询、revision 规则、节点树归一化与非法树拒绝、用户会话凭据来源绑定 |
 | `python scripts/verify_push_skill.py` | 12 个 Skill 单测及 8 组隔离接口验证通过 |
 | `python scripts/verify_admin.py` | 7 组管理员初始化、密码、登录、重启及不重置保护通过 |
 | `python scripts/verify_structure.py` | 15 组路径、启动脚本、端口/外部进程保护及 Docker 静态配置检查通过 |

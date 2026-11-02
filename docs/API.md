@@ -219,6 +219,8 @@ GET/POST /workspace/identity-migration
 
 采集程序、Skill 与 MCP 均调用同一录入服务；MCP 的具体协议、文件授权和运行方式见 `mcp/wzstudy_ingest/README.md`。录入成功不等于已公开，也不会向学习客户端分发。
 
+MCP 适配器在显式配置独立用户会话令牌后，还会注册合集管理（`wzstudy_catalog_list/get/save/delete`）与学习路线图管理（`wzstudy_roadmap_list/get/save/delete`）工具；它们直接复用 `/workspace/catalog/collections`、`/workspace/roadmaps`，沿用 revision 冲突保护、保存即生效、删除不删资料等规则，不新增第二套存储。未配置用户令牌时工具清单与旧版本一致，来源 Key 不能替代用户身份。
+
 ## 4. 审核、发布和下架
 
 - `GET /workspace/items`：管理列表，内容包括 draft 和可选 published 快照。
