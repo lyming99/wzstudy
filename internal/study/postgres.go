@@ -86,6 +86,20 @@ func (s *PostgresStore) Ping(ctx context.Context) error {
 	if !workspaceReady {
 		return errors.New("user workspace schema migration required")
 	}
+	var collectionReady bool
+	if err := s.Pool.QueryRow(ctx, `SELECT to_regclass('workspace_collection_run_trigger') IS NOT NULL`).Scan(&collectionReady); err != nil {
+		return err
+	}
+	if !collectionReady {
+		return errors.New("collection plan schema migration required")
+	}
+	var channelReady bool
+	if err := s.Pool.QueryRow(ctx, `SELECT to_regclass('workspace_learning_channel_owner') IS NOT NULL`).Scan(&channelReady); err != nil {
+		return err
+	}
+	if !channelReady {
+		return errors.New("learning channel schema migration required")
+	}
 	return nil
 }
 func (s *PostgresStore) Close() { s.Pool.Close() }
@@ -271,6 +285,9 @@ func (t *postgresTx) Items(f Filter) ([]Item, error) {
 	}
 	if len(f.SourceIDs) > 0 {
 		where = append(where, "source_id = ANY("+arg(f.SourceIDs)+"::text[])")
+	}
+	if f.ContentMode != "" {
+		where = append(where, "COALESCE(NULLIF(("+column+")->>'content_mode',''),'default') = "+arg(f.ContentMode))
 	}
 	if f.Category != "" {
 		where = append(where, column+"->>'category' = "+arg(f.Category))

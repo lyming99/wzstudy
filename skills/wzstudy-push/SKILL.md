@@ -84,3 +84,12 @@ python skills/wzstudy-push/scripts/wzstudy_push.py --config .local/ai-push-clien
 - 不泄露任何凭据，不输出原始服务错误体或完整私密资料。
 - 不宣称媒体已转码、网页全文已抓取、消息已送达/已读；本 Skill 没有这些能力。
 - 用户明确要求发布或向客户端投递时，说明需另行通过管理员审核/推送功能完成，不升级权限或擅自改 `auto_publish`。
+
+
+## 内容模式与主题分类
+
+Content 可附加 `content_mode`：`default`（默认）/ `news`（资讯）/ `learning`（学习）。主题仍放在 `category`，不得把分类改成“资讯”来代替模式。新资料省略模式等于默认；更新旧资料时，字段缺省保留已有模式，显式 `default` 才清除选择。脚本校验并透传模式，模式不会改变无 URL 输入的派生 external_id；字幕/下载/入库权限不因此扩大。
+
+```json
+{"title":"技术资讯","url":"https://example.org/news","category":"人工智能","content_mode":"news","format":"markdown","content":"有出处的原创整理"}
+```

@@ -36,6 +36,18 @@ class ClientTests(unittest.TestCase):
         tags = push.normalize({'title':'x','tags':['Go','AI','Go']})['tags']
         self.assertEqual(tags, ['AI','Go'])
 
+    def test_content_mode_preserved_validated_and_does_not_change_generated_id(self):
+        base = push.normalize({'title': 'Mode metadata', 'category': '人工智能'})
+        for mode in ('default', 'news', 'learning'):
+            item = push.normalize({'title': 'Mode metadata', 'category': '人工智能', 'content_mode': mode})
+            self.assertEqual(item['content_mode'], mode)
+            self.assertEqual(item['category'], '人工智能')
+            self.assertEqual(item['external_id'], base['external_id'])
+        self.assertNotIn('content_mode', base)
+        for mode in ('other', '', 1, None):
+            with self.subTest(mode=mode), self.assertRaises(push.PushError):
+                push.normalize({'title': 'Mode metadata', 'content_mode': mode})
+
     def test_batch_count_and_encoded_size(self):
         items = [push.normalize({'external_id':str(i),'title':'Item '+str(i)}) for i in range(101)]
         self.assertEqual([len(x) for x in push.batches(items)], [100,1])

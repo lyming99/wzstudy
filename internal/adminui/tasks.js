@@ -7,7 +7,9 @@ const tasksView = (() => {
   let requestSerial = 0;
   let detailSerial = 0;
   let filter = 'all';
+  let currentView = 'tasks';
   let snapshot = null;
+  let snapshotEpoch = null;
   let sources = [];
   let agents = [];
   let releases = [];
@@ -90,13 +92,14 @@ const tasksView = (() => {
 
   function row(task) {
     const cancelable = ['pending', 'claimed', 'running'].includes(task.status);
-    const retryable = ['failed', 'cancelled', 'expired'].includes(task.status);
+    const retryable = !task.plan_id && ['failed', 'cancelled', 'expired'].includes(task.status);
     const deletable = ['succeeded', 'failed', 'cancelled', 'expired'].includes(task.status);
     const detail = task.result?.error?.message || task.cancel_reason || '';
     return `<tr>
       <td data-label="状态">${badge(task.status)}</td>
       <td data-label="任务">
         <strong>${esc(task.title)}</strong>
+        ${task.plan_id ? '<small>来自采集计划 · 重跑请在计划页生成新任务</small>' : ''}
         <small>${esc(clip(task.goal, 110))}</small>
         ${detail ? `<small class="task-error-line">${esc(clip(detail, 90))}</small>` : ''}
       </td>
@@ -116,6 +119,8 @@ const tasksView = (() => {
   function render() {
     const root = $('#main-content');
     if (!root || !snapshot) return;
+    if (snapshotEpoch !== (typeof authEpoch === 'undefined' ? 0 : authEpoch)) { root.innerHTML = heading('收集任务', '正在读取当前工作区…', ''); return; }
+    if (currentView === 'plans') { collectionPlansView.render(); return; }
     const status = snapshot.status || {};
     const tasks = snapshot.tasks || [];
     const visible = tasks.filter(task => matches(task, filter));
@@ -124,6 +129,7 @@ const tasksView = (() => {
     root.innerHTML = `<section class="task-page" data-task-page>
       ${heading('收集任务', '把采集目标派发给采集端；采集端领取后抓取、整理并写入任务绑定的来源。', `${releaseAction}<button class="btn primary" data-task-action="dispatch" ${enabled ? '' : 'disabled'}>${icon('plus')}派发任务</button>`, enabled ? '已启用' : '未启用')}
       ${enabled ? '' : `<div class="task-alert">${icon('info')}<span>采集模块当前未启用。请先在服务端设置 <code>AGENT_ENABLED=true</code> 并重启，然后刷新此页面。</span></div>`}
+      ${collectionPlansView.tabs('tasks')}
       ${metrics(status)}
       <div class="task-toolbar">
         <nav class="section-tabs" aria-label="任务筛选">${FILTERS.map(([key, label]) => `<button data-task-filter="${key}" class="${filter === key ? 'active' : ''}" ${filter === key ? 'aria-current="page"' : ''}>${label}</button>`).join('')}</nav>
@@ -143,7 +149,8 @@ const tasksView = (() => {
   }
 
   async function load() {
-    if (!state.authenticated) return;
+    if (!state.authenticated || (typeof route !== 'undefined' && route !== 'tasks')) return;
+    const epoch = typeof authEpoch === 'undefined' ? 0 : authEpoch;
     const seq = ++requestSerial;
     const root = $('#main-content');
     if (root && !snapshot) {
@@ -158,14 +165,16 @@ const tasksView = (() => {
         api(`${agentBase()}/agents`),
         api(`${agentBase()}/task-templates`),
       ]);
-      if (seq !== requestSerial || !state.authenticated) return;
+      if (seq !== requestSerial || !state.authenticated || (typeof route !== 'undefined' && route !== 'tasks') || epoch !== (typeof authEpoch === 'undefined' ? 0 : authEpoch)) return;
       snapshot = { status, tasks: list.tasks || [], total: list.total || 0 };
+      snapshotEpoch = epoch;
       sources = Array.isArray(sourceList) ? sourceList : [];
       agents = Array.isArray(agentList) ? agentList : [];
       templates = Array.isArray(templateList) ? templateList : [];
-      render();
+      if (currentView === 'plans') await collectionPlansView.load(() => seq === requestSerial && state.authenticated);
+      else render();
     } catch (error) {
-      if (seq !== requestSerial) return;
+      if (seq !== requestSerial || !state.authenticated || (typeof route !== 'undefined' && route !== 'tasks') || epoch !== (typeof authEpoch === 'undefined' ? 0 : authEpoch)) return;
       if (root) root.innerHTML = empty('无法读取收集任务', esc(error.message), '<button class="btn small-btn" data-task-action="reload">重新加载</button>');
       showError(error);
     } finally {
@@ -173,9 +182,11 @@ const tasksView = (() => {
     }
   }
 
-  function dispatchModal() {
-    openModal('派发收集任务', '采集端领取后按目标抓取并整理；来源留空时自动创建“Agent 收集”。', `
-      <form data-task-form="dispatch" class="task-form" novalidate>
+  function dispatchModal(plan = null) {
+    const planMode = plan !== null;
+    openModal(planMode ? (plan.id ? '编辑采集计划' : '新建采集计划') : '派发收集任务', '采集端领取后按目标抓取并整理；来源留空时自动创建“Agent 收集”。', `
+      <form data-task-form="dispatch" class="task-form" ${planMode ? 'data-plan-editor' : ''} novalidate>
+        ${planMode ? collectionPlansView.editorFields(plan) : ''}
         <div class="task-template-bar">
           <label class="task-field task-template-picker"><span>任务模板</span>
             <select name="template_id" data-task-action="template-apply">${templateOptions('')}</select>
@@ -215,13 +226,14 @@ const tasksView = (() => {
         <div class="task-form-grid">
           <label class="task-field">最多入库<input name="max_items" type="number" min="1" max="100" value="5"></label>
           <label class="task-field">最大轮次<input name="max_rounds" type="number" min="1" max="1000" value="100"></label>
-          <label class="task-field">工具调用上限<input name="max_tool_calls" type="number" min="1" max="1000" value="100"></label>
+          <label class="task-field">工具调用上限（单任务）<input name="max_tool_calls" type="number" min="1" max="1000" value="200" aria-describedby="task-tool-call-hint"></label>
           <label class="task-field">超时（秒）<input name="timeout_seconds" type="number" min="30" max="1800" value="" placeholder="自动：媒体1800，其他300"></label>
           <label class="task-field">优先级<input name="priority" type="number" min="-10" max="10" value="0"></label>
           <label class="task-field">指定采集端
             <select name="assigned_agent_id"><option value="">任意采集端</option>${agents.map(item => `<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('')}</select>
           </label>
         </div>
+        <p class="task-hint" id="task-tool-call-hint">工具调用上限仅限制单个 Agent 任务，各任务独立计数，不共享额度。</p>
         <div class="task-form-grid">
           <label class="task-field">语言<input name="language" maxlength="35" placeholder="zh-CN"></label>
           <label class="task-field">分类<input name="category" maxlength="200" placeholder="留空沿用来源分类"></label>
@@ -231,8 +243,9 @@ const tasksView = (() => {
         <label class="task-field">允许域名<input name="allow_domains" placeholder="用逗号分隔，如 go.dev, blog.golang.org；留空不限（仍禁止内网）"></label>
         <p class="task-hint">${icon('shield')}配额、允许域名与条目字段由服务端再次校验；采集端不能把数据写入其他来源。</p>
       </form>`,
-      '<button class="btn" data-action="close-modal">取消</button><button class="btn primary" data-task-action="dispatch-submit">派发任务</button>',
+      `<button class="btn" data-action="close-modal">取消</button><button class="btn primary" data-task-action="dispatch-submit">${planMode ? '保存计划' : '派发任务'}</button>`,
       { icon: 'upload', className: 'task-dialog' });
+    if (planMode) collectionPlansView.fillEditor($('#modal-root form[data-plan-editor]'), plan);
   }
 
   const CONTENT_TYPE_LABELS = { article: '文章', video: '视频', audio: '音频', carousel: '图文' };
@@ -265,7 +278,7 @@ const tasksView = (() => {
       },
       budget: {
         max_rounds: numberValue(data, 'max_rounds', 100),
-        max_tool_calls: numberValue(data, 'max_tool_calls', 100),
+        max_tool_calls: numberValue(data, 'max_tool_calls', 200),
         timeout_seconds: integerValue(data, 'timeout_seconds', ['video','audio'].includes(String(data.get('content_type')))?1800:300),
       },
       priority: integerValue(data, 'priority', 0),
@@ -275,6 +288,11 @@ const tasksView = (() => {
 
   async function submitDispatch(form) {
     const data = new FormData(form);
+    if (form.hasAttribute('data-plan-editor')) {
+      await collectionPlansView.submit(form, { source_id: String(data.get('source_id') || ''), ...formConfig(data) });
+      await load();
+      return;
+    }
     const button = $('[data-task-action="dispatch-submit"]');
     const body = {
       source_id: String(data.get('source_id') || ''),
@@ -334,7 +352,7 @@ const tasksView = (() => {
       tags: (template.constraints?.tags || []).join(', '),
       allow_domains: (template.constraints?.allow_domains || []).join(', '),
       max_rounds: template.budget?.max_rounds ?? 100,
-      max_tool_calls: template.budget?.max_tool_calls ?? 100,
+      max_tool_calls: template.budget?.max_tool_calls ?? 200,
       timeout_seconds: template.budget?.timeout_seconds ?? '',
       priority: template.priority ?? 0,
       assigned_agent_id: agents.some(item => item.id === template.assigned_agent_id) ? template.assigned_agent_id : '',
@@ -591,6 +609,8 @@ const tasksView = (() => {
       if (form) applyTemplate(form, select.value);
     });
     document.addEventListener('click', async event => {
+      const viewButton = event.target.closest('[data-task-view]');
+      if (viewButton) { currentView = viewButton.dataset.taskView; await load(); return; }
       const filterButton = event.target.closest('[data-task-filter]');
       if (filterButton) {
         filter = filterButton.dataset.taskFilter;
@@ -637,5 +657,5 @@ const tasksView = (() => {
 
   bindEvents();
 
-  return { render, load };
+  return { render, load, openPlanEditor: plan => dispatchModal(plan) };
 })();

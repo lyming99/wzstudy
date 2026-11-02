@@ -29,15 +29,16 @@ import (
 )
 
 type Server struct {
-	loginBuckets  map[string]loginBucket
-	passwordSlots chan struct{}
-	authMu        sync.Mutex
-	sessions      map[string]time.Time
-	cfg           config.Config
-	service       *study.Service
-	worker        *feed.Worker
-	logger        *slog.Logger
-	runtime       *agentruntime.Manager
+	loginBuckets   map[string]loginBucket
+	passwordSlots  chan struct{}
+	authMu         sync.Mutex
+	sessions       map[string]time.Time
+	cfg            config.Config
+	service        *study.Service
+	worker         *feed.Worker
+	logger         *slog.Logger
+	runtime        *agentruntime.Manager
+	triggerLimiter collectionTriggerLimiter
 }
 
 // Option customizes optional server capabilities without changing every caller.
@@ -119,6 +120,11 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write(b)
 	})
+	r.Get("/docs/collection-plans", func(w http.ResponseWriter, r *http.Request) {
+		b, _ := docs.Files.ReadFile("COLLECTION_PLANS.md")
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write(b)
+	})
 	r.Get("/openapi.json", func(w http.ResponseWriter, r *http.Request) {
 		b, _ := docs.Files.ReadFile("openapi.json")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -152,35 +158,47 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 		r.With(s.requireUser).Get("/user/auth/session", s.userSession)
 		r.With(s.requireUser).Post("/user/auth/logout", s.userLogout)
 		r.With(s.requireUser).Post("/user/auth/password", s.userPassword)
+		r.Group(func(r chi.Router) {
+			r.Use(s.requireUser)
+			r.Get("/workspace/channel", s.ownLearningChannel)
+			r.Put("/workspace/channel", s.saveLearningChannel)
+			r.Get("/channels", s.learningChannels)
+			r.Get("/channels/{channel_id}/items", s.learningChannelItems)
+			r.Get("/channels/{channel_id}/items/{item_id}", s.learningChannelItem)
+			r.Get("/channels/{channel_id}/items/{item_id}/media/{asset_id}", s.learningChannelMedia)
+		})
 		r.With(s.require(true)).Get("/auth/session", s.session)
 		r.With(s.require(true)).Post("/auth/logout", s.logout)
 		r.Get("/client/connection", s.clientConnection)
-		r.With(s.requireUser).Post("/client/feedback", s.reportFeedback)
-		r.With(s.requireUser).Post("/client/feedback/import-legacy", s.importLegacyFeedback)
-		r.With(s.requireUser).Get("/client/feedback", s.clientFeedback)
-		r.With(s.requireUser).Get("/client/feedback/events", s.clientFeedbackEvents)
-		r.With(s.requireUser).Get("/client/recommendations", s.clientRecommendations)
-		r.With(s.requireUser).Get("/client/learning/capabilities", s.learningCapabilities)
-		r.With(s.requireUser).Get("/client/learning", s.clientLearning)
-		r.With(s.requireUser).Post("/client/learning/events", s.reportLearning)
-		r.With(s.requireUser).Post("/client/learning/import-legacy-records", s.importLegacyRecords)
-		r.With(s.requireUser).Post("/client/learning/import-legacy-reviews", s.importLegacyReviews)
-		r.With(s.requireUser).Post("/client/learning/drafts/commands", s.learningDraftCommand)
-		r.With(s.requireUser).Post("/client/learning/drafts/import-legacy", s.importLegacyLearningDraft)
-		r.With(s.requireUser).Get("/client/learning/items/{item_id}/draft", s.learningDraft)
-		r.With(s.requireUser).Get("/client/learning/items/{item_id}/draft/history", s.learningDraftHistory)
-		r.With(s.requireUser).Get("/client/learning/drafts/events/{event_id}", s.learningDraftEvent)
-		r.With(s.requireUser).Get("/client/learning/events", s.clientLearningEvents)
-		r.With(s.requireUser).Get("/client/learning/items/{item_id}/records", s.clientLearningRecords)
-		r.With(s.requireUser).Get("/client/learning/items/{item_id}/records/{record_id}", s.clientLearningRecord)
+		r.With(s.requireLearningWorkspace).Post("/client/feedback", s.reportFeedback)
+		r.With(s.requireLearningWorkspace).Post("/client/feedback/import-legacy", s.importLegacyFeedback)
+		r.With(s.requireLearningWorkspace).Get("/client/feedback", s.clientFeedback)
+		r.With(s.requireLearningWorkspace).Get("/client/feedback/events", s.clientFeedbackEvents)
+		r.With(s.requireLearningWorkspace).Get("/client/recommendations", s.clientRecommendations)
+		r.With(s.requireLearningWorkspace).Get("/client/learning/capabilities", s.learningCapabilities)
+		r.With(s.requireLearningWorkspace).Get("/client/learning", s.clientLearning)
+		r.With(s.requireLearningWorkspace).Post("/client/learning/events", s.reportLearning)
+		r.With(s.requireLearningWorkspace).Post("/client/learning/import-legacy-records", s.importLegacyRecords)
+		r.With(s.requireLearningWorkspace).Post("/client/learning/import-legacy-reviews", s.importLegacyReviews)
+		r.With(s.requireLearningWorkspace).Post("/client/learning/drafts/commands", s.learningDraftCommand)
+		r.With(s.requireLearningWorkspace).Post("/client/learning/drafts/import-legacy", s.importLegacyLearningDraft)
+		r.With(s.requireLearningWorkspace).Get("/client/learning/items/{item_id}/draft", s.learningDraft)
+		r.With(s.requireLearningWorkspace).Get("/client/learning/items/{item_id}/draft/history", s.learningDraftHistory)
+		r.With(s.requireLearningWorkspace).Get("/client/learning/drafts/events/{event_id}", s.learningDraftEvent)
+		r.With(s.requireLearningWorkspace).Get("/client/learning/events", s.clientLearningEvents)
+		r.With(s.requireLearningWorkspace).Get("/client/learning/items/{item_id}/records", s.clientLearningRecords)
+		r.With(s.requireLearningWorkspace).Get("/client/learning/items/{item_id}/records/{record_id}", s.clientLearningRecord)
 		r.With(s.requireQueryWorkspace).Get("/client/learning/items/{item_id}/stats", s.clientLearningItemStats)
-		r.With(s.requireUser).Get("/client/learning/collections", s.personalCollections)
-		r.With(s.requireUser).Get("/client/learning/collections/{collection_id}", s.personalCollection)
-		r.With(s.requireUser).Post("/client/learning/collections/commands", s.personalCollectionCommand)
-		r.With(s.requireUser).Post("/client/learning/collections/import-legacy", s.importLegacyPersonalCollection)
+		r.With(s.requireQueryWorkspace).Get("/client/learning/modes/categories", s.learningModeCategories)
+		r.With(s.requireQueryWorkspace).Get("/client/learning/modes/items", s.learningModeItems)
+		r.With(s.requireLearningWorkspace).Get("/client/learning/collections", s.personalCollections)
+		r.With(s.requireLearningWorkspace).Get("/client/learning/collections/{collection_id}", s.personalCollection)
+		r.With(s.requireLearningWorkspace).Post("/client/learning/collections/commands", s.personalCollectionCommand)
+		r.With(s.requireLearningWorkspace).Post("/client/learning/collections/import-legacy", s.importLegacyPersonalCollection)
 		r.With(s.requireSourceWorkspace).Get("/ingest/{id}/status", s.ingestStatus)
 		r.With(s.requireSourceWorkspace).Post("/ingest/{id}/files", s.upload)
 		r.With(s.requireSourceWorkspace).Post("/ingest/{id}", s.ingest)
+		r.Post("/collection-triggers/{id}", s.collectionWebhook)
 		r.Route("/agent", func(r chi.Router) {
 			r.Use(s.requireAgent)
 			r.Get("/status", s.agentStatus)
@@ -211,6 +229,7 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 				r.Post("/agents/{id}/delete", s.adminDeleteAgent)
 				r.Get("/tasks", s.adminCollectionTasks)
 				r.Post("/tasks", s.adminCreateCollectionTask)
+				s.collectionPlanRoutes(r)
 				r.Get("/task-templates", s.adminAgentTaskTemplates)
 				r.Post("/task-templates", s.adminCreateAgentTaskTemplate)
 				r.Post("/task-templates/{id}/delete", s.adminDeleteAgentTaskTemplate)
@@ -254,6 +273,7 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 				r.Post("/agents/{id}/delete", s.adminDeleteAgent)
 				r.Get("/tasks", s.adminCollectionTasks)
 				r.Post("/tasks", s.adminCreateCollectionTask)
+				s.collectionPlanRoutes(r)
 				r.Get("/task-templates", s.adminAgentTaskTemplates)
 				r.Post("/task-templates", s.adminCreateAgentTaskTemplate)
 				r.Post("/task-templates/{id}/delete", s.adminDeleteAgentTaskTemplate)
@@ -301,6 +321,7 @@ func New(cfg config.Config, service *study.Service, worker *feed.Worker, logger 
 			r.Post("/items/{id}/submit", s.submitItem)
 			r.Post("/items/{id}/delete", s.deleteItem)
 			r.Post("/items/batch-delete", s.batchDeleteItems)
+			r.Post("/items/organize", s.organizeItems)
 			r.Get("/sources", s.sources)
 			r.Post("/sources", s.createSource)
 			r.Get("/sources/{id}", s.source)
@@ -541,6 +562,10 @@ func filter(r *http.Request, admin bool) (study.Filter, error) {
 	if e != nil {
 		return study.Filter{}, e
 	}
+	contentMode := strings.TrimSpace(q.Get("content_mode"))
+	if contentMode != "" && contentMode != study.ContentModeDefault && contentMode != study.ContentModeNews && contentMode != study.ContentModeLearning {
+		return study.Filter{}, study.ErrInvalid
+	}
 	kind, status := q.Get("kind"), q.Get("status")
 	if kind != "" && kind != "article" && kind != "audio" && kind != "video" && kind != "carousel" {
 		return study.Filter{}, study.ErrInvalid
@@ -551,7 +576,7 @@ func filter(r *http.Request, admin bool) (study.Filter, error) {
 	if sort := q.Get("sort"); sort != "" && sort != "asc" && sort != "desc" {
 		return study.Filter{}, study.ErrInvalid
 	}
-	return study.Filter{Kind: kind, Status: status, Ascending: q.Get("sort") == "asc", SourceIDs: ids, Category: q.Get("category"), Tag: q.Get("tag"), Query: q.Get("q"), Limit: limit, Offset: offset, Admin: admin}, nil
+	return study.Filter{Kind: kind, Status: status, Ascending: q.Get("sort") == "asc", SourceIDs: ids, Category: q.Get("category"), ContentMode: contentMode, Tag: q.Get("tag"), Query: q.Get("q"), Limit: limit, Offset: offset, Admin: admin}, nil
 }
 func sourceIDs(raw string) ([]string, error) {
 	if raw == "" {

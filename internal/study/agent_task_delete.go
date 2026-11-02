@@ -28,6 +28,9 @@ func (s *Service) DeleteCollectionTask(ctx context.Context, id string) (out Coll
 				return e
 			}
 		}
+		if e := snapshotCollectionRunTx(tx, task); e != nil {
+			return e
+		}
 		out = task
 		return tx.DeleteRecord("agent_task", id)
 	})

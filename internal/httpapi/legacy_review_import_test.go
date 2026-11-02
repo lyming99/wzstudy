@@ -20,7 +20,7 @@ func TestLegacyReviewImportHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, key := workspaceLearner(t, h, "migration-review")
-	_, readKey := managedClient(t, h, "migration-review-read", nil)
+	_, readKey := managedClient(t, h, "migration-review-read", []string{"read", "sync"})
 	_, other := managedLearner(t, h, "migration-review-other")
 	path := "/api/v1/client/learning/import-legacy-reviews"
 	entry := map[string]any{"event_id": uuid.NewString(), "item_id": item.ID, "item_revision": item.Published.Revision, "occurred_at": time.Now().UTC().Add(-time.Hour).Format(time.RFC3339Nano)}

@@ -95,6 +95,15 @@ func run() error {
 	_ = os.Unsetenv("SYSTEM_ADMIN_PASSWORD")
 	_ = os.Unsetenv("BOOTSTRAP_ADMIN_PASSWORD")
 	logger.Info("system administrator ready", "created", created)
+	catalogCtx, catalogDone := context.WithTimeout(ctx, 30*time.Second)
+	upgraded, catalogErr := service.ReconcileCatalogCollections(catalogCtx)
+	catalogDone()
+	if catalogErr != nil {
+		return fmt.Errorf("upgrade immediate collections: %w", catalogErr)
+	}
+	if upgraded > 0 {
+		logger.Info("collections upgraded to immediate visibility", "count", upgraded)
+	}
 	if err := runtimeManager.Load(ctx); err != nil {
 		logger.Warn("agent runtime settings could not be loaded", "error", err)
 	}
@@ -114,6 +123,12 @@ func run() error {
 		go func() { defer close(workerDone); worker.Run(ctx) }()
 	} else {
 		close(workerDone)
+	}
+	collectionDone := make(chan struct{})
+	if cfg.AgentEnabled {
+		go func() { defer close(collectionDone); service.RunCollectionScheduler(ctx, logger) }()
+	} else {
+		close(collectionDone)
 	}
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: httpapi.New(cfg, service, worker, logger, httpapi.WithAgentRuntime(runtimeManager)), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Minute, WriteTimeout: 5 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10, BaseContext: func(net.Listener) context.Context { return ctx }}
 	errors := make(chan error, 1)
@@ -142,6 +157,11 @@ func run() error {
 	case <-workerDone:
 	case <-shutdownCtx.Done():
 		return fmt.Errorf("worker shutdown timed out")
+	}
+	select {
+	case <-collectionDone:
+	case <-shutdownCtx.Done():
+		return fmt.Errorf("collection scheduler shutdown timed out")
 	}
 	return err
 }

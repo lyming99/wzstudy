@@ -86,7 +86,7 @@ func TestAgentTaskTemplateDefaultsAndValidation(t *testing.T) {
 	if created.Constraints.MaxItems != service.agentPolicy().DefaultMaxItems {
 		t.Fatalf("default max items = %d", created.Constraints.MaxItems)
 	}
-	if created.Budget != (TaskBudget{MaxRounds: defaultTaskRounds, MaxToolCalls: defaultTaskToolCalls, TimeoutSeconds: 300}) {
+	if created.Budget != (TaskBudget{MaxRounds: 100, MaxToolCalls: 200, TimeoutSeconds: 300}) {
 		t.Fatalf("default budget = %+v", created.Budget)
 	}
 

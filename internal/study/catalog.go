@@ -11,8 +11,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// Catalog collections are administrator-managed published content, not the
-// user's personal collections. Legacy "collection" records are left untouched.
+// Catalog collections are immediately effective organizational records, not
+// personal collections. Legacy "collection" records remain untouched.
 type CatalogChapter struct {
 	ID     string `json:"id"`
 	Title  string `json:"title"`
@@ -166,7 +166,7 @@ func (s *Service) SaveCatalogCollection(ctx context.Context, id string, in Catal
 		}
 		out.Draft, out.UpdatedAt = definition, now
 		out.Revision++
-		return recordSave(tx, "catalog_collection", out.ID, out)
+		return saveImmediateCatalog(tx, &out)
 	})
 	if err != nil {
 		out = CatalogCollection{}
@@ -201,11 +201,11 @@ func refreshCatalogReferences(tx Tx, itemID string, now time.Time) error {
 		return err
 	}
 	for _, collection := range collections {
-		if collection.DeletedAt != nil || collection.Published == nil {
+		if collection.DeletedAt != nil {
 			continue
 		}
 		found := false
-		for _, chapter := range collection.Published.Chapters {
+		for _, chapter := range collection.Draft.Chapters {
 			if chapter.ItemID == itemID {
 				found = true
 				break
@@ -216,65 +216,22 @@ func refreshCatalogReferences(tx Tx, itemID string, now time.Time) error {
 		}
 		collection.Revision++
 		collection.UpdatedAt = now
-		collection.Published.Revision = collection.Revision
-		collection.Published.UpdatedAt = now
-		if err = recordSave(tx, "catalog_collection", collection.ID, collection); err != nil {
-			return err
-		}
-		if err = catalogAppend(tx, collection, "upsert", now); err != nil {
+		if err = saveImmediateCatalog(tx, &collection); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// Deprecated compatibility helper: saving already makes the collection visible.
+// Unpublishing is no longer meaningful; callers must delete the collection.
 func (s *Service) PublishCatalogCollection(ctx context.Context, id string, revision int64, publish bool) (out CatalogCollection, err error) {
-	err = s.Store.Update(ctx, func(tx Tx) error {
-		var e error
-		out, e = catalogCollection(tx, id)
-		if e != nil {
-			return e
-		}
-		if out.Revision != revision {
-			return ErrConflict
-		}
-		if publish {
-			if len(out.Draft.Chapters) == 0 {
-				return ErrInvalid
-			}
-			for _, chapter := range out.Draft.Chapters {
-				item, itemErr := tx.Item(chapter.ItemID)
-				if itemErr != nil {
-					if errors.Is(itemErr, ErrNotFound) {
-						return ErrInvalid
-					}
-					return itemErr
-				}
-				if item.DeletedAt != nil || item.Published == nil {
-					return ErrInvalid
-				}
-			}
-		}
-		if !publish && out.Published == nil {
-			return nil
-		}
-		now := s.Now().UTC()
-		out.Revision++
-		out.UpdatedAt = now
-		operation := "delete"
-		if publish {
-			operation = "upsert"
-			out.Published = &PublicCatalogCollection{ID: out.ID, Revision: out.Revision, Title: out.Draft.Title, Summary: out.Draft.Summary, Chapters: append([]CatalogChapter(nil), out.Draft.Chapters...), UpdatedAt: now}
-		} else {
-			out.Published = nil
-		}
-		if e = recordSave(tx, "catalog_collection", out.ID, out); e != nil {
-			return e
-		}
-		return catalogAppend(tx, out, operation, now)
-	})
-	if err != nil {
-		out = CatalogCollection{}
+	if !publish {
+		return out, ErrInvalid
+	}
+	out, err = s.AdminCatalogCollection(ctx, id)
+	if err == nil && out.Revision != revision {
+		return CatalogCollection{}, ErrConflict
 	}
 	return
 }
@@ -289,16 +246,12 @@ func (s *Service) DeleteCatalogCollection(ctx context.Context, id string, revisi
 			return ErrConflict
 		}
 		now := s.Now().UTC()
-		wasPublished := out.Published != nil
 		out.Revision++
 		out.UpdatedAt, out.DeletedAt, out.Published = now, &now, nil
 		if err = recordSave(tx, "catalog_collection", out.ID, out); err != nil {
 			return err
 		}
-		if wasPublished {
-			return catalogAppend(tx, out, "delete", now)
-		}
-		return nil
+		return catalogAppend(tx, out, "delete", now)
 	})
 }
 

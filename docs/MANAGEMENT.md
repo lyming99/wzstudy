@@ -1,5 +1,22 @@
 # 数据录入与数据查询：管理 API
 
+## 独立内容模式（当前规则）
+
+内容增加 `content_mode`，取值 `default`（默认）、`news`（资讯）、`learning`（学习），与 `category` 主题分类完全独立。例如可同时设置 `category="人工智能"`、`content_mode="news"`。
+
+- 旧资料及未指定模式的新资料视为默认；默认模式可省略 JSON 字段，保留既有内容哈希，不批量修改旧记录。
+- 资讯队列只依据内容模式：默认 + 资讯进入；学习不进入。不根据主题分类、合集归属猜测模式。
+- 合集、路线、随机、复习仍按各自原有规则读取，并不因内容标记为学习而自动创建编排或复习计划。
+- 管理编辑和链接登记可选择模式；资料菜单、资料批量栏及数据查询多选栏提供独立「设置模式」。快捷设置只更新模式元数据，即时同步公开查询投影，不公开待审核标题、正文或附件，也不覆盖分类、ID、附件和学习记录。
+- `POST /workspace/items/organize` 支持 `content_mode`，与 `category/collection_id` 可组合，仍为原子批次。普通正文编辑仍遵循既有审核流程。
+- `GET /items`、`GET /workspace/items` 支持独立 `content_mode=default|news|learning` 筛选，不传表示不限模式。
+- 旧采集端及旧管理端更新资料时，未传模式保留已有选择；显式传 `content_mode="default"` 才重置为默认。不要通过缺省或清空主题分类来修改模式。
+
+```json
+{"title":"AI 行业动态","content":"正文","category":"人工智能","content_mode":"news"}
+```
+
+
 基础路径 `/api/v1`，共用工作台 `/workspace/`（管理员登录后显示用户管理，普通用户显示自己的资料），原管理员账号页面 `/admin/` 保留兼容，机器契约 `/openapi.json`。录入来源提交资料，查询客户端获取已发布资料；服务端提供规则推荐，并在显式授权后按登录用户保存和查询私人学习数据。
 
 ## 认证与安全边界
@@ -85,8 +102,6 @@ GET  /workspace/catalog/collections?limit=20&offset=0
 POST /workspace/catalog/collections
 GET  /workspace/catalog/collections/{id}
 PUT  /workspace/catalog/collections/{id}
-POST /workspace/catalog/collections/{id}/publish
-POST /workspace/catalog/collections/{id}/unpublish
 POST /workspace/catalog/collections/{id}/delete
 ```
 
@@ -96,7 +111,7 @@ POST /workspace/catalog/collections/{id}/delete
 {"revision":0,"title":"入门合集","summary":"课程简介","chapters":[{"id":"","title":"第一章","item_id":"<已存在的内容 UUID>"}]}
 ```
 
-章节按数组顺序排列，每章关联一个内容；新增章节可传空 id，由服务端生成稳定 UUID。一个合集最多 100 章，同一内容和章节 id 在同一合集中不可重复。草稿可以引用已存在但尚未发布的内容；发布时所有章节必须已公开。编辑只修改草稿，已发布快照保持不变，直到再次发布。删除合集不删除内容；内容下架时自动生成独立的合集变更，公开查询不再暴露该章节。历史 `collection` 记录不会被此接口改写。
+章节按数组顺序排列，每章关联一个内容；新增章节可传空 id，由服务端生成稳定 UUID。一个合集最多 100 章，同一内容和章节 id 在同一合集中不可重复。创建或更新合集立即生效，无需发布。可编排未公开资料，但客户端查询投影会隐藏这些章节；资料以后发布/下架时自动刷新合集与增量事件。删除合集不删除资料。`draft/published` 字段名仅保留为旧协议兼容，分别承载当前定义与安全查询投影，不再表示可独立操作的发布流程；历史发布/下架接口返回 410。历史 `collection` 记录不改写，无主资料不自动认领。
 
 ## 学习路线图（思维导图）
 
@@ -225,3 +240,8 @@ POST /workspace/identity-migration
 ## 客户端反馈与去重
 
 客户端可显式申请 feedback 权限，上报推荐/曝光、已读、喜欢、学习记录和收藏，按事件 ID 幂等保存。`POST /api/v1/client/feedback` 仅写本身份；`GET /api/v1/items?exclude=recommended,read` 或 `unseen=true` 可过滤旧候选，支持时间窗口和本页状态。用户本人只读查看反馈或按身份模拟查询，不替用户上报。默认 read/sync 及所有旧 Key 不自动扩权。详见 `docs/CLIENT_FEEDBACK.md`（文档目录内为 `CLIENT_FEEDBACK.md`），示例为 `examples/feedback_client.py`。
+
+
+## 资料整理
+
+资料菜单、资料多选栏及数据查询多选栏可执行「移动到合集」「设置分类」。对应 `POST /workspace/items/organize`，JSON 使用 `items:[{id,revision}]` 与可选 `category/collection_id/collection_revision`，详见 API 文档。移动从原合集移除并追加到目标，设置分类即时更新查询元数据，不公开待审核正文；可设置内容模式控制资讯队列，主题分类不再决定是否进入资讯。批次最多 100 项，失败整体回滚；资料 ID、附件与学习历史保留。

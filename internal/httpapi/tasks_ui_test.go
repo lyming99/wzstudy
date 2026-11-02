@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -67,7 +68,12 @@ func TestWorkspaceTaskBoardAssetsAreEmbedded(t *testing.T) {
 		"data-task-action=\"delete\"",
 		"name=\"content_type\"",
 		"name=\"max_rounds\" type=\"number\" min=\"1\" max=\"1000\" value=\"100\"",
-		"name=\"max_tool_calls\" type=\"number\" min=\"1\" max=\"1000\" value=\"100\"",
+		"name=\"max_tool_calls\" type=\"number\" min=\"1\" max=\"1000\" value=\"200\"",
+		"工具调用上限（单任务）",
+		"aria-describedby=\"task-tool-call-hint\"",
+		"工具调用上限仅限制单个 Agent 任务，各任务独立计数，不共享额度。",
+		"max_tool_calls: numberValue(data, 'max_tool_calls', 200)",
+		"max_tool_calls: template.budget?.max_tool_calls ?? 200",
 		"task-templates",
 		"data-task-action=\"template-apply\"",
 		"data-task-action=\"template-delete\"",
@@ -110,25 +116,72 @@ func TestWorkspaceTaskBoardAssetsAreEmbedded(t *testing.T) {
 	}
 }
 
+func workspaceNavigationGroup(t *testing.T, body, label string) (string, string) {
+	t.Helper()
+	for _, match := range regexp.MustCompile(`(?s)<nav\b([^>]*)>(.*?)</nav>`).FindAllStringSubmatch(body, -1) {
+		if strings.Contains(match[1], `aria-label="`+label+`"`) {
+			return match[1], match[2]
+		}
+	}
+	t.Fatalf("navigation group %q is missing", label)
+	return "", ""
+}
+
 func TestWorkspaceAgentBoardsAreAvailableToEveryAccount(t *testing.T) {
 	_, handler, _ := managementApp(t, 1<<20)
 	page := request(t, handler, http.MethodGet, "/workspace/", "", nil)
 	body := page.Body.String()
-	adminGroup := strings.Index(body, `class="nav-group-title admin-only"`)
-	if adminGroup < 0 {
-		t.Fatal("administrator navigation group is missing")
+	// Group membership, not position after the administrator group, controls access.
+	attributes, tasks := workspaceNavigationGroup(t, body, "任务管理导航")
+	if strings.Contains(attributes, "admin-only") {
+		t.Fatal("task navigation must be available to every account")
 	}
-	for _, route := range []string{`data-route="agent-access"`, `data-route="tasks"`} {
-		index := strings.Index(body, route)
-		if index < 0 {
-			t.Fatalf("%s is missing", route)
-		}
-		if index > adminGroup {
-			t.Fatalf("%s must be available outside the administrator-only navigation group", route)
+	for _, route := range []string{`data-route="tasks"`, `data-route="agent-access"`} {
+		if !strings.Contains(tasks, route) {
+			t.Fatalf("%s must belong to the shared task navigation group", route)
 		}
 	}
-	users := strings.Index(body, `data-route="users"`)
-	if users < adminGroup {
+	attributes, users := workspaceNavigationGroup(t, body, "系统管理导航")
+	if !strings.Contains(attributes, "admin-only") || !strings.Contains(users, `data-route="users"`) {
 		t.Fatal("user management must stay administrator-only")
+	}
+}
+
+func TestWorkspaceNavigationGroupsAndOrder(t *testing.T) {
+	_, handler, _ := managementApp(t, 1<<20)
+	body := request(t, handler, http.MethodGet, "/workspace/", "", nil).Body.String()
+	groups := []struct {
+		label  string
+		routes []string
+		labels []string
+	}{
+		{"数据管理导航", []string{"library", "rss", "query", "catalog", "roadmaps"}, []string{"数据录入", "RSS 订阅", "数据列表", "合集管理", "学习路线图"}},
+		{"任务管理导航", []string{"tasks", "agent-access"}, []string{"收集任务", "Agent 接入"}},
+		{"客户端管理导航", []string{"clients", "learning"}, []string{"客户端管理", "学习数据"}},
+		{"系统管理导航", []string{"users"}, []string{"用户管理"}},
+	}
+	lastGroup := -1
+	for _, group := range groups {
+		position := strings.Index(body, `aria-label="`+group.label+`"`)
+		if position <= lastGroup {
+			t.Fatalf("navigation group %q is out of order", group.label)
+		}
+		lastGroup = position
+		_, content := workspaceNavigationGroup(t, body, group.label)
+		if count := strings.Count(content, "data-route="); count != len(group.routes) {
+			t.Fatalf("navigation group %q has %d entries, want %d", group.label, count, len(group.routes))
+		}
+		lastRoute := -1
+		for i, route := range group.routes {
+			marker := `data-route="` + route + `"`
+			position = strings.Index(content, marker)
+			if position <= lastRoute || strings.Count(body, marker) != 1 {
+				t.Fatalf("navigation entry %q is missing, duplicated or out of order", route)
+			}
+			lastRoute = position
+			if !strings.Contains(content, `<span class="nav-label">`+group.labels[i]+`</span>`) {
+				t.Fatalf("navigation entry %q has an incorrect label", route)
+			}
+		}
 	}
 }

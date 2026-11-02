@@ -91,7 +91,7 @@ func TestCollectionTaskRequiresIngestSource(t *testing.T) {
 	if task.Status != TaskStatusPending || task.Constraints.MaxItems != service.AgentPolicy.DefaultMaxItems {
 		t.Fatalf("unexpected task defaults: %+v", task)
 	}
-	if task.Budget.TimeoutSeconds != 300 || task.Budget.MaxRounds != 100 || task.Budget.MaxToolCalls != 100 || task.MaxAttempts != 3 {
+	if task.Budget.TimeoutSeconds != 300 || task.Budget.MaxRounds != 100 || task.Budget.MaxToolCalls != 200 || task.MaxAttempts != 3 {
 		t.Fatalf("unexpected budget defaults: %+v", task.Budget)
 	}
 	if _, err := service.CreateCollectionTask(ctx, CollectionTaskInput{SourceID: source.ID, Goal: "collect", Constraints: TaskConstraints{MaxItems: 1000}}); !errors.Is(err, ErrInvalid) {

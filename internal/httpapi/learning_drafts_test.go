@@ -20,7 +20,7 @@ func TestLearningDraftHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, key := workspaceLearner(t, h, "draft-a")
-	_, reader := managedClient(t, h, "draft-reader", nil)
+	_, reader := managedClient(t, h, "draft-reader", []string{"read", "sync"})
 	_, other := managedLearner(t, h, "draft-b")
 	readPath := "/api/v1/client/learning/items/" + item.ID + "/draft"
 	commandPath := "/api/v1/client/learning/drafts/commands"

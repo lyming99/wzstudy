@@ -23,7 +23,7 @@ func TestClientFeedbackHTTPAuthorizationAndFiltering(t *testing.T) {
 	}
 	client, key := workspaceLearner(t, h, "feedback-learner")
 	_, otherKey := managedLearner(t, h, "feedback-other")
-	_, readKey := managedClient(t, h, "feedback-reader", nil)
+	_, readKey := managedClient(t, h, "feedback-reader", []string{"read", "sync"})
 	_, sourceKey := create(t, h, false)
 	event := map[string]any{"event_id": uuid.NewString(), "item_id": item.ID, "action": "recommended", "occurred_at": time.Now().UTC().Format(time.RFC3339Nano)}
 	body := map[string]any{"events": []any{event}}

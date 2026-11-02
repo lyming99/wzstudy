@@ -253,6 +253,11 @@ func (s *Service) SaveManaged(ctx context.Context, id string, in ManagedInput, a
 		if e = normalizeAssets(tx, &c, source.ID, true); e != nil {
 			return e
 		}
+		// Management can explicitly clear classification; source defaults apply to ingestion only.
+		c.Category = strings.TrimSpace(in.Content.Category)
+		if id != "" && strings.TrimSpace(in.Content.ContentMode) == "" {
+			c.ContentMode = v.Draft.ContentMode
+		}
 		v.Draft = c
 		v.ContentHash = digest(c)
 		v.Status = in.Status

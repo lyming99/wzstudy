@@ -13,15 +13,16 @@ import (
 // Ingestor owns the task-scoped push budget. The server enforces the same quota
 // again, so a compromised agent cannot exceed it.
 type Ingestor struct {
-	mu      sync.Mutex
-	client  *serverapi.Client
-	task    *serverapi.Task
-	attempt int
-	stats   *serverapi.Stats
+	mu        sync.Mutex
+	client    *serverapi.Client
+	task      *serverapi.Task
+	attempt   int
+	stats     *serverapi.Stats
+	subtitles *SubtitleCollector
 }
 
-func NewIngestor(client *serverapi.Client, task *serverapi.Task, attempt int, stats *serverapi.Stats) *Ingestor {
-	return &Ingestor{client: client, task: task, attempt: attempt, stats: stats}
+func NewIngestor(client *serverapi.Client, task *serverapi.Task, attempt int, stats *serverapi.Stats, subtitles *SubtitleCollector) *Ingestor {
+	return &Ingestor{client: client, task: task, attempt: attempt, stats: stats, subtitles: subtitles}
 }
 
 func (i *Ingestor) Stats() serverapi.Stats {
@@ -46,6 +47,16 @@ func (i *Ingestor) Definition() tool.Definition {
 			"tags":         map[string]any{"type": "array", "maxItems": 20, "items": map[string]any{"type": "string", "maxLength": 80}},
 			"published_at": map[string]any{"type": "string", "format": "date-time", "description": "原始发布时间，未知就省略"},
 			"kind":         map[string]any{"type": "string", "enum": []string{"article", "audio", "video", "carousel"}},
+			"subtitles": map[string]any{
+				"type": "array", "maxItems": maximumSubtitleTracks, "description": "可选，由 AI 自主决定是否上传；仅适用于音视频。每轨提供真实的内联 content 或 fetch_subtitle 返回的 ref，二选一；最多 8 轨，每轨不超过 256 KiB。省略仍可正常入库。",
+				"items": tool.Object(map[string]any{
+					"id":       tool.String("本资料内唯一的字幕轨 ID，最多 200 UTF-8 字节"),
+					"language": tool.String("语言代码，如 zh-CN 或 en，最多 35 字节"),
+					"format":   map[string]any{"type": "string", "enum": []string{"srt", "vtt"}, "description": "内联字幕默认 srt；使用 ref 时自动沿用其格式"},
+					"content":  tool.String("真实完整的 SRT/WebVTT 正文，保留时间轴，不得用摘要或编造文字替代；与 ref 二选一"),
+					"ref":      tool.String("fetch_subtitle 返回的本次任务 subtitle_ref；与 content 二选一，不会上传该引用值本身"),
+				}, "id", "language"),
+			},
 			"assets": map[string]any{
 				"type": "array", "maxItems": 20,
 				"items": tool.Object(map[string]any{
@@ -61,7 +72,7 @@ func (i *Ingestor) Definition() tool.Definition {
 	}
 	return tool.Definition{
 		Name:        "ingest_items",
-		Description: "把整理好的条目推送到服务端并写入任务绑定的来源。单次最多 20 条，整个任务受 max_items 配额限制；标题必须真实，正文用整理后的 Markdown/文本，不要整篇复制受版权保护的内容。",
+		Description: "把整理好的条目推送到服务端并写入任务绑定的来源。单次最多 20 条，整个任务受 max_items 配额限制；标题必须真实，正文用整理后的 Markdown/文本，不要整篇复制受版权保护的内容。音视频可自主选择附带 subtitles，字幕随条目上传并关联；无字幕也可正常入库。",
 		Parameters: tool.Object(map[string]any{
 			"items": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": content},
 		}, "items"),
@@ -70,7 +81,7 @@ func (i *Ingestor) Definition() tool.Definition {
 
 func (i *Ingestor) Handle(ctx context.Context, call tool.Call) (tool.Result, error) {
 	var args struct {
-		Items []serverapi.Content `json:"items"`
+		Items []ingestItem `json:"items"`
 	}
 	if err := tool.DecodeArguments(call, &args); err != nil {
 		return tool.Result{}, err
@@ -88,7 +99,11 @@ func (i *Ingestor) Handle(ctx context.Context, call tool.Call) (tool.Result, err
 	if len(args.Items) > remaining && i.task.Constraints.DuplicatePolicy == "update" {
 		return tool.Result{}, fmt.Errorf("本次推送 %d 条，但任务只剩 %d 条配额", len(args.Items), remaining)
 	}
-	receipt, err := i.client.PushItems(ctx, i.task.ID, i.attempt, args.Items)
+	items, err := i.prepareItems(args.Items)
+	if err != nil {
+		return tool.Result{}, err
+	}
+	receipt, err := i.client.PushItems(ctx, i.task.ID, i.attempt, items)
 	if err != nil {
 		return tool.Result{}, err
 	}

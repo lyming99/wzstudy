@@ -127,6 +127,39 @@ func TestLoopStopsAtToolCallLimit(t *testing.T) {
 	}
 }
 
+func TestLoopToolCallBudgetIsPerTask(t *testing.T) {
+	for _, limit := range []int{1, 200} {
+		t.Run(fmt.Sprintf("limit_%d", limit), func(t *testing.T) {
+			calls := make([]provider.ToolCall, limit+1)
+			for i := range calls {
+				calls[i] = provider.ToolCall{ID: fmt.Sprintf("call-%d", i), Name: "echo", Arguments: fmt.Sprintf(`{"n":%d}`, i)}
+			}
+			runner, _ := newRunner(t, &scriptedProvider{responses: []provider.Response{{ToolCalls: calls}}})
+			executed := map[string]int{}
+			runner.BuildTools = func(task *serverapi.Task, _ int, _ *tool.FinishControl, _ *serverapi.Stats) *tool.Registry {
+				registry := tool.NewRegistry()
+				registry.Register(tool.Definition{Name: "echo", Description: "echo", Parameters: tool.Object(nil)}, func(context.Context, tool.Call) (tool.Result, error) {
+					executed[task.ID]++
+					return tool.Result{Content: "ok", Summary: "echo done"}, nil
+				})
+				return registry
+			}
+			// Reusing an agent runner must not share the first task's exhausted budget.
+			for _, id := range []string{"task-1", "task-2"} {
+				task := fixtureTask(4, limit)
+				task.ID = id
+				outcome := runner.Run(context.Background(), task, func([]serverapi.EventInput) error { return nil })
+				if outcome.Status != serverapi.StatusFailed || outcome.Error == nil || outcome.Error.Code != "tool_call_limit" {
+					t.Fatalf("%s: unexpected outcome: %+v", id, outcome)
+				}
+				if outcome.Stats.ToolCalls != limit || executed[id] != limit {
+					t.Fatalf("%s: executed %d calls, reported %d, want %d; over-budget call must not execute", id, executed[id], outcome.Stats.ToolCalls, limit)
+				}
+			}
+		})
+	}
+}
+
 func TestLoopStopsRepeatingIdenticalCalls(t *testing.T) {
 	script := &scriptedProvider{responses: []provider.Response{
 		{ToolCalls: []provider.ToolCall{{ID: "c1", Name: "echo", Arguments: `{}`}}},

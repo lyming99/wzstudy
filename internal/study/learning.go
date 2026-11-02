@@ -25,23 +25,24 @@ type LearningPosition struct {
 }
 
 type LearningEventInput struct {
-	EventID          string            `json:"event_id"`
-	ItemID           string            `json:"item_id"`
-	Action           string            `json:"action"`
-	OccurredAt       *time.Time        `json:"occurred_at,omitempty"`
-	Value            *bool             `json:"value,omitempty"`
-	Position         *LearningPosition `json:"position,omitempty"`
-	Mode             string            `json:"mode,omitempty"`
-	ExpectedRevision *int64            `json:"expected_revision,omitempty"`
-	DraftRevision    *int64            `json:"draft_revision,omitempty"`
-	RecordID         string            `json:"record_id,omitempty"`
-	ParentID         string            `json:"parent_id,omitempty"`
-	Text             string            `json:"text,omitempty"`
-	AsDanmaku        bool              `json:"as_danmaku,omitempty"`
-	SessionID        string            `json:"session_id,omitempty"`
-	SessionSequence  int64             `json:"session_sequence,omitempty"`
-	StartAt          *time.Time        `json:"start_at,omitempty"`
-	EndAt            *time.Time        `json:"end_at,omitempty"`
+	EventID                string            `json:"event_id"`
+	ItemID                 string            `json:"item_id"`
+	Action                 string            `json:"action"`
+	OccurredAt             *time.Time        `json:"occurred_at,omitempty"`
+	Value                  *bool             `json:"value,omitempty"`
+	Position               *LearningPosition `json:"position,omitempty"`
+	Mode                   string            `json:"mode,omitempty"`
+	ExpectedRevision       *int64            `json:"expected_revision,omitempty"`
+	DraftRevision          *int64            `json:"draft_revision,omitempty"`
+	RecordID               string            `json:"record_id,omitempty"`
+	ParentID               string            `json:"parent_id,omitempty"`
+	Text                   string            `json:"text,omitempty"`
+	AsDanmaku              bool              `json:"as_danmaku,omitempty"`
+	SessionID              string            `json:"session_id,omitempty"`
+	SessionSequence        int64             `json:"session_sequence,omitempty"`
+	StartAt                *time.Time        `json:"start_at,omitempty"`
+	EndAt                  *time.Time        `json:"end_at,omitempty"`
+	ReviewIntervalsMinutes []int             `json:"review_intervals_minutes,omitempty"`
 }
 
 // LegacyRecordInput is an explicit, conditional one-way import of an existing
@@ -83,19 +84,23 @@ type LearningProgress struct {
 }
 
 type LearningState struct {
-	ClientID          string                      `json:"client_id"`
-	ItemID            string                      `json:"item_id"`
-	ReviewPending     bool                        `json:"review_pending"`
-	ReviewRevision    int64                       `json:"review_revision,omitempty"`
-	ReviewLastEventID string                      `json:"review_last_event_id,omitempty"`
-	ReviewCount       int64                       `json:"review_count"`
-	ViewCount         int64                       `json:"view_count"`
-	RecordCount       int64                       `json:"record_count"`
-	DurationMS        int64                       `json:"duration_ms"`
-	LastViewAt        *time.Time                  `json:"last_view_at,omitempty"`
-	LastReviewAt      *time.Time                  `json:"last_review_at,omitempty"`
-	Progress          map[string]LearningProgress `json:"progress"`
-	UpdatedAt         time.Time                   `json:"updated_at"`
+	ClientID               string                      `json:"client_id"`
+	ItemID                 string                      `json:"item_id"`
+	ReviewPending          bool                        `json:"review_pending"`
+	ReviewActive           bool                        `json:"review_active"`
+	ReviewIntervalsMinutes []int                       `json:"review_intervals_minutes,omitempty"`
+	ReviewStep             int                         `json:"review_step"`
+	NextReviewAt           *time.Time                  `json:"next_review_at,omitempty"`
+	ReviewRevision         int64                       `json:"review_revision,omitempty"`
+	ReviewLastEventID      string                      `json:"review_last_event_id,omitempty"`
+	ReviewCount            int64                       `json:"review_count"`
+	ViewCount              int64                       `json:"view_count"`
+	RecordCount            int64                       `json:"record_count"`
+	DurationMS             int64                       `json:"duration_ms"`
+	LastViewAt             *time.Time                  `json:"last_view_at,omitempty"`
+	LastReviewAt           *time.Time                  `json:"last_review_at,omitempty"`
+	Progress               map[string]LearningProgress `json:"progress"`
+	UpdatedAt              time.Time                   `json:"updated_at"`
 }
 
 type RemoteLearningRecord struct {
@@ -182,6 +187,9 @@ func normalizeLearningEvent(in LearningEventInput, now time.Time) (LearningEvent
 		in.OccurredAt = &at
 	}
 	if in.DraftRevision != nil && (in.Action != "record_create" || *in.DraftRevision < 1) {
+		return in, ErrInvalid
+	}
+	if in.ReviewIntervalsMinutes != nil && (in.Action != "review_plan" || in.Value == nil || !*in.Value || len(in.ReviewIntervalsMinutes) == 0 || !validReviewIntervals(in.ReviewIntervalsMinutes)) {
 		return in, ErrInvalid
 	}
 	noRecord := in.RecordID == "" && in.ParentID == "" && in.Text == "" && !in.AsDanmaku
@@ -522,16 +530,46 @@ func (s *Service) reportLearning(ctx context.Context, key string, inputs []Learn
 				state.ViewCount++
 				state.LastViewAt = &now
 			case "review_plan":
-				state.ReviewPending = *in.Value
+				if *in.Value {
+					wasActive := state.ReviewActive || state.ReviewPending
+					state.ReviewActive = true
+					if !wasActive || len(in.ReviewIntervalsMinutes) > 0 {
+						state.ReviewStep = 0
+						state.ReviewPending = true
+						at := now
+						if in.OccurredAt != nil {
+							at = *in.OccurredAt
+						}
+						state.NextReviewAt = &at
+					}
+					if len(in.ReviewIntervalsMinutes) > 0 {
+						state.ReviewIntervalsMinutes = append([]int{}, in.ReviewIntervalsMinutes...)
+					}
+					if len(state.ReviewIntervalsMinutes) == 0 {
+						state.ReviewIntervalsMinutes = append([]int{}, defaultReviewIntervals...)
+					}
+				} else {
+					state.ReviewActive = false
+					state.ReviewPending = false
+					state.NextReviewAt = nil
+				}
 				state.ReviewRevision++
 				state.ReviewLastEventID = in.EventID
 				reviewHistory[in.ItemID] = true
 			case "review":
 				state.ReviewCount++
+				at := now
+				if in.OccurredAt != nil {
+					at = *in.OccurredAt
+				}
+				if state.ReviewActive || state.ReviewPending {
+					state.ReviewActive = true
+					scheduleReview(&state, at)
+				}
 				state.ReviewPending = false
 				state.ReviewRevision++
 				state.ReviewLastEventID = in.EventID
-				state.LastReviewAt = &now
+				state.LastReviewAt = &at
 				reviewHistory[in.ItemID] = true
 			case "progress":
 				if !validLearningPosition(in.Position, item, in.Mode) {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -21,12 +22,22 @@ func (s *Server) learningCapabilities(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	success(w, 200, map[string]any{
-		"type": "wzstudy.learning", "version": 2, "client_id": client.ID, "user_id": client.ID, "identity": "user",
+	version, identity := 1, "client"
+	if strings.HasPrefix(bearer(r), "wzus_") {
+		version, identity = 2, "user"
+	}
+	capabilities := map[string]any{
+		"type": "wzstudy.learning", "version": version, "client_id": client.ID, "identity": identity,
 		"read": client.Allows(study.PermissionFeedback), "write": client.Allows(study.PermissionFeedback),
-		"features":   []string{"view", "review", "review_plan", "records", "progress", "duration", "personal_collections", "legacy_feedback_import", "legacy_record_import", "legacy_review_import", "legacy_personal_collection_import", "drafts", "legacy_draft_import", "draft_history"},
+		"features":   []string{"view", "review", "review_plan", "records", "progress", "duration", "personal_collections", "legacy_feedback_import", "legacy_record_import", "legacy_review_import", "legacy_personal_collection_import", "drafts", "legacy_draft_import", "draft_history", "learning_modes", "review_schedule"},
 		"max_events": 100,
-	})
+	}
+	if identity == "user" {
+		capabilities["user_id"] = client.ID
+		capabilities["shared_channels"] = true
+		capabilities["learning_isolation"] = "authenticated_user"
+	}
+	success(w, 200, capabilities)
 }
 
 func (s *Server) reportLearning(w http.ResponseWriter, r *http.Request) {

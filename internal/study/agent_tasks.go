@@ -41,7 +41,7 @@ const (
 	maximumTaskSummaryBytes = 8000
 	maximumTaskErrorBytes   = 2000
 	defaultTaskRounds       = 100
-	defaultTaskToolCalls    = 100
+	defaultTaskToolCalls    = 200
 	maximumTaskRounds       = 1000
 	maximumTaskToolCalls    = 1000
 )
@@ -109,6 +109,7 @@ type TaskConstraints struct {
 	AllowDomains    []string `json:"allow_domains,omitempty"`
 }
 
+// TaskBudget bounds one collection task execution, not an agent-wide shared quota.
 type TaskBudget struct {
 	MaxRounds      int `json:"max_rounds"`
 	MaxToolCalls   int `json:"max_tool_calls"`
@@ -162,6 +163,9 @@ type CollectionTask struct {
 	CreatedAt       time.Time       `json:"created_at"`
 	UpdatedAt       time.Time       `json:"updated_at"`
 	FinishedAt      *time.Time      `json:"finished_at,omitempty"`
+	PlanID          string          `json:"plan_id,omitempty"`
+	PlanRunID       string          `json:"plan_run_id,omitempty"`
+	QueueExpiresAt  *time.Time      `json:"queue_expires_at,omitempty"`
 }
 
 type CollectionTaskInput struct {
@@ -373,30 +377,9 @@ func (s *Service) CreateCollectionTask(ctx context.Context, in CollectionTaskInp
 		in.SourceID = source.ID
 	}
 	err = s.Store.Update(ctx, func(tx Tx) error {
-		source, e := tx.Source(in.SourceID)
-		if e != nil {
-			return e
-		}
-		if !source.Enabled || !source.Allows(PermissionIngest) {
-			return ErrDisabled
-		}
-		if in.AgentID != "" {
-			agent, e := recordAs[agentRecord](tx, "agent", in.AgentID)
-			if e != nil {
-				return e
-			}
-			if !agent.Agent.Enabled || !agent.Agent.Allows(PermissionTaskClaim) {
-				return ErrDisabled
-			}
-		}
-		now := s.Now()
-		out = CollectionTask{
-			OwnerID: WorkspaceUserID(ctx), ID: uuid.NewString(), SourceID: in.SourceID,
-			Title: in.Title, Goal: in.Goal, Constraints: in.Constraints, Budget: in.Budget,
-			Status: TaskStatusPending, Priority: in.Priority, MaxAttempts: in.MaxAttempts,
-			AssignedAgentID: in.AgentID, CreatedAt: now, UpdatedAt: now,
-		}
-		return recordSave(tx, "agent_task", out.ID, out)
+		var e error
+		out, e = createCollectionTaskTx(ctx, tx, in, s.Now())
+		return e
 	})
 	return
 }
@@ -452,14 +435,10 @@ func (s *Service) ClaimAgentTask(ctx context.Context, agentID string, capacity i
 			return e
 		}
 		for index := range tasks {
-			task := tasks[index]
-			if task.Status != TaskStatusClaimed && task.Status != TaskStatusRunning {
+			task, changed := refreshCollectionQueueTask(tasks[index], now)
+			if !changed {
 				continue
 			}
-			if task.LeaseExpiresAt != nil && task.LeaseExpiresAt.After(now) {
-				continue
-			}
-			task = requeueTask(task, now)
 			if e := recordSave(tx, "agent_task", task.ID, task); e != nil {
 				return e
 			}
@@ -908,6 +887,10 @@ func (s *Service) RetryAgentTask(ctx context.Context, taskID string) (out Collec
 		task, e := recordAs[CollectionTask](tx, "agent_task", taskID)
 		if e != nil {
 			return e
+		}
+		// Plan reruns must create a fresh run/task, preserving the original result.
+		if task.PlanID != "" {
+			return ErrConflict
 		}
 		switch task.Status {
 		case TaskStatusFailed, TaskStatusExpired, TaskStatusCancelled:

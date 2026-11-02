@@ -48,8 +48,8 @@ func TestTaskContentTypeAndToolBudget(t *testing.T) {
 	if task.Constraints.ContentType != "video" {
 		t.Fatalf("content type not stored: %+v", task.Constraints)
 	}
-	if task.Budget.MaxToolCalls != 100 {
-		t.Fatalf("default tool call budget must be 100: %d", task.Budget.MaxToolCalls)
+	if task.Budget.MaxToolCalls != 200 {
+		t.Fatalf("default tool call budget must be 200: %d", task.Budget.MaxToolCalls)
 	}
 	if _, err := service.CreateCollectionTask(context.Background(), CollectionTaskInput{
 		Goal:        "非法类型",

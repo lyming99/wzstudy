@@ -140,7 +140,7 @@ func (s *Service) CreateClient(ctx context.Context, in ClientInput) (out Client,
 	}
 	permissions := in.Permissions
 	if permissions == nil {
-		permissions = []string{PermissionRead, PermissionSync}
+		permissions = []string{PermissionRead, PermissionSync, PermissionFeedback}
 	}
 	enabled := in.Enabled == nil || *in.Enabled
 	now := s.Now()

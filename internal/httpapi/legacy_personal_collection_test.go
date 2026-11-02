@@ -20,7 +20,7 @@ func TestLegacyPersonalCollectionHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, key := workspaceLearner(t, h, "legacy-collection")
-	_, readKey := managedClient(t, h, "legacy-collection-read", nil)
+	_, readKey := managedClient(t, h, "legacy-collection-read", []string{"read", "sync"})
 	_, other := managedLearner(t, h, "legacy-collection-other")
 	path := "/api/v1/client/learning/collections/import-legacy"
 	date := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339Nano)

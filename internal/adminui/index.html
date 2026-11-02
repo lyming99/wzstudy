@@ -11,6 +11,8 @@
 <link rel="stylesheet" href="/workspace/user-management.css">
 <link rel="stylesheet" href="/workspace/home.css">
 <link rel="stylesheet" href="/workspace/tasks.css">
+<link rel="stylesheet" href="/workspace/collection-plans.css">
+<link rel="stylesheet" href="/workspace/workspace.css">
 </head>
 <body class="unauthenticated">
 <div class="mobile-shade" data-action="close-nav"></div>
@@ -23,21 +25,26 @@
   <nav class="nav-list home-nav" aria-label="工作台导航">
     <button class="nav-item active" data-route="home" title="首页"><span class="icon" data-icon="home"></span><span class="nav-label">首页</span></button>
   </nav>
-  <div class="nav-group-title user-only">资料数据服务</div>
-  <nav class="nav-list user-only" aria-label="资料服务导航">
+  <div class="nav-group-title user-only">数据管理</div>
+  <nav class="nav-list user-only" aria-label="数据管理导航">
     <button class="nav-item" data-route="library" title="数据录入"><span class="icon" data-icon="upload"></span><span class="nav-label">数据录入</span><span class="nav-count" id="nav-count">0</span></button>
-    <button class="nav-item" data-route="query" title="数据管理"><span class="icon" data-icon="search"></span><span class="nav-label">数据管理</span></button>
     <button class="nav-item" data-route="rss" title="RSS 订阅"><span class="icon" data-icon="rss"></span><span class="nav-label">RSS 订阅</span></button>
+    <button class="nav-item" data-route="query" title="数据列表"><span class="icon" data-icon="search"></span><span class="nav-label">数据列表</span></button>
+    <button class="nav-item" data-route="catalog" title="合集管理"><span class="icon" data-icon="layers"></span><span class="nav-label">合集管理</span></button>
     <button class="nav-item" data-route="roadmaps" title="学习路线图"><span class="icon" data-icon="roadmap"></span><span class="nav-label">学习路线图</span></button>
-    <button class="nav-item" data-route="clients" title="客户端管理"><span class="icon" data-icon="monitor"></span><span class="nav-label">客户端管理</span></button>
   </nav>
-  <div class="nav-group-title">Agent 服务</div>
-  <nav class="nav-list" aria-label="Agent 服务导航">
-    <button class="nav-item" data-route="agent-access" title="Agent 接入"><span class="icon" data-icon="code"></span><span class="nav-label">Agent 接入</span></button>
+  <div class="nav-group-title">任务管理</div>
+  <nav class="nav-list" aria-label="任务管理导航">
     <button class="nav-item" data-route="tasks" title="收集任务"><span class="icon" data-icon="upload"></span><span class="nav-label">收集任务</span></button>
+    <button class="nav-item" data-route="agent-access" title="Agent 接入"><span class="icon" data-icon="code"></span><span class="nav-label">Agent 接入</span></button>
+  </nav>
+  <div class="nav-group-title user-only">客户端管理</div>
+  <nav class="nav-list user-only" aria-label="客户端管理导航">
+    <button class="nav-item" data-route="clients" title="客户端管理"><span class="icon" data-icon="monitor"></span><span class="nav-label">客户端管理</span></button>
+    <button class="nav-item" data-route="learning" title="学习数据"><span class="icon" data-icon="chart"></span><span class="nav-label">学习数据</span></button>
   </nav>
   <div class="nav-group-title admin-only">系统管理</div>
-  <nav class="nav-list admin-only" aria-label="管理员导航">
+  <nav class="nav-list admin-only" aria-label="系统管理导航">
     <button class="nav-item" data-route="users" title="用户管理"><span class="icon" data-icon="shield"></span><span class="nav-label">用户管理</span></button>
   </nav>
   <div class="sidebar-bottom">
@@ -63,8 +70,10 @@
 <script src="/workspace/auth-sync.js" defer></script>
 <script src="/workspace/qrcodegen.js" defer></script>
 <script src="/workspace/roadmaps.js" defer></script>
+<script src="/workspace/roadmap-import.js" defer></script>
 <script src="/workspace/user-management.js" defer></script>
 <script src="/workspace/home.js" defer></script>
+<script src="/workspace/collection-plans.js" defer></script>
 <script src="/workspace/tasks.js" defer></script>
 <script src="/workspace/agent-access.js" defer></script>
 <script src="/workspace/app.js" defer></script>

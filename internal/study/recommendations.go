@@ -20,6 +20,7 @@ type recommendationSession struct {
 	ID           string
 	ClientID     string
 	Personalized bool
+	UnreadIDs    []string
 	ItemIDs      []string
 	ExpiresAt    time.Time
 }

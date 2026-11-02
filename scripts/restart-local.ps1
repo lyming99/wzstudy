@@ -40,7 +40,13 @@ if (-not (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue)) {
 $docker = Get-Command docker -ErrorAction SilentlyContinue
 if (-not $docker) { throw 'Docker is required for PostgreSQL. No process was stopped.' }
 $hasSource = (Test-Path -LiteralPath (Join-Path $Root 'go.mod') -PathType Leaf) -and (Get-Command go -ErrorAction SilentlyContinue) -and -not $SkipBuild
-if (-not $hasSource -and (-not (Test-Path -LiteralPath (Join-Path $Root 'dist\wzstudy-migrate.exe') -PathType Leaf) -or -not (Test-Path -LiteralPath (Join-Path $Root 'dist\wzstudy-v0.3.0-windows-amd64.exe') -PathType Leaf))) {
+$PackagedApi = Join-Path $Root 'dist\wzstudy.exe'
+if (-not (Test-Path -LiteralPath $PackagedApi -PathType Leaf)) {
+    $LegacyApi = Get-ChildItem -LiteralPath (Join-Path $Root 'dist') -Filter 'wzstudy-v*-windows-amd64.exe' -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending | Select-Object -First 1
+    if ($null -ne $LegacyApi) { $PackagedApi = $LegacyApi.FullName }
+}
+if (-not $hasSource -and (-not (Test-Path -LiteralPath (Join-Path $Root 'dist\wzstudy-migrate.exe') -PathType Leaf) -or -not (Test-Path -LiteralPath $PackagedApi -PathType Leaf))) {
     throw 'Go source or both packaged PostgreSQL executables are required. No process was stopped.'
 }
 if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'docker-compose-local-postgres.yml') -PathType Leaf)) {

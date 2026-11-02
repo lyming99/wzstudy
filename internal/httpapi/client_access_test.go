@@ -18,7 +18,7 @@ func managedClient(t *testing.T, h http.Handler, slug string, permissions []stri
 	data(t, request(t, h, "POST", "/api/v1/workspace/clients", workspaceKey, map[string]any{"slug": slug, "name": slug, "permissions": permissions}), &out)
 	want := permissions
 	if want == nil {
-		want = []string{"read", "sync"}
+		want = []string{"read", "sync", "feedback"}
 	}
 	if !strings.HasPrefix(out.Key, "wzck_") || !reflect.DeepEqual(out.Client.Permissions, want) {
 		t.Fatal(out.Client, out.Key != "")

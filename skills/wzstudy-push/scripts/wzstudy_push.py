@@ -25,7 +25,7 @@ from uuid import UUID
 MAX_JSON = 4 * 1024 * 1024
 MAX_UPLOAD = 200 * 1024 * 1024
 STRING_LIMITS = {'external_id': 512, 'title': 500, 'summary': 8000, 'content': 262144,
-                 'author': 200, 'category': 200, 'language': 35, 'url': 2048}
+                 'author': 200, 'category': 200, 'content_mode': 16, 'language': 35, 'url': 2048}
 FIELDS = set(STRING_LIMITS) | {'format', 'kind', 'tags', 'published_at', 'source_updated_at', 'assets'}
 MIME = {'.md':'text/markdown', '.markdown':'text/markdown', '.txt':'text/plain',
         '.mp3':'audio/mpeg', '.wav':'audio/wav', '.m4a':'audio/mp4', '.ogg':'audio/ogg', '.flac':'audio/flac',
@@ -179,6 +179,10 @@ def normalize(item, with_files=False):
     if not value.get('title', '').strip():
         raise PushError('invalid_item', 'A factual, non-empty title is required.')
     value['title'] = value['title'].strip()
+    if 'content_mode' in value:
+        value['content_mode'] = value['content_mode'].strip()
+        if value['content_mode'] not in ('default', 'news', 'learning'):
+            raise PushError('invalid_item', 'content_mode must be default, news or learning.')
     value.setdefault('kind', 'article')
     value.setdefault('format', 'markdown')
     if value['kind'] not in ('article', 'audio', 'video', 'carousel') or value['format'] not in ('text', 'markdown'):
@@ -207,7 +211,8 @@ def normalize(item, with_files=False):
         raise PushError('invalid_item', 'Non-article JSON requires an external media URL or registered assets; use upload for local files.')
     if not value.get('external_id', '').strip():
         value.pop('external_id', None)
-        identity = value.get('url') or encode(value).decode('utf-8')
+        identity_fields = {key: item for key, item in value.items() if key != 'content_mode'}
+        identity = value.get('url') or encode(identity_fields).decode('utf-8')
         value['external_id'] = 'ai:' + hashlib.sha256(identity.encode('utf-8')).hexdigest()
     return value
 

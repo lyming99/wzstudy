@@ -1,5 +1,22 @@
 # WzStudy HTTP API v1
 
+## 独立内容模式（当前规则）
+
+内容增加 `content_mode`，取值 `default`（默认）、`news`（资讯）、`learning`（学习），与 `category` 主题分类完全独立。例如可同时设置 `category="人工智能"`、`content_mode="news"`。
+
+- 旧资料及未指定模式的新资料视为默认；默认模式可省略 JSON 字段，保留既有内容哈希，不批量修改旧记录。
+- 资讯队列只依据内容模式：默认 + 资讯进入；学习不进入。不根据主题分类、合集归属猜测模式。
+- 合集、路线、随机、复习仍按各自原有规则读取，并不因内容标记为学习而自动创建编排或复习计划。
+- 管理编辑和链接登记可选择模式；资料菜单、资料批量栏及数据查询多选栏提供独立「设置模式」。快捷设置只更新模式元数据，即时同步公开查询投影，不公开待审核标题、正文或附件，也不覆盖分类、ID、附件和学习记录。
+- `POST /workspace/items/organize` 支持 `content_mode`，与 `category/collection_id` 可组合，仍为原子批次。普通正文编辑仍遵循既有审核流程。
+- `GET /items`、`GET /workspace/items` 支持独立 `content_mode=default|news|learning` 筛选，不传表示不限模式。
+- 旧采集端及旧管理端更新资料时，未传模式保留已有选择；显式传 `content_mode="default"` 才重置为默认。不要通过缺省或清空主题分类来修改模式。
+
+```json
+{"title":"AI 行业动态","content":"正文","category":"人工智能","content_mode":"news"}
+```
+
+
 当前权限模型：所有账号共用 `/workspace/` 登录入口并拥有自己的资料和学习工作区；管理员使用本人工作区，同时额外拥有用户管理权限。资料与学习数据按账号隔离，管理员不能直接访问其他用户的私人资料。`/admin/` 保留为账号管理兼容入口，学习页为 `/learn/`。用户工作区说明见 `USER_WORKSPACES.md`（服务端 `/docs/user-workspaces`），完整路由见 `/openapi.json`。
 
 基地址：`http://127.0.0.1:8091/api/v1`（生产必须通过 HTTPS 代理）。
@@ -17,7 +34,7 @@
 
 资料“发布”表示可以被本人及本人查询客户端读取，不是公开给其他用户。所有者由服务端认证决定，筛选参数不授予跨用户权限。请勿将密码、会话令牌或 Key 放进 URL、日志或浏览器持久存储。密码重置、停用及用户改密撤销所有旧用户会话；退出只撤销当前会话。Cookie 写请求必须来自本站 Origin。
 
-## 公开合集与章节
+## 合集与章节（保存即生效）
 
 合集是用户本人编排的内容目录，不是个人收藏。查询接口：
 
@@ -29,11 +46,11 @@ GET /catalog/collections/changes?after=0&limit=20
 
 列表、详情需要 read；独立变更流需要 sync。列表返回摘要，详情按章节顺序返回可见内容 ID；章节关联的内容下架后不再返回该章节。变更流只含已公开合集，使用自己的 cursor/high_watermark，不改变 `/changes` 的资料游标。旧版或下架合集的历史快照作为删除变更返回，不泄露旧快照。每页最多 20 个变更。
 
-用户使用 `/workspace/catalog/collections` 创建、编辑、发布、下架和删除合集。编辑草稿不会更改公开快照；发布时所有章节必须引用当前已发布内容。详细字段见 `/openapi.json` 和管理文档。新增功能需要数据库迁移 `000005_catalog_collections.sql`，不会覆盖历史 `collection` 记录。
+用户使用 `/workspace/catalog/collections` 创建、编辑和删除合集；创建、更新后立即生效，不再有发布或下架步骤。可编排尚未公开的资料，但客户端只读取其中已公开的资料；以后发布或下架资料会同步刷新合集。历史发布/下架路径返回 410。基础表继续使用既有 `000005_catalog_collections.sql`；本次不新增 SQL 迁移，启动时仅升级已有明确所有者的旧合集，不认领无主档案，也不公开资料正文草稿。
 
 ## 用户学习路线图
 
-管理端新增独立“学习路线图”入口（`/workspace/#roadmaps`），以思维导图编辑节点、层级、顺序、说明、折叠状态和资料引用。API 为 `/workspace/roadmaps`（GET/POST）、`/workspace/roadmaps/{id}`（GET/PUT）与 `/workspace/roadmaps/{id}/delete`（POST）。仅资料所有者本人可读写；创建 revision=0，更新和删除检查最新 revision；最多 300 节点、12 层。该模块不发布到客户端，不写个人学习进度，不改变公开资料/合集游标。完整使用与请求示例见 `LEARNING_ROADMAPS.md`、管理文档及 `/openapi.json`。
+管理端新增独立“学习路线图”入口（`/workspace/#roadmaps`），以思维导图编辑节点、层级、顺序、说明、折叠状态和资料引用。API 为 `/workspace/roadmaps`（GET/POST）、`/workspace/roadmaps/{id}`（GET/PUT）与 `/workspace/roadmaps/{id}/delete`（POST）。仅资料所有者本人可读写；创建 revision=0，更新和删除检查最新 revision；最多 300 节点、12 层。客户端通过学习模式接口读取路线图中已公开的资料；管理路线图本身不写个人学习进度，不改变公开资料/合集游标。完整使用与请求示例见 `LEARNING_ROADMAPS.md`、管理文档及 `/openapi.json`。
 
 ## 私人学习数据（用户身份 v2）
 
@@ -133,7 +150,7 @@ POST     /workspace/clients/{id}/key  # 显式轮换
 GET/POST /workspace/identity-migration
 ```
 
-创建请求为 `{"slug":"desktop-query","name":"桌面学习端","permissions":["read","sync"]}`，可带 description/enabled；返回 `{"data":{"client":{...},"access_key":"<仅本次返回>"}}`。权限可配置 read/sync/feedback，反馈必须显式授予，创建省略/null 默认两项，更新省略/null 保留、[] 撤销全部。PUT 和轮换需要最新 revision，客户端不能管理其他身份。
+创建请求为 `{"slug":"desktop-query","name":"桌面学习端","permissions":["read","sync"]}`，可带 description/enabled；返回 `{"data":{"client":{...},"access_key":"<仅本次返回>"}}`。权限可配置 read/sync/feedback，新建时省略/null 默认 read/sync/feedback 三项；显式只读权限保持只读，更新省略/null 保留、[] 撤销全部。PUT 和轮换需要最新 revision，客户端不能管理其他身份。
 
 来源增加 integration（collector/skill/mcp/agent；RSS 固定 rss），仅作接入标记。来源不接受 read/sync，客户端不接受 ingest/upload/inbox。待拆分旧来源的普通编辑/轮换返回 409，应先预检并显式迁移，避免丢失旧 Key 归属。
 
@@ -267,7 +284,7 @@ PublicItem 字段为 `id`、`source_id`、`revision`、全部 Content 字段、`
 - 浏览候选：`GET /items?kind=video&category=人工智能&tag=AI&limit=20&offset=0`；各过滤条件取交集，可按实际需要省略。
 - 阅读详情：`GET /items/{id}`，媒体地址由 `assets` 返回，媒体读取仍需 `read` 权限。
 - 更新本地缓存：用 `sync` 权限定期调用 `/changes?after=<已提交游标>`，按 `has_more` 补齐后再按客户端策略等待下一次拉取。
-- 学习端默认权限为 `read + sync`，学习反馈权限须显式授予。`GET /client/recommendations` 提供规则推荐；经 feedback 授权后，学习记录、复习、查看、进度及时长按客户端身份隔离。
+- 新建学习端默认权限为 `read + sync + feedback`；旧客户端权限不自动扩张，可在配置权限中显式启用学习数据上报。`GET /client/recommendations` 提供规则推荐；经 feedback 授权后，学习记录、复习、查看、进度及时长按客户端身份隔离。
 - 示例 `examples/subscribe.py` 已改为 HTTP 主动轮询，SQLite 在同一事务中保存资料变更和游标；保留旧文件名以兼容已有运行方式。
 
 旧的推送计划、收件箱、SSE 及专题管理路由已移除并返回 404。历史资料、附件和变更游标保留，不清空客户端缓存；旧工作空间的推送/专题记录不再读取或执行；遗留 `inbox` 授权被忽略且不会转换为阅读权限。旧查询或混合 Source 须显式迁入 Client 后才能用原 Key 查询。
@@ -312,7 +329,7 @@ GET      /workspace/agent/binary
 
 ## 数据源内的个人合集
 
-个人合集与管理员发布的目录合集是不同数据；按独立查询 Client 身份隔离，读写都必须明确授予 `feedback`。多个设备共享一个查询 Key 时也共享此身份的个人合集。接口不会接受客户端指定其他 `client_id`：
+个人合集与管理端编排的目录合集是不同数据；按独立查询 Client 身份隔离，读写都必须明确授予 `feedback`。多个设备共享一个查询 Key 时也共享此身份的个人合集。接口不会接受客户端指定其他 `client_id`：
 
 - `GET /client/learning/collections?limit=20&offset=0` 分页查询自己的合集；
 - `GET /client/learning/collections/{collection_id}` 查询详情，成员返回 `item_id` 和 `available`，已下架资料只保留不可用占位，不暴露草稿；
@@ -323,4 +340,36 @@ GET      /workspace/agent/binary
 
 ## 客户端反馈与去重
 
-客户端可显式申请 feedback 权限，上报推荐/曝光、已读、喜欢、学习记录和收藏，按事件 ID 幂等保存。`POST /api/v1/client/feedback` 仅写本身份；`GET /api/v1/items?exclude=recommended,read` 或 `unseen=true` 可过滤旧候选，支持时间窗口和本页状态。管理员只读查看反馈或按身份模拟查询，不替用户上报。默认 read/sync 及所有旧 Key 不自动扩权。详见 `docs/CLIENT_FEEDBACK.md`（文档目录内为 `CLIENT_FEEDBACK.md`），示例为 `examples/feedback_client.py`。
+客户端可显式申请 feedback 权限，上报推荐/曝光、已读、喜欢、学习记录和收藏，按事件 ID 幂等保存。`POST /api/v1/client/feedback` 仅写本身份；`GET /api/v1/items?exclude=recommended,read` 或 `unseen=true` 可过滤旧候选，支持时间窗口和本页状态。管理员只读查看反馈或按身份模拟查询，不替用户上报。新客户端默认 read/sync/feedback；所有旧 Key 不自动扩权。详见 `docs/CLIENT_FEEDBACK.md`（文档目录内为 `CLIENT_FEEDBACK.md`），示例为 `examples/feedback_client.py`。
+
+
+## 五种学习模式与内容扩展（2026-10-31）
+
+完整接线、周期语义和字段样例见 `LEARNING_MODES.md`。新增 `GET /client/learning/modes/categories` 与 `GET /client/learning/modes/items`；合集和路线使用现有后台的合集章节、路线节点管理。学习客户端 Key 在 feedback 授权后可以保存该客户端自己的学习状态，不会变成用户账号、获得管理权限或读取其他工作区。用户会话仍保持原有 CSRF 和身份一致性保护。
+
+
+## 资料移动与分类设置
+
+`POST /workspace/items/organize` 接受本人用户会话，单次 1–100 条资料，整个批次原子提交：
+
+```json
+{"items":[{"id":"<资料 UUID>","revision":3}],"collection_id":"<目标合集 UUID>","collection_revision":2}
+```
+
+```json
+{"items":[{"id":"<资料 UUID>","revision":3}],"category":"人工智能"}
+```
+
+移动会从原合集移除并追加到目标合集，保留已在目标中的顺序和章节身份；`collection_id=""` 明确移出全部合集，省略则不改归属。分类 `category=""` 仅清空主题分类，省略则不改分类；两项可同批提交。分类只更新分类元数据，不会顺带公开待审核正文或附件。目标容量、资料/合集修订和所属工作区均校验，失败不会部分修改。管理端资料菜单与多选栏、数据查询多选栏都提供这两个操作。
+
+客户端资讯模式按独立内容模式读取默认和资讯资料，不再选择资讯分类。只有合集/路线模式才需要先选择对应合集或路线图；移动合集不会擅自覆盖资料分类。详见 `LEARNING_MODES.md`。
+
+
+## 采集计划（定时 / API 触发）
+
+工作区新增 `/workspace/agent/collection-plans` 与 `/admin/agent/collection-plans`，支持计划管理、预览、启停、运行历史与专用触发凭据。外部入口为 `POST /collection-triggers/{id}`，仅接受计划专用凭据和白名单参数，不能授予读取资料的权限。完整约定见 `COLLECTION_PLANS.md`，运行时可访问 `/docs/collection-plans`；所有 API 均位于 `/api/v1` 下。
+
+
+## 2026-11-01：共享学习渠道与播放器
+
+学习账号可通过 `/workspace/channel` 配置独立渠道，并通过 `/channels` 读取公开或邀请自己的渠道。共享只开放显式来源的已发布内容；访问者必须登录，学习记录仍进入本人命名空间。完整字段见 `/openapi.json`；行为、权限、升级及验证说明见 `LEARNING_OPTIMIZATION.md`。音频与视频现在均可使用内联章节、SRT/WebVTT 字幕，支持 Web 端歌词、翻译显示和单句循环。

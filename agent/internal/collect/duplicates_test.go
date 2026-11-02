@@ -29,7 +29,7 @@ func TestSkippedReceiptDoesNotConsumeNewItemQuota(t *testing.T) {
 	}
 	stats := &serverapi.Stats{}
 	task := &serverapi.Task{ID: "task", Attempts: 1, Constraints: serverapi.Constraints{MaxItems: 1, DuplicatePolicy: "skip"}}
-	ingestor := NewIngestor(client, task, 1, stats)
+	ingestor := NewIngestor(client, task, 1, stats, nil)
 	call := tool.Call{Arguments: json.RawMessage(`{"items":[{"external_id":"candidate","title":"title"}]}`)}
 	result, err := ingestor.Handle(context.Background(), call)
 	if err != nil || !strings.Contains(result.Content, `"quota_left":1`) || stats.ItemsSkipped != 1 {

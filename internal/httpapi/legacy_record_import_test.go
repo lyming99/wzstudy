@@ -20,7 +20,7 @@ func TestLegacyRecordImportHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, key := workspaceLearner(t, h, "migration-record")
-	_, readKey := managedClient(t, h, "migration-record-read", nil)
+	_, readKey := managedClient(t, h, "migration-record-read", []string{"read", "sync"})
 	_, other := managedLearner(t, h, "migration-record-other")
 	path := "/api/v1/client/learning/import-legacy-records"
 	created := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339Nano)

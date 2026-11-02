@@ -1,0 +1,27 @@
+.collection-view-tabs{margin-bottom:18px;border-bottom:1px solid var(--line)}.collection-plan-config{padding:16px;background:#f7f9f4;border:1px solid var(--line);border-radius:10px;display:grid;gap:14px}.collection-plan-config [hidden]{display:none!important}.collection-plan-config small{font-size:var(--text-md);color:var(--muted)}.collection-plan-config input[type=datetime-local]{min-width:0;width:100%;color-scheme:light}.collection-plan-config input[type=datetime-local]::-webkit-calendar-picker-indicator{cursor:pointer;opacity:.75}.collection-plan-config .collection-time-error{color:var(--text-danger)}.collection-weekdays{display:flex;flex-wrap:wrap;gap:12px;border:1px solid var(--line);border-radius:8px;padding:12px}.collection-weekdays legend{font-size:var(--text-md);padding:0 5px}.collection-weekdays label{white-space:nowrap;font-size:var(--text-md)}.collection-hook-options{display:grid;gap:10px}.collection-hook-options p{margin:0}.collection-preview{display:grid;gap:8px}.collection-preview ol{margin:0;padding-left:22px;font-size:var(--text-md);font-variant-numeric:tabular-nums}.collection-plan-table .task-actions{min-width:180px;max-width:250px}.collection-plan-table td:first-child{max-width:310px}.collection-plan-table td:first-child small{max-width:290px;white-space:normal}.collection-history{display:grid;gap:12px}.collection-run{padding:15px;border:1px solid var(--line);border-radius:9px;display:grid;gap:7px}.collection-run>div:first-child{display:flex;align-items:center;justify-content:space-between;gap:12px}.collection-run p{font-size:var(--text-md);overflow-wrap:anywhere}.collection-run small{color:var(--muted)}.collection-run pre,.collection-history pre{font-size:var(--text-md);white-space:pre-wrap;overflow-wrap:anywhere;max-height:250px;overflow:auto;background:#f6f8f4;padding:12px;border-radius:7px}.collection-run details{font-size:var(--text-md)}.collection-run summary{cursor:pointer}.collection-history-pages{display:flex;align-items:center;justify-content:flex-end;gap:9px}.collection-history-pages span{margin-right:auto;font-size:var(--text-md);color:var(--muted)}@media(max-width:700px){.collection-plan-config{padding:12px}.collection-weekdays{gap:9px}.collection-plan-table .task-actions{max-width:none;min-width:0}.collection-run{padding:12px}.collection-history-pages{flex-wrap:wrap}}
+
+/* Secondary scheduling controls stay available without crowding the main form. */
+.collection-plan-advanced { min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+.collection-plan-advanced > summary {
+  display: flex; align-items: center; gap: 12px; min-height: 62px;
+  padding: 12px 14px; border-radius: 8px; list-style: none; cursor: pointer;
+}
+.collection-plan-advanced > summary::-webkit-details-marker { display: none; }
+.collection-plan-advanced > summary:hover { background: var(--surface-muted); }
+.collection-plan-advanced > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.collection-advanced-heading { display: grid; gap: 2px; min-width: 0; line-height: 1.6; }
+.collection-advanced-heading strong { font-size: var(--text-md); font-weight: 600; }
+.collection-advanced-heading small { font-size: var(--text-sm); font-weight: 400; }
+.collection-plan-advanced > summary > .icon { width: 16px; height: 16px; margin-left: auto; color: var(--muted); transition: transform .15s ease; }
+.collection-plan-advanced[open] > summary { border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; }
+.collection-plan-advanced[open] > summary > .icon { transform: rotate(180deg); }
+.collection-advanced-body { display: grid; gap: 14px; padding: 14px; }
+.collection-advanced-body > .task-hint { margin: 0; }
+.collection-preview [data-plan-preview] { min-width: 0; display: grid; gap: 8px; }
+.collection-condition-preview { margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-muted); color: var(--ink); font-size: var(--text-md); line-height: 1.7; overflow-wrap: anywhere; }
+.collection-condition-preview.matched { background: #edf5ef; border-color: #c9decf; color: var(--text-green); }
+.collection-condition-preview small { display: block; font-size: var(--text-sm); color: var(--muted); }
+@media (prefers-reduced-motion: reduce) {
+  .collection-plan-advanced > summary > .icon { transition: none; }
+}
+

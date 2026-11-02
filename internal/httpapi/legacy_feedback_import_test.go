@@ -21,7 +21,7 @@ func TestImportLegacyFeedbackHTTP(t *testing.T) {
 	}
 	_, key := workspaceLearner(t, h, "migration-client")
 	_, other := managedLearner(t, h, "migration-other")
-	_, readOnly := managedClient(t, h, "migration-reader", nil)
+	_, readOnly := managedClient(t, h, "migration-reader", []string{"read", "sync"})
 	path := "/api/v1/client/feedback/import-legacy"
 	event := map[string]any{"event_id": uuid.NewString(), "item_id": item.ID, "action": "like", "value": true,
 		"item_revision": item.Published.Revision, "occurred_at": time.Now().UTC().Add(-time.Hour).Format(time.RFC3339Nano)}

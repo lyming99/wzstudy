@@ -73,21 +73,39 @@ type SourceInput struct {
 	PollIntervalSeconds int      `json:"poll_interval_seconds"`
 }
 
+type ContentChapter struct {
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	StartMS int64  `json:"start_ms"`
+}
+type ContentSubtitle struct {
+	ID       string `json:"id"`
+	Language string `json:"language"`
+	Format   string `json:"format"`
+	Content  string `json:"content"`
+}
 type Content struct {
-	Kind            string     `json:"kind,omitempty"`
-	Assets          []Asset    `json:"assets,omitempty"`
-	ExternalID      string     `json:"external_id"`
-	Title           string     `json:"title"`
-	Summary         string     `json:"summary"`
-	Content         string     `json:"content"`
-	Format          string     `json:"format"`
-	URL             string     `json:"url,omitempty"`
-	Author          string     `json:"author"`
-	Category        string     `json:"category"`
-	Language        string     `json:"language"`
-	Tags            []string   `json:"tags"`
-	PublishedAt     *time.Time `json:"published_at,omitempty"`
-	SourceUpdatedAt *time.Time `json:"source_updated_at,omitempty"`
+	ContentMode     string            `json:"content_mode,omitempty"`
+	Platform        string            `json:"platform,omitempty"`
+	DurationMS      int64             `json:"duration_ms,omitempty"`
+	Orientation     string            `json:"orientation,omitempty"`
+	Outline         string            `json:"outline,omitempty"`
+	Chapters        []ContentChapter  `json:"chapters,omitempty"`
+	Subtitles       []ContentSubtitle `json:"subtitles,omitempty"`
+	Kind            string            `json:"kind,omitempty"`
+	Assets          []Asset           `json:"assets,omitempty"`
+	ExternalID      string            `json:"external_id"`
+	Title           string            `json:"title"`
+	Summary         string            `json:"summary"`
+	Content         string            `json:"content"`
+	Format          string            `json:"format"`
+	URL             string            `json:"url,omitempty"`
+	Author          string            `json:"author"`
+	Category        string            `json:"category"`
+	Language        string            `json:"language"`
+	Tags            []string          `json:"tags"`
+	PublishedAt     *time.Time        `json:"published_at,omitempty"`
+	SourceUpdatedAt *time.Time        `json:"source_updated_at,omitempty"`
 }
 
 type PublicItem struct {
@@ -141,6 +159,7 @@ type Filter struct {
 	Ascending        bool
 	SourceIDs        []string
 	Category         string
+	ContentMode      string
 	Tag              string
 	Query            string
 	Limit            int
@@ -257,8 +276,48 @@ func normalizeSource(in SourceInput) (SourceInput, error) {
 }
 
 func normalizeContent(in Content, s Source) (Content, error) {
+	mode, modeErr := normalizeContentMode(in.ContentMode)
+	if modeErr != nil {
+		return in, modeErr
+	}
+	in.ContentMode = mode
 	in.ExternalID = strings.TrimSpace(in.ExternalID)
 	in.Title = strings.TrimSpace(in.Title)
+	in.Platform = contentPlatform(in, s.Name)
+	if !validText(in.Platform, 200) || !validText(in.Outline, 262144) || in.DurationMS < 0 || in.DurationMS > 604800000 || len(in.Chapters) > 300 || len(in.Subtitles) > 8 {
+		return in, ErrInvalid
+	}
+	if in.Orientation != "" && in.Orientation != "landscape" && in.Orientation != "portrait" {
+		return in, ErrInvalid
+	}
+	if (len(in.Chapters) > 0 || len(in.Subtitles) > 0) && Kind(in) != "video" && Kind(in) != "audio" {
+		return in, ErrInvalid
+	}
+	chapterIDs := map[string]bool{}
+	previous := int64(-1)
+	for i, chapter := range in.Chapters {
+		chapter.ID = strings.TrimSpace(chapter.ID)
+		chapter.Title = strings.TrimSpace(chapter.Title)
+		if chapter.ID == "" || chapter.Title == "" || !validText(chapter.ID, 200) || !validText(chapter.Title, 500) || chapterIDs[chapter.ID] || chapter.StartMS <= previous || (in.DurationMS > 0 && chapter.StartMS >= in.DurationMS) {
+			return in, ErrInvalid
+		}
+		chapterIDs[chapter.ID] = true
+		previous = chapter.StartMS
+		in.Chapters[i] = chapter
+	}
+	subtitleIDs := map[string]bool{}
+	for i, track := range in.Subtitles {
+		track.ID = strings.TrimSpace(track.ID)
+		track.Language = strings.TrimSpace(track.Language)
+		if track.Format == "" {
+			track.Format = "srt"
+		}
+		if track.ID == "" || track.Language == "" || !validText(track.ID, 200) || !validText(track.Language, 35) || subtitleIDs[track.ID] || (track.Format != "srt" && track.Format != "vtt") || strings.TrimSpace(track.Content) == "" || !validText(track.Content, 262144) {
+			return in, ErrInvalid
+		}
+		subtitleIDs[track.ID] = true
+		in.Subtitles[i] = track
+	}
 	if in.Format == "" {
 		in.Format = "text"
 	}
@@ -326,6 +385,9 @@ func MatchesSource(id string, ids []string) bool {
 	return false
 }
 func MatchesContent(c Content, f Filter) bool {
+	if f.ContentMode != "" && effectiveContentMode(c.ContentMode) != f.ContentMode {
+		return false
+	}
 	if f.Kind != "" && Kind(c) != f.Kind {
 		return false
 	}

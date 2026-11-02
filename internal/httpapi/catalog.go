@@ -105,24 +105,10 @@ func (s *Server) saveCatalogCollection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) publishCatalogCollection(w http.ResponseWriter, r *http.Request) {
-	s.catalogPublication(w, r, true)
+	failure(w, http.StatusGone, "collection_publication_removed", "合集保存后立即生效，无需发布；移除合集请使用删除。")
 }
 func (s *Server) unpublishCatalogCollection(w http.ResponseWriter, r *http.Request) {
-	s.catalogPublication(w, r, false)
-}
-func (s *Server) catalogPublication(w http.ResponseWriter, r *http.Request, publish bool) {
-	var in struct {
-		Revision int64 `json:"revision"`
-	}
-	if !decode(w, r, &in) {
-		return
-	}
-	v, err := s.service.PublishCatalogCollection(r.Context(), chi.URLParam(r, "id"), in.Revision, publish)
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	success(w, 200, v)
+	failure(w, http.StatusGone, "collection_publication_removed", "合集不再支持下架；移除合集请使用删除，不会删除其中资料。")
 }
 func (s *Server) deleteCatalogCollection(w http.ResponseWriter, r *http.Request) {
 	var in struct {

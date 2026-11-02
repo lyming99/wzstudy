@@ -3,6 +3,7 @@ package study
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -166,6 +167,7 @@ func (s *Service) ingest(tx Tx, source Source, inputs []Content, intake ...strin
 	}
 	// Validate the entire batch before writing, including duplicate external IDs.
 	normalized := make([]Content, len(inputs))
+	modeExplicit := map[string]bool{}
 	seen := map[string]bool{}
 	for i, v := range inputs {
 		v, e := normalizeContent(v, source)
@@ -180,6 +182,7 @@ func (s *Service) ingest(tx Tx, source Source, inputs []Content, intake ...strin
 		}
 		seen[v.ExternalID] = true
 		normalized[i] = v
+		modeExplicit[v.ExternalID] = strings.TrimSpace(inputs[i].ContentMode) != ""
 	}
 	out.Items = make([]Item, 0, len(inputs))
 	for _, content := range normalized {
@@ -189,6 +192,11 @@ func (s *Service) ingest(tx Tx, source Source, inputs []Content, intake ...strin
 		}
 		if e == nil && old.DeletedAt != nil {
 			return out, ErrConflict
+		}
+		// Older collectors do not know this metadata field. Preserve an existing
+		// choice unless the payload explicitly supplies default/news/learning.
+		if e == nil && !modeExplicit[content.ExternalID] {
+			content.ContentMode = old.Draft.ContentMode
 		}
 		if e == nil && old.ContentHash == digest(content) {
 			out.Unchanged++
@@ -263,6 +271,12 @@ func (s *Service) publishWithLabel(tx Tx, v *Item, publish bool, label string) e
 		if _, err := tx.Item(v.ID); errors.Is(err, ErrNotFound) {
 			return nil
 		} else if err != nil {
+			return err
+		}
+		// Collection projections filter by the item's current visibility. Save
+		// the new state inside this same transaction before rebuilding them;
+		// otherwise a newly published draft would still look private here.
+		if err := tx.SaveItem(*v); err != nil {
 			return err
 		}
 		return refreshCatalogReferences(tx, v.ID, now.UTC())

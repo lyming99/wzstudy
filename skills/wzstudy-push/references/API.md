@@ -74,3 +74,12 @@
 - 413：检查正文/批次/媒体大小。
 - 5xx、网络中断、非 JSON：写入结果可能不确定，确认系统状态后再决定重试；媒体重传可能新增资产与修订。
 - 3xx：客户端拒绝跟随，不把来源凭据转发给新地址。
+
+
+## 内容模式与主题分类
+
+Content 可附加 `content_mode`：`default`（默认）/ `news`（资讯）/ `learning`（学习）。主题仍放在 `category`，不得把分类改成“资讯”来代替模式。新资料省略模式等于默认；更新旧资料时，字段缺省保留已有模式，显式 `default` 才清除选择。脚本校验并透传模式，模式不会改变无 URL 输入的派生 external_id；字幕/下载/入库权限不因此扩大。
+
+```json
+{"title":"技术资讯","url":"https://example.org/news","category":"人工智能","content_mode":"news","format":"markdown","content":"有出处的原创整理"}
+```

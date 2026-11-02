@@ -46,21 +46,29 @@ type Asset struct {
 	Size int64  `json:"size"`
 }
 
+type ContentSubtitle struct {
+	ID       string `json:"id"`
+	Language string `json:"language"`
+	Format   string `json:"format"`
+	Content  string `json:"content"`
+}
+
 type Content struct {
-	Kind            string     `json:"kind,omitempty"`
-	ExternalID      string     `json:"external_id"`
-	Title           string     `json:"title"`
-	Summary         string     `json:"summary,omitempty"`
-	Content         string     `json:"content,omitempty"`
-	Format          string     `json:"format,omitempty"`
-	URL             string     `json:"url,omitempty"`
-	Author          string     `json:"author,omitempty"`
-	Assets          []Asset    `json:"assets,omitempty"`
-	Category        string     `json:"category,omitempty"`
-	Language        string     `json:"language,omitempty"`
-	Tags            []string   `json:"tags,omitempty"`
-	PublishedAt     *time.Time `json:"published_at,omitempty"`
-	SourceUpdatedAt *time.Time `json:"source_updated_at,omitempty"`
+	Kind            string            `json:"kind,omitempty"`
+	ExternalID      string            `json:"external_id"`
+	Title           string            `json:"title"`
+	Summary         string            `json:"summary,omitempty"`
+	Content         string            `json:"content,omitempty"`
+	Format          string            `json:"format,omitempty"`
+	URL             string            `json:"url,omitempty"`
+	Author          string            `json:"author,omitempty"`
+	Assets          []Asset           `json:"assets,omitempty"`
+	Subtitles       []ContentSubtitle `json:"subtitles,omitempty"`
+	Category        string            `json:"category,omitempty"`
+	Language        string            `json:"language,omitempty"`
+	Tags            []string          `json:"tags,omitempty"`
+	PublishedAt     *time.Time        `json:"published_at,omitempty"`
+	SourceUpdatedAt *time.Time        `json:"source_updated_at,omitempty"`
 }
 
 type ReceiptItem struct {

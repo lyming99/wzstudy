@@ -57,7 +57,7 @@ func cookieRequest(t *testing.T, h http.Handler, method, path, origin string, co
 func TestLearnerAccountManagementAndRoleBoundary(t *testing.T) {
 	_, h := app()
 	user, token := managedLearner(t, h, "alice")
-	_, clientKey := managedClient(t, h, "shared-app", []string{"read", "sync", "feedback"})
+	_, clientKey := managedClient(t, h, "shared-app", []string{"read", "sync"})
 	source, sourceKey := create(t, h, false)
 	for _, key := range []string{"", token, clientKey, readKey, sourceKey} {
 		for _, path := range []string{"/api/v1/admin/users", "/api/v1/admin/items", "/api/v1/admin/sources"} {
@@ -191,7 +191,9 @@ func TestLegacyApplicationDataIsNotInheritedByUsers(t *testing.T) {
 	if own.Total != 1 || own.ClientID != old.ID {
 		t.Fatal("legacy data lost", own)
 	}
-	if w := request(t, h, "GET", "/api/v1/client/learning", key, nil); w.Code != 401 {
-		t.Fatal("shared key still used as learner")
+	var shared study.LearningPage
+	data(t, request(t, h, "GET", "/api/v1/client/learning", key, nil), &shared)
+	if shared.ClientID != old.ID || shared.Total != 0 {
+		t.Fatal("legacy unscoped state was assigned to workspace", shared)
 	}
 }

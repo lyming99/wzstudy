@@ -1,0 +1,48 @@
+/* Shared channel + accessible learning player, scoped to the learning page. */
+body{font-size:15px;--muted:#52665a}
+[hidden]{display:none!important}
+.reader video{max-height:65vh;background:#101914;border-radius:10px}
+#learning-player{border:1px solid var(--line);border-radius:12px;padding:16px;background:#f6f8f2;margin:0 0 22px;min-width:0}
+#learning-player label{margin:0;font-size:14px}
+.player-progress{position:relative}
+.player-progress label{display:flex;justify-content:space-between;gap:12px;min-height:26px;flex-wrap:wrap}
+#seek-preview{font-weight:500;color:#244b3b}
+#media-seek{display:block;width:100%;padding:0;min-height:34px;cursor:ew-resize;accent-color:#386343;touch-action:pan-y;background:transparent;border:0}
+.chapter-markers{position:relative;height:5px;pointer-events:none;margin:-10px 8px 12px}
+.chapter-markers i{position:absolute;width:3px;height:5px;background:#607b57;border-radius:2px}
+.player-time{display:flex;justify-content:space-between;gap:12px;font-size:13px;color:var(--muted);flex-wrap:wrap}
+.player-time strong{color:var(--green);overflow-wrap:anywhere}
+.player-options,.subtitle-options,.queue-range{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px}
+.player-options select,.subtitle-options select,.queue-range select{margin-top:6px;font-size:14px;max-width:100%}
+.queue-range small{grid-column:1/-1;line-height:1.6}
+.player-queue{margin-top:10px;font-size:13px}
+.chapter-outline,.content-outline{margin-top:18px;border-top:1px solid var(--line);padding-top:12px}
+summary{cursor:pointer;font-weight:600;color:var(--green);padding:5px 0}
+.chapter-outline>div{display:flex;gap:8px;flex-wrap:wrap;max-height:220px;overflow:auto;padding-top:10px}
+.chapter-outline button{font-size:13px;padding:7px 10px;text-align:left}
+.content-outline pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;color:#344c3b;max-height:350px;overflow:auto}
+.subtitle-current{min-height:68px;margin-top:18px;text-align:center;white-space:pre-wrap;overflow-wrap:anywhere}
+#subtitle-original{font-size:18px;font-weight:600;color:#213a2a}
+#subtitle-translation{font-size:15px;color:#4c6251;margin-top:6px}
+#sentence-status,#playback-status{font-size:13px;margin-top:10px;overflow-wrap:anywhere;color:#3e5945}
+#learning-player .actions button{font-size:14px;padding:8px 12px;min-height:40px}
+.lyrics-list{max-height:300px;overflow:auto;border-top:1px solid var(--line);padding-top:10px;scroll-behavior:smooth;overscroll-behavior:contain}
+.lyrics-list button{display:flex;align-items:flex-start;justify-content:flex-start;width:100%;gap:12px;text-align:left;background:transparent;border-color:transparent;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere;font-weight:400;line-height:1.7;padding:12px;transition:background .15s}
+.lyrics-list button time{font-size:12px;color:var(--muted);flex-shrink:0;line-height:2}
+.lyrics-list button span{min-width:0}
+.lyrics-list button small{display:block;margin-top:5px;font-size:14px}
+.lyrics-list button.current{background:#dfedd4;border-color:#9bb88d;color:#16361f;font-weight:650}
+.learning-sync{padding:12px 14px;border-radius:9px;background:#eff5e9;margin:16px 0;font-size:14px}
+.learning-sync strong{color:#254d30}
+.learning-sync label,.source-choice{display:flex;align-items:center;gap:8px;margin:8px 0!important;line-height:1.6}
+.learning-sync input[type=checkbox],.source-choice input[type=checkbox]{width:18px;height:18px;flex:0 0 auto;accent-color:var(--green)}
+.learning-sync small{display:block;font-size:13px}
+.channel-settings{max-width:800px;margin:0 auto}
+.channel-settings h1{font-size:26px;margin-bottom:12px}
+.channel-settings fieldset{margin-top:20px;border:1px solid var(--line);border-radius:9px;padding:12px 16px;min-width:0}
+.channel-settings legend{font-weight:600;padding:0 6px;font-size:14px}
+.channel-settings>p,.channel-settings small{overflow-wrap:anywhere}
+.channel-settings textarea{min-height:90px}
+.topbar .account button{font-size:13px}
+@media(max-width:600px){.topbar{flex-wrap:wrap}.topbar .account{justify-content:flex-start;width:100%}.account strong{max-width:180px}.account button{min-height:36px}#learning-player{padding:12px}.player-options,.subtitle-options,.queue-range{grid-template-columns:1fr;gap:10px}#subtitle-original{font-size:17px}.lyrics-list{max-height:260px}.player-time{font-size:12px}.channel-settings h1{font-size:23px}.channel-settings fieldset{padding:10px}.source-choice{overflow-wrap:anywhere}}
+@media(prefers-reduced-motion:reduce){.lyrics-list{scroll-behavior:auto}.lyrics-list button{transition:none}}

@@ -43,12 +43,14 @@ func scopedTransaction(ctx context.Context, tx Tx, fn func(Tx) error) error {
 	if !user.Enabled {
 		return ErrUnauthorized
 	}
-	return fn(&workspaceTx{Tx: tx, owner: owner})
+	shared, _ := ctx.Value(sharedLearningContextKey{}).(bool)
+	return fn(&workspaceTx{Tx: tx, owner: owner, learningShares: shared})
 }
 
 type workspaceTx struct {
 	Tx
-	owner string
+	owner          string
+	learningShares bool
 }
 
 func globalIdentityKind(kind string) bool {
@@ -144,6 +146,9 @@ func (t *workspaceTx) SaveSource(v Source) error {
 func (t *workspaceTx) Item(id string) (Item, error) {
 	v, err := t.Tx.Item(id)
 	if err == nil && v.OwnerID != t.owner {
+		if t.learningShares {
+			return sharedLearningItem(t, v)
+		}
 		return Item{}, ErrNotFound
 	}
 	return v, err

@@ -214,10 +214,12 @@ def main():
                     page.locator('[data-action="upload"]').first.click()
                     page.locator('#material-title').fill('Alice UI 录入资料')
                     page.locator('#article-content').fill('这是一篇由当前用户在真实浏览器录入的学习文章。')
-                    page.locator('button[form="upload-form"]').click()
-                    page.locator('#modal-root').wait_for(state='hidden')
+                    with page.expect_response(lambda response: response.request.method == 'POST' and urlsplit(response.url).path == '/api/v1/workspace/items') as saved_response:
+                        page.locator('button[form="upload-form"]').click()
+                    assert saved_response.value.status == 201, {'status': saved_response.value.status, 'response': saved_response.value.text(), 'input': saved_response.value.request.post_data_json}
+                    page.locator('#upload-form').wait_for(state='detached')
                     own_page = call('/workspace/items?q=Alice%20UI', token=a2)
-                    assert own_page['total'] == 1
+                    assert own_page['total'] == 1, {'total': own_page.get('total'), 'titles': [item.get('draft', {}).get('title') for item in own_page.get('items', [])]}
                     ui_item = own_page['items'][0]
                     call('/workspace/items/' + ui_item['id'] + '/publish', 'POST', {'revision': ui_item['revision']}, a2)
                     page.screenshot(path=str(OUT / 'user-workspace.png'), full_page=True)
@@ -227,8 +229,8 @@ def main():
                     assert page.evaluate('queryResult.client_id') == a['id']
                     page.locator('.sidebar [data-route="clients"]').click()
                     page.get_by_role('button', name='Key / 接口说明', exact=True).first.click()
-                    page.get_by_text('此 Key 只读取所属用户工作区的已发布资料', exact=False).wait_for()
-                    assert '经 feedback 授权可读写' not in page.locator('.dialog').inner_text()
+                    page.get_by_text('此 Key 仅访问所属工作区的已发布资料', exact=False).wait_for()
+                    assert '共享同一 Key 的设备共用该客户端学习状态，不会合并到用户账号' in page.locator('.dialog').inner_text()
                     page.locator('[data-action="close-modal"]').first.click()
                     check('工作台查询使用当前用户反馈空间，客户端说明不再把 Key 视为学习身份')
 
@@ -323,7 +325,7 @@ def main():
                     rp.route('**/api/v1/workspace/intakes?delayed=1', lambda route: delayed.append(route))
                     rp.evaluate("() => { window.staleFinished=false; api('/workspace/intakes?delayed=1').catch(()=>{}).finally(()=>window.staleFinished=true); }")
                     rp.locator('.user-button').click()
-                    rp.locator('[data-action="logout"]').click()
+                    rp.locator('.dialog [data-action="logout"]').click()
                     rp.locator('#login-email').fill(B_EMAIL)
                     rp.locator('#login-password').fill(B_PASSWORD)
                     rp.get_by_role('button', name='登录工作空间', exact=True).click()
